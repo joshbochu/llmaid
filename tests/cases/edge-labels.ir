@@ -1,0 +1,11 @@
+direction: LR
+nodes:
+  A rect "A"
+  B rect "B"
+  C rect "C"
+edges:
+  A -->|scan| B
+  B -.->|retry| A
+  A ==>|emit| C
+  C --- A
+  B === C

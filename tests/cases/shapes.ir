@@ -1,0 +1,16 @@
+direction: LR
+nodes:
+  r rect "rect"
+  ro rounded "rounded"
+  st stadium "stadium"
+  ci circle "circle"
+  cy cylinder "cylinder"
+  di diamond "diamond"
+  hx hexagon "hexagon"
+edges:
+  r --> ro
+  ro --> st
+  st --> ci
+  cy -.-> di
+  di ==> hx
+  r --- cy

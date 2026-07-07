@@ -1,0 +1,10 @@
+direction: TB
+nodes:
+  A rect "A"
+  B rect "B"
+  C rect "C"
+edges:
+  A --> B
+  B --> C
+warnings:
+  line 1: missing `flowchart <DIR>` header; assuming `flowchart TB`

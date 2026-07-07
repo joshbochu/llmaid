@@ -1,0 +1,10 @@
+direction: TB
+nodes:
+  scan rect "Scanner"
+  parse rect "Parser"
+  eval rect "Interpreter"
+edges:
+  scan --> parse
+  parse --> eval
+  eval -->|next line| scan
+  eval --> eval

@@ -1,0 +1,6 @@
+flowchart LR
+  A -- scan --> B
+  B -. retry .-> A
+  A == emit ==> C
+  C --- A
+  B === C

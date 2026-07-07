@@ -1,0 +1,13 @@
+direction: LR
+nodes:
+  A rect "Agent"
+  B diamond "Router"
+  C rect "Editor"
+  D cylinder "DB"
+  E rect "Result"
+edges:
+  A -->|prompt| B
+  B -->|code| C
+  B -->|query| D
+  C --> E
+  D --> E

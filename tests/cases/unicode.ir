@@ -1,0 +1,6 @@
+direction: LR
+nodes:
+  w rect "世界"
+  c rect "café"
+edges:
+  w -->|emoji 🚀| c

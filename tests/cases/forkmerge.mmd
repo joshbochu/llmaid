@@ -1,0 +1,5 @@
+flowchart TB
+  ast[AST] --> compile & walk[walk tree]
+  compile --> chunk[Chunk] --> vm[VM stack]
+  walk --> vm
+  vm --> val[Value]

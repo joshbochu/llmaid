@@ -1,0 +1,15 @@
+direction: TB
+nodes:
+  ast rect "AST"
+  compile rect "compile"
+  walk rect "walk tree"
+  chunk rect "Chunk"
+  vm rect "VM stack"
+  val rect "Value"
+edges:
+  ast --> compile
+  ast --> walk
+  compile --> chunk
+  chunk --> vm
+  walk --> vm
+  vm --> val

@@ -1,0 +1,127 @@
+//! Behavior-driven tests. One test per contract in BEHAVIORS.md, named
+//! `b<N>_given_..._then_...`. Parser behaviors call the library; CLI
+//! behaviors (B6–B8) run the real binary. B9–B14 land with M2/M3.
+
+use llmaid::parse::{parse, Shape};
+use std::process::{Command, Stdio};
+
+// ---------- Parsing ----------
+
+#[test]
+fn b1_given_br_tags_then_label_has_line_breaks() {
+    let g = parse("flowchart LR\nA[first<br/>second<br>third<BR />fourth]").unwrap();
+    assert_eq!(g.nodes[0].label, "first\nsecond\nthird\nfourth");
+
+    // Not a br tag: stays literal.
+    let g = parse("flowchart LR\nB[a <b> c]").unwrap();
+    assert_eq!(g.nodes[0].label, "a <b> c");
+}
+
+#[test]
+fn b2_given_redeclared_node_then_last_wins_with_warning() {
+    let g = parse("flowchart LR\nA[First]\nA[Second]\nA --> B").unwrap();
+    assert_eq!(g.nodes[0].label, "Second");
+    assert!(
+        g.warnings.iter().any(|w| w.line == 3 && w.msg.contains("redeclared")),
+        "expected a redeclaration warning, got: {:?}",
+        g.warnings
+    );
+
+    // Bare reference and identical redeclaration never warn.
+    let g = parse("flowchart LR\nA[First]\nA --> B\nA[First]").unwrap();
+    assert!(g.warnings.is_empty(), "got: {:?}", g.warnings);
+}
+
+#[test]
+fn b2_given_shape_change_then_warning_names_previous() {
+    let g = parse("flowchart LR\nA[Box]\nA{Box}").unwrap();
+    assert_eq!(g.nodes[0].shape, Shape::Diamond);
+    assert!(g.warnings[0].msg.contains("rect \"Box\""), "got: {}", g.warnings[0].msg);
+}
+
+#[test]
+fn b3_given_parallel_edges_then_both_kept_with_labels() {
+    let g = parse("flowchart LR\nA -->|x| B\nA -->|y| B").unwrap();
+    assert_eq!(g.edges.len(), 2);
+    assert_eq!(g.edges[0].label.as_deref(), Some("x"));
+    assert_eq!(g.edges[1].label.as_deref(), Some("y"));
+    assert_eq!((g.edges[0].from, g.edges[0].to), (g.edges[1].from, g.edges[1].to));
+}
+
+#[test]
+fn b4_given_malformed_input_then_error_names_line_and_expectation() {
+    let cases: &[(&str, usize, &str)] = &[
+        ("flowchart LR\nA[unclosed", 2, "expected closing `]`"),
+        ("flowchart LR\nA -->", 2, "expected a node id"),
+        ("flowchart LR\nA --> B\nB ->> C", 3, "expected an edge"),
+        ("flowchart LR\nA -->|no close B", 2, "unterminated edge label"),
+    ];
+    for (src, line, needle) in cases {
+        let err = parse(src).unwrap_err();
+        assert_eq!(err.line, *line, "for {src:?}");
+        assert!(err.msg.contains(needle), "for {src:?}: got `{}`", err.msg);
+    }
+}
+
+#[test]
+fn b5_given_unknown_directives_then_warn_and_continue() {
+    let g = parse("flowchart TB\nclassDef default fill:#f9f\nA --> B").unwrap();
+    assert_eq!(g.nodes.len(), 2);
+    assert_eq!(g.edges.len(), 1);
+    assert!(g.warnings.iter().any(|w| w.msg.contains("classDef")));
+}
+
+// ---------- CLI ----------
+
+fn run_llmaid(args: &[&str], stdin: &str) -> (String, String, i32) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_llmaid"))
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::Write;
+    child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    (
+        String::from_utf8(out.stdout).unwrap(),
+        String::from_utf8(out.stderr).unwrap(),
+        out.status.code().unwrap(),
+    )
+}
+
+#[test]
+fn b5_given_strict_flag_then_warnings_fail_with_exit_64() {
+    let (_, stderr, code) = run_llmaid(&["--strict"], "A --> B\n");
+    assert_eq!(code, 64);
+    assert!(stderr.contains("--strict"));
+}
+
+#[test]
+fn b6_given_warnings_then_stdout_has_only_the_diagram() {
+    let (stdout, stderr, code) = run_llmaid(&[], "classDef x fill:#f9f\nflowchart LR\nA --> B\n");
+    assert_eq!(code, 0);
+    assert!(stderr.contains("warning"), "warnings must go to stderr");
+    assert!(!stdout.contains("warning"), "stdout must never carry diagnostics");
+    assert!(!stdout.trim().is_empty());
+}
+
+#[test]
+fn b7_given_no_nodes_then_exit_0_empty_stdout_warning_on_stderr() {
+    for input in ["", "flowchart LR\n", "%% just a comment\n"] {
+        let (stdout, stderr, code) = run_llmaid(&[], input);
+        assert_eq!(code, 0, "for {input:?}");
+        assert_eq!(stdout, "", "for {input:?}");
+        assert!(stderr.contains("nothing to render"), "for {input:?}: {stderr}");
+    }
+}
+
+#[test]
+fn b8_given_same_input_then_byte_identical_output_across_runs() {
+    let src = "flowchart LR\nA -->|x| B & C\nB & C --> D\n";
+    let (out1, _, _) = run_llmaid(&[], src);
+    let (out2, _, _) = run_llmaid(&[], src);
+    assert_eq!(out1, out2);
+    assert!(!out1.is_empty());
+}

@@ -1,0 +1,6 @@
+flowchart LR
+  A[Agent] -->|prompt| B{Router}
+  B -->|code| C[Editor]
+  B -->|query| D[(DB)]
+  C --> E[Result]
+  D --> E

@@ -1,0 +1,10 @@
+direction: LR
+nodes:
+  src rect "source"
+  tok rect "Vec<Token>"
+  ast rect "Expr AST"
+  val rect "Value"
+edges:
+  src -->|scan| tok
+  tok -->|parse| ast
+  ast -->|eval| val
