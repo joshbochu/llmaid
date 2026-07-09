@@ -1,0 +1,10 @@
+direction: TB
+nodes:
+  A rect "src"
+  B rect "tok"
+  C rect "out"
+subgraphs:
+  0 id=Pipe title="Pipeline" parent=- members=[A,B]
+edges:
+  A --> B
+  B --> C

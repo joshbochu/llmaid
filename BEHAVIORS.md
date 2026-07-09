@@ -16,8 +16,12 @@ their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–
   when parsed, then both edges are kept — no merging, no label loss.
 - **B4** Given malformed input, when parsing fails, then the error names the
   line and what was expected (so an agent can self-correct in one retry).
-- **B5** Given unknown directives (`classDef`, `subgraph`, …), when parsed,
+- **B5** Given unknown directives (`classDef`, `style`, …), when parsed,
   then they warn and are ignored; `--strict` upgrades warnings to failure.
+  (`subgraph` is real layout as of Phase 1 — see B15.)
+- **B15** Given a `subgraph` … `end` block, when parsed and rendered, then
+  member nodes are recorded on the subgraph and a titled frame is drawn around
+  them; contents are not silently flattened.
 
 ## CLI
 

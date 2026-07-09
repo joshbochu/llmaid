@@ -14,6 +14,10 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 /// this is only horizontal on screen (label lines are padded when rendered).
 pub const PAD: usize = 1;
 pub const EDGE_LABEL_PAD: usize = 2;
+/// Padding between member boxes and subgraph frame (flow / cross).
+pub const CLUSTER_PAD: usize = 1;
+/// Extra strip along the screen-top of a cluster for the title.
+pub const CLUSTER_TITLE_STRIP: usize = 1;
 
 /// Fit mode for the B9 overflow ladder. Labels wrap only when `label_cols` is
 /// set (B10: no arbitrary wrap under a comfortable width budget).
@@ -74,11 +78,23 @@ impl Channel {
     }
 }
 
+/// Axis-aligned subgraph frame in flow-space (same coords as `BoxGeom`).
+#[derive(Debug)]
+pub struct ClusterGeom {
+    pub subgraph: usize,
+    pub f: usize,
+    pub c: usize,
+    pub flen: usize,
+    pub clen: usize,
+    pub title: String,
+}
+
 #[derive(Debug)]
 pub struct Placed {
     pub horizontal: bool, // LR/RL (flow = screen x)
     pub flipped: bool,    // RL/BT (flow axis mirrored on screen)
     pub boxes: Vec<BoxGeom>,
+    pub clusters: Vec<ClusterGeom>,
     /// Per edge: channel segments in flow order. Empty for self-loops/back edges.
     pub segs: Vec<Vec<Seg>>,
     pub channels: Vec<Channel>,
@@ -575,10 +591,37 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         .filter(|&ei| reversed[ei] && g.edges[ei].from != g.edges[ei].to)
         .collect();
 
+    // Make room for cluster padding/title when members sit on the origin edge.
+    let (shift_f, shift_c) = cluster_origin_shift(g, &boxes, horizontal);
+    let mut boxes = boxes;
+    let mut segs = segs;
+    let mut channels = channels;
+    let mut pass_through = pass_through;
+    let mut rank_span = rank_span;
+    let mut flow_extent = flow_extent;
+    let mut cross_extent = cross_extent;
+    if shift_f > 0 || shift_c > 0 {
+        shift_placed(
+            &mut boxes,
+            &mut segs,
+            &mut channels,
+            &mut pass_through,
+            &mut rank_span,
+            &mut flow_extent,
+            &mut cross_extent,
+            shift_f,
+            shift_c,
+        );
+    }
+
+    let (clusters, flow_extent, cross_extent) =
+        place_clusters(g, &boxes, horizontal, flow_extent, cross_extent);
+
     Placed {
         horizontal,
         flipped,
         boxes,
+        clusters,
         segs,
         channels,
         pass_through,
@@ -588,6 +631,138 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         flow_extent,
         cross_extent,
     }
+}
+
+/// How far to shift flow/cross so every subgraph has room for pad + title.
+fn cluster_origin_shift(g: &Graph, boxes: &[BoxGeom], horizontal: bool) -> (usize, usize) {
+    let mut shift_f = 0usize;
+    let mut shift_c = 0usize;
+    for sg in &g.subgraphs {
+        if sg.members.is_empty() {
+            continue;
+        }
+        let min_f = sg.members.iter().map(|&i| boxes[i].f).min().unwrap();
+        let min_c = sg.members.iter().map(|&i| boxes[i].c).min().unwrap();
+        if horizontal {
+            shift_c = shift_c.max((CLUSTER_PAD + CLUSTER_TITLE_STRIP).saturating_sub(min_c));
+            shift_f = shift_f.max(CLUSTER_PAD.saturating_sub(min_f));
+        } else {
+            shift_f = shift_f.max((CLUSTER_PAD + CLUSTER_TITLE_STRIP).saturating_sub(min_f));
+            shift_c = shift_c.max(CLUSTER_PAD.saturating_sub(min_c));
+        }
+    }
+    (shift_f, shift_c)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shift_placed(
+    boxes: &mut [BoxGeom],
+    segs: &mut [Vec<Seg>],
+    channels: &mut [Channel],
+    pass_through: &mut [(usize, usize, usize)],
+    rank_span: &mut [(usize, usize)],
+    flow_extent: &mut usize,
+    cross_extent: &mut usize,
+    df: usize,
+    dc: usize,
+) {
+    for b in boxes.iter_mut() {
+        b.f += df;
+        b.c += dc;
+    }
+    for edge_segs in segs.iter_mut() {
+        for s in edge_segs.iter_mut() {
+            s.from.0 += df;
+            s.from.1 += dc;
+            s.to.0 += df;
+            s.to.1 += dc;
+        }
+    }
+    for ch in channels.iter_mut() {
+        ch.start += df;
+    }
+    for p in pass_through.iter_mut() {
+        p.2 += dc;
+    }
+    for rs in rank_span.iter_mut() {
+        rs.0 += df;
+    }
+    *flow_extent += df;
+    *cross_extent += dc;
+}
+
+/// Bounding-box clusters around subgraph members with padding + title strip.
+fn place_clusters(
+    g: &Graph,
+    boxes: &[BoxGeom],
+    horizontal: bool,
+    mut flow_extent: usize,
+    mut cross_extent: usize,
+) -> (Vec<ClusterGeom>, usize, usize) {
+    let mut clusters = Vec::new();
+    for (si, sg) in g.subgraphs.iter().enumerate() {
+        if sg.members.is_empty() {
+            continue;
+        }
+        let mut f0 = usize::MAX;
+        let mut f1 = 0usize;
+        let mut c0 = usize::MAX;
+        let mut c1 = 0usize;
+        for &ni in &sg.members {
+            let b = &boxes[ni];
+            f0 = f0.min(b.f);
+            f1 = f1.max(b.f + b.flen);
+            c0 = c0.min(b.c);
+            c1 = c1.max(b.c + b.clen);
+        }
+        if f0 == usize::MAX {
+            continue;
+        }
+        // Screen-top title strip: smaller cross for LR, smaller flow for TB.
+        if horizontal {
+            c0 = c0.saturating_sub(CLUSTER_PAD + CLUSTER_TITLE_STRIP);
+            c1 += CLUSTER_PAD;
+            f0 = f0.saturating_sub(CLUSTER_PAD);
+            f1 += CLUSTER_PAD;
+        } else {
+            f0 = f0.saturating_sub(CLUSTER_PAD + CLUSTER_TITLE_STRIP);
+            f1 += CLUSTER_PAD;
+            c0 = c0.saturating_sub(CLUSTER_PAD);
+            c1 += CLUSTER_PAD;
+        }
+        let title = sg.title.clone();
+        let tw = title.width() + 2; // ` title `
+        // Leave corner cells free for box-drawing (+2).
+        let need = tw + 2;
+        if horizontal {
+            if f1.saturating_sub(f0) < need {
+                f1 = f0 + need;
+            }
+        } else if c1.saturating_sub(c0) < need {
+            c1 = c0 + need;
+        }
+        flow_extent = flow_extent.max(f1);
+        cross_extent = cross_extent.max(c1);
+        clusters.push(ClusterGeom {
+            subgraph: si,
+            f: f0,
+            c: c0,
+            flen: f1.saturating_sub(f0).max(1),
+            clen: c1.saturating_sub(c0).max(1),
+            title,
+        });
+    }
+    // Shallowest first (outer frames drawn under nested ones).
+    clusters.sort_by_key(|cl| {
+        let mut d = 0usize;
+        let mut p = g.subgraphs[cl.subgraph].parent;
+        while let Some(pi) = p {
+            d += 1;
+            p = g.subgraphs[pi].parent;
+        }
+        d
+    });
+    (clusters, flow_extent, cross_extent)
 }
 
 /// For forward edges that are each endpoint's only attachment, force a shared

@@ -85,6 +85,47 @@ fn b5_given_unknown_directives_then_warn_and_continue() {
     assert!(g.warnings.iter().any(|w| w.msg.contains("classDef")));
 }
 
+#[test]
+fn b15_given_subgraph_then_members_recorded_and_frame_renders() {
+    let src = "\
+flowchart TB
+  subgraph Pipe [Pipeline]
+    A[src] --> B[tok]
+  end
+  B --> C[out]
+";
+    let g = parse(src).unwrap();
+    assert_eq!(g.subgraphs.len(), 1);
+    assert_eq!(g.subgraphs[0].id, "Pipe");
+    assert_eq!(g.subgraphs[0].title, "Pipeline");
+    assert_eq!(g.subgraphs[0].members.len(), 2);
+    assert_eq!(g.nodes[g.subgraphs[0].members[0]].id, "A");
+    assert_eq!(g.nodes[g.subgraphs[0].members[1]].id, "B");
+    assert_eq!(g.node_sg[0], Some(0));
+    assert_eq!(g.node_sg[1], Some(0));
+    assert_eq!(g.node_sg[2], None); // C outside
+    assert!(
+        !g.warnings.iter().any(|w| w.msg.contains("subgraph ignored")),
+        "subgraph should not be ignored: {:?}",
+        g.warnings
+    );
+
+    let (stdout, stderr, code) = run_llmaid(&[], src);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stdout.contains("Pipeline"),
+        "subgraph title missing from render:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("src") && stdout.contains("tok") && stdout.contains("out"),
+        "node labels missing:\n{stdout}"
+    );
+    assert!(
+        !stderr.contains("subgraph ignored"),
+        "should not warn ignore: {stderr}"
+    );
+}
+
 // ---------- CLI ----------
 
 fn run_llmaid(args: &[&str], stdin: &str) -> (String, String, i32) {

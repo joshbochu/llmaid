@@ -1,0 +1,10 @@
+direction: LR
+nodes:
+  A rect "A"
+  B rect "B"
+  C rect "C"
+subgraphs:
+  0 id=G title="Group" parent=- members=[A,B]
+edges:
+  A --> B
+  B --> C

@@ -1,6 +1,6 @@
 //! Render placed flowchart geometry onto a character canvas.
 
-use crate::layout::{BoxGeom, EDGE_LABEL_PAD, Placed};
+use crate::layout::{BoxGeom, ClusterGeom, EDGE_LABEL_PAD, Placed};
 use crate::parse::{EdgeKind, Graph, Shape};
 use crate::style::{E, N, S, Style, W};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -164,6 +164,10 @@ fn paint(g: &Graph, placed: &Placed, style: Style) -> Canvas {
     let (right_extra, bottom_extra) = canvas_extra(g, placed);
     let mut canvas = Canvas::new(w.max(1) + right_extra, h.max(1) + bottom_extra);
 
+    // Clusters under nodes so member boxes and edges win on shared cells.
+    for cl in &placed.clusters {
+        draw_cluster(&mut canvas, placed, cl, style);
+    }
     for (i, b) in placed.boxes.iter().enumerate() {
         draw_box(&mut canvas, placed, b, g.nodes[i].shape, style);
     }
@@ -234,6 +238,29 @@ fn check_invariants(g: &Graph, placed: &Placed, canvas: &Canvas) -> Vec<String> 
                 if ch == '…' || ch == '⋯' {
                     failures.push(format!("truncated glyph {ch:?} at ({x},{y})"));
                 }
+            }
+        }
+    }
+
+    // Cluster frames closed (title may overwrite top edge cells — still ink).
+    for cl in &placed.clusters {
+        let (x, y, w, h) = placed.cluster_rect(cl);
+        if w < 2 || h < 2 {
+            continue;
+        }
+        for (cx, cy, name) in [
+            (x, y, "TL"),
+            (x + w - 1, y, "TR"),
+            (x, y + h - 1, "BL"),
+            (x + w - 1, y + h - 1, "BR"),
+        ] {
+            if !canvas.in_bounds(cx, cy)
+                || matches!(canvas.cells[canvas.idx(cx, cy)], Cell::Empty)
+            {
+                failures.push(format!(
+                    "cluster `{}` open {name} at ({cx},{cy})",
+                    cl.title
+                ));
             }
         }
     }
@@ -396,6 +423,7 @@ fn canvas_extra(g: &Graph, placed: &Placed) -> (usize, usize) {
 trait ScreenMap {
     fn to_screen(&self, f: usize, c: usize) -> (usize, usize);
     fn box_rect(&self, b: &BoxGeom) -> (usize, usize, usize, usize);
+    fn cluster_rect(&self, cl: &ClusterGeom) -> (usize, usize, usize, usize);
 }
 
 impl ScreenMap for Placed {
@@ -434,6 +462,59 @@ impl ScreenMap for Placed {
             (b.c, y, b.clen, b.flen)
         }
     }
+
+    fn cluster_rect(&self, cl: &ClusterGeom) -> (usize, usize, usize, usize) {
+        if self.horizontal {
+            let x = if self.flipped {
+                self.flow_extent - cl.f - cl.flen
+            } else {
+                cl.f
+            };
+            (x, cl.c, cl.flen, cl.clen)
+        } else {
+            let y = if self.flipped {
+                self.flow_extent - cl.f - cl.flen
+            } else {
+                cl.f
+            };
+            (cl.c, y, cl.clen, cl.flen)
+        }
+    }
+}
+
+fn draw_cluster(canvas: &mut Canvas, placed: &Placed, cl: &ClusterGeom, style: Style) {
+    let (x, y, w, h) = placed.cluster_rect(cl);
+    if w < 2 || h < 2 {
+        return;
+    }
+    let kind = EdgeKind::Solid;
+
+    for xx in x + 1..x + w - 1 {
+        canvas.add_line_bits(xx, y, E | W, kind);
+        canvas.add_line_bits(xx, y + h - 1, E | W, kind);
+    }
+    for yy in y + 1..y + h - 1 {
+        canvas.add_line_bits(x, yy, N | S, kind);
+        canvas.add_line_bits(x + w - 1, yy, N | S, kind);
+    }
+    canvas.add_line_bits(x, y, E | S, kind);
+    canvas.add_line_bits(x + w - 1, y, S | W, kind);
+    canvas.add_line_bits(x, y + h - 1, N | E, kind);
+    canvas.add_line_bits(x + w - 1, y + h - 1, N | W, kind);
+    canvas.mark_rounded(x, y);
+    canvas.mark_rounded(x + w - 1, y);
+    canvas.mark_rounded(x, y + h - 1);
+    canvas.mark_rounded(x + w - 1, y + h - 1);
+
+    // Title on top edge with breathing spaces (same idea as edge labels).
+    let title = format!(" {} ", cl.title);
+    let tw = title.width();
+    if tw > 0 && tw <= w.saturating_sub(2) {
+        let tx = x + (w.saturating_sub(tw)) / 2;
+        canvas.put_text(tx, y, &title);
+    }
+
+    let _ = style;
 }
 
 fn draw_box(canvas: &mut Canvas, placed: &Placed, b: &BoxGeom, shape: Shape, style: Style) {

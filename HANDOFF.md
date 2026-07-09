@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-09 — Phase 0 flowchart polish complete.
+Last updated: 2026-07-09 — Phase 1 subgraphs landed.
 
 ## What this project is
 
@@ -17,25 +17,26 @@ without losing glance quality.
 2. `DESIGN.md` — v1 design thesis and architecture  
 3. `ROADMAP.md` — phased plan (what to build next)  
 4. `MATRIX.md` — capability × tool coverage checklist  
-5. `BEHAVIORS.md` — shipped contracts B1–B14  
+5. `BEHAVIORS.md` — shipped contracts B1–B15  
 6. `CHANGELOG.md` — decisions D1–D14  
 
 ## Current state
 
-**v1 contracts B1–B14 + Phase 0 polish are landed.**
+**v1 contracts B1–B15 + Phase 0–1 are landed.**
 
-- Pipeline: parse → layout (width ladder, mono-chain straighten) → render
+- Pipeline: parse → layout (width ladder, mono-chain straighten, clusters) → render
+- **Subgraphs:** titled frames around members (B15); nested parent tracked
 - Edge labels: padded on-shaft (` scan `); TB/BT labels beside vertical runs
-- Directions: LR/RL/TB/BT with goldens (`dir-rl`, `dir-bt`, `dir-tb-labels`)
+- Directions: LR/RL/TB/BT with goldens
 - CLI: `--ascii`, `--width N` (default 100), `--strict`
 - Tests: behavior + IR/render goldens + B14 canvas invariants
 - Regenerate goldens: `UPDATE_GOLDEN=1 cargo test`
 
 ## Next steps (from ROADMAP)
 
-1. **Phase 1** — real subgraphs (graph-easy / architecture parity)  
-2. **Phase 2** — sequence diagrams  
-3. Design types → planning → charts → agent diagnostics → distribute  
+1. **Phase 2** — sequence diagrams  
+2. Design types → planning → charts → agent diagnostics → distribute  
+3. Optional: nested subgraph polish / exit-edge routing through frames  
 
 Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 

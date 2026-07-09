@@ -3,10 +3,11 @@ nodes:
   A rect "A"
   B rect "B"
   C rect "C"
+subgraphs:
+  0 id=one title="one" parent=- members=[A,B]
 edges:
   A --> B
   A --> C
 warnings:
   line 2: `classDef`: directive ignored
-  line 3: `subgraph`: subgraph ignored; its contents are parsed at top level
   line 6: `style`: directive ignored

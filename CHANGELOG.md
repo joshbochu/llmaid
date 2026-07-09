@@ -6,6 +6,9 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Phase 1 subgraphs: parse `subgraph`/`end` with membership + optional title;
+  layout bounding-box clusters with pad/title strip; render titled rounded
+  frames (B15). Nested parent stack supported; edges may cross group borders.
 - Phase 0 flowchart polish: TB/BT on-shaft edge labels (beside vertical runs);
   RL/BT/TB direction goldens; mono-rank centerline straighten + mono-edge port
   snap (simple chains no longer jog); tighter vertical channels.

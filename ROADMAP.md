@@ -31,8 +31,8 @@ Agents speak Mermaid; we own primitives behind the door.
 |-------|------|--------|
 | — | v1 flowchart baseline (B1–B14) | **done** |
 | 0 | Ship & tighten flowchart | **done** |
-| 1 | Flowchart completeness (subgraphs / graph-easy parity) | **next** |
-| 2 | Sequence diagrams | later |
+| 1 | Flowchart completeness (subgraphs / graph-easy parity) | **done** (1.1 flat; nested parent field ready) |
+| 2 | Sequence diagrams | **next** |
 | 3 | Design-doc types (state / class / ER) | later |
 | 4 | Hierarchy & planning (mindmap / gantt / git) | later |
 | 5 | Charts & boards (selective) | later |
@@ -68,18 +68,18 @@ See `BEHAVIORS.md`, `CHANGELOG.md`.
 
 ---
 
-## Phase 1 — Flowchart completeness
+## Phase 1 — Flowchart completeness · **done** (core)
 
 Closest to **graph-easy** parity inside Mermaid.
 
 | ID | Item | Notes |
 |----|------|--------|
-| 1.1 | Real **subgraphs** (title + border + containment) | Today: warn + flatten |
-| 1.2 | Nested subgraphs (if tractable) | Architecture diagrams |
-| 1.3 | Subgraph-safe edge routing | Edges in/out of groups |
-| 1.4 | Optional terminal-safe styling subset | Not a theme zoo; maybe ignore color still |
+| 1.1 | Real **subgraphs** (title + border + containment) | **done** — parse + bbox + frame |
+| 1.2 | Nested subgraphs (if tractable) | parent stack works; polish later if needed |
+| 1.3 | Subgraph-safe edge routing | Edges may cross frames (acceptable) |
+| 1.4 | Optional terminal-safe styling subset | Still deferred |
 
-**Exit:** systems / architecture Mermaid flowcharts render as groups, not flat soup.
+**Exit met:** titled group frames around members; B15 + `subgraph-basic` / `subgraph-lr` goldens.
 
 ---
 
@@ -202,8 +202,7 @@ Only where glance quality holds (don’t become a junk drawer).
 ## Suggested near-term sequence
 
 ```text
-1.x subgraphs
-→ 2.x sequence
+2.x sequence
 → 3.x state/class/ER
 → 4.x mindmap/gantt/git
 → 5.x charts (selective)

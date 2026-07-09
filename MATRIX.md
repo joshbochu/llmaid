@@ -45,7 +45,7 @@ not a formal audit. llmaid cells should stay honest.
 | Mermaid gitGraph | N | N | Y | N | N | Y |
 | Mermaid pie / charts | N | N | Y | N | N | Y |
 | Mermaid journey / kanban / block | N | N | Y | N | N | Y |
-| Mermaid subgraph (real layout) | N | ? | P | N | — | Y |
+| Mermaid subgraph (real layout) | Y | ? | P | N | — | Y |
 | graph-easy text / DOT in | N | N | N | N | Y | N |
 | diagon mini-languages | N | N | N | Y | N | N |
 | JSON graph schema in | N | Y | P | N | N | N |
@@ -74,8 +74,8 @@ Mermaid as the only primary agent language.
 | Parallel edges (multi-edge) | Y | N | Y | P | Y | Y |
 | Node shapes (rect family) | Y | Y | Y | P | Y | Y |
 | Shape fidelity vs grid | P (hints) | P | P | P | P | Y (SVG) |
-| Subgraphs / clusters | N | ? | P | N | Y | Y |
-| Nested groups | N | N | P | N | Y | Y |
+| Subgraphs / clusters | Y | ? | P | N | Y | Y |
+| Nested groups | P | N | P | N | Y | Y |
 | Fan-out `&` | Y | ? | ? | N | P | Y |
 | Never truncate labels | Y | N | P | Y | Y | Y |
 | Orthogonal elbows | Y | Y | Y | Y | Y | Y |
@@ -190,7 +190,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Engine / primitive family | llmaid | termiflow | termaid | diagon | graph-easy | mermaid.js |
 |---------------------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
 | Layered digraph (Sugiyama-like) | Y | Y | Y | Y (dag) | Y | Y |
-| Clustered / compound graph | N | ? | P | N | Y | Y |
+| Clustered / compound graph | Y | ? | P | N | Y | Y |
 | Sequence / swimlane time | N | N | Y | Y (seq) | N | Y |
 | Tree hierarchy | N | N | Y | Y (tree) | P | Y |
 | Math typography | N | N | N | Y | N | N |
@@ -209,7 +209,7 @@ What layout *kind* each tool implements — independent of syntax.
 | DAG / flowchart | `flowchart` / `graph` | **Y** |
 | Edge labels & styles | `-->` `-.->` `==>` \|label\| | **Y** |
 | Node shapes | `[ ] ( ) { }` … | **Y** (hints) |
-| Groups / machines | `subgraph` | **N** (flatten) |
+| Groups / machines | `subgraph` | **Y** |
 | Sequence | `sequenceDiagram` | **N** |
 | Tree | `mindmap` or flowchart TB | **N** |
 | Class / ER / state | respective types | **N** |
@@ -246,3 +246,4 @@ When you ship a feature:
 |------|------|
 | 2026-07-09 | Initial matrix from design + local tool probes (tw, termaid demos, diagon modes, graph-easy). |
 | 2026-07-09 | Phase 0: TB/BT labels, RL goldens, mono-chain straighten; flowchart direction cells strengthened. |
+| 2026-07-09 | Phase 1.1: real subgraphs (parse membership, bbox frames, titles). |

@@ -103,6 +103,16 @@ pub struct Warning {
     pub msg: String,
 }
 
+/// A Mermaid `subgraph` … `end` group. Members are node indices in declaration
+/// order. Nested groups set `parent` to the enclosing subgraph index.
+#[derive(Debug)]
+pub struct Subgraph {
+    pub id: String,
+    pub title: String,
+    pub parent: Option<usize>,
+    pub members: Vec<usize>,
+}
+
 #[derive(Debug)]
 pub struct ParseError {
     pub line: usize,
@@ -122,8 +132,13 @@ pub struct Graph {
     pub dir: Option<Dir>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    pub subgraphs: Vec<Subgraph>,
+    /// Subgraph index for each node (`None` = top-level). Parallel to `nodes`.
+    pub node_sg: Vec<Option<usize>>,
     pub warnings: Vec<Warning>,
     index: HashMap<String, usize>,
+    /// Parse-time stack of open subgraph indices (not part of the public IR).
+    sg_stack: Vec<usize>,
 }
 
 impl Graph {
@@ -157,8 +172,35 @@ impl Graph {
             label,
             shape,
         });
-        self.index.insert(id.to_string(), self.nodes.len() - 1);
-        self.nodes.len() - 1
+        let ix = self.nodes.len() - 1;
+        self.index.insert(id.to_string(), ix);
+        let sg = self.sg_stack.last().copied();
+        self.node_sg.push(sg);
+        if let Some(sgi) = sg {
+            self.subgraphs[sgi].members.push(ix);
+        }
+        ix
+    }
+
+    fn open_subgraph(&mut self, id: String, title: String) {
+        let parent = self.sg_stack.last().copied();
+        let sgi = self.subgraphs.len();
+        self.subgraphs.push(Subgraph {
+            id,
+            title,
+            parent,
+            members: Vec::new(),
+        });
+        self.sg_stack.push(sgi);
+    }
+
+    fn close_subgraph(&mut self, line: usize) {
+        if self.sg_stack.pop().is_none() {
+            self.warnings.push(Warning {
+                line,
+                msg: "`end` without an open subgraph".to_string(),
+            });
+        }
     }
 }
 
@@ -169,7 +211,6 @@ const IGNORED_DIRECTIVES: &[&str] = &[
     "style",
     "linkStyle",
     "click",
-    "subgraph",
     "direction",
     "accTitle",
     "accDescr",
@@ -225,20 +266,29 @@ pub fn parse(src: &str) -> Result<Graph, ParseError> {
                 continue;
             }
 
+            if keyword == "subgraph" {
+                if !seen_header && !warned_no_header {
+                    warned_no_header = true;
+                    g.warnings.push(Warning {
+                        line: line_no,
+                        msg: "missing `flowchart <DIR>` header; assuming `flowchart TB`".to_string(),
+                    });
+                }
+                let rest = stmt["subgraph".len()..].trim();
+                let (id, title) = parse_subgraph_header(rest);
+                g.open_subgraph(id, title);
+                continue;
+            }
+
             if keyword == "end" {
-                // Closes a subgraph we already warned about; nothing to do.
+                g.close_subgraph(line_no);
                 continue;
             }
 
             if IGNORED_DIRECTIVES.contains(&keyword) {
-                let detail = if keyword == "subgraph" {
-                    "subgraph ignored; its contents are parsed at top level"
-                } else {
-                    "directive ignored"
-                };
                 g.warnings.push(Warning {
                     line: line_no,
-                    msg: format!("`{keyword}`: {detail}"),
+                    msg: format!("`{keyword}`: directive ignored"),
                 });
                 continue;
             }
@@ -255,7 +305,53 @@ pub fn parse(src: &str) -> Result<Graph, ParseError> {
         }
     }
 
+    if !g.sg_stack.is_empty() {
+        g.warnings.push(Warning {
+            line: src.lines().count().max(1),
+            msg: format!(
+                "{} unclosed subgraph(s) at end of input",
+                g.sg_stack.len()
+            ),
+        });
+        g.sg_stack.clear();
+    }
+
     Ok(g)
+}
+
+/// Parse `subgraph` header rest into `(id, title)`.
+/// Forms: `id`, `id [Title]`, `"Title"`, `id "Title"`.
+fn parse_subgraph_header(rest: &str) -> (String, String) {
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return ("sg".into(), "sg".into());
+    }
+    // Quoted title only: subgraph "My Group"
+    if rest.starts_with('"') {
+        if let Some(end) = rest[1..].find('"') {
+            let title = rest[1..1 + end].to_string();
+            let id = title
+                .chars()
+                .map(|c| if c.is_alphanumeric() { c } else { '_' })
+                .collect::<String>();
+            let id = if id.is_empty() { "sg".into() } else { id };
+            return (id, title);
+        }
+    }
+    let mut parts = rest.splitn(2, char::is_whitespace);
+    let id = parts.next().unwrap_or("sg").to_string();
+    let rem = parts.next().unwrap_or("").trim();
+    if rem.is_empty() {
+        return (id.clone(), id);
+    }
+    // [Title] or "Title"
+    if rem.starts_with('[') && rem.ends_with(']') && rem.len() >= 2 {
+        return (id, rem[1..rem.len() - 1].to_string());
+    }
+    if rem.starts_with('"') && rem.ends_with('"') && rem.len() >= 2 {
+        return (id, rem[1..rem.len() - 1].to_string());
+    }
+    (id, rem.to_string())
 }
 
 /// One statement: `group (edge group)*` where `group = node (& node)*`.
@@ -477,6 +573,24 @@ fn dump_impl(g: &Graph, include_warnings: bool) -> String {
             n.shape.name(),
             n.label.replace('\n', "\\n")
         ));
+    }
+    if !g.subgraphs.is_empty() {
+        out.push_str("subgraphs:\n");
+        for (i, sg) in g.subgraphs.iter().enumerate() {
+            let members: Vec<&str> = sg.members.iter().map(|&ni| g.nodes[ni].id.as_str()).collect();
+            let parent = sg
+                .parent
+                .map(|p| g.subgraphs[p].id.as_str())
+                .unwrap_or("-");
+            out.push_str(&format!(
+                "  {} id={} title=\"{}\" parent={} members=[{}]\n",
+                i,
+                sg.id,
+                sg.title.replace('\n', "\\n"),
+                parent,
+                members.join(",")
+            ));
+        }
     }
     out.push_str("edges:\n");
     for e in &g.edges {
