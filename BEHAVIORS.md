@@ -39,8 +39,9 @@ their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–
 - **B10** *pending M2* — Given a label that fits, when rendered, then it stays
   on one line; wrapping happens only under width pressure (B9), never at an
   arbitrary box-width cap.
-- **B11** *pending M3* — Given a self-loop (`eval --> eval`), when rendered,
-  then a tight loop hugs one side of the box with the arrow returning in.
+- **B11** Given a self-loop (`eval --> eval`) or cycle back edge, when
+  rendered, then a tight loop or perimeter route returns to the target with
+  its arrow and label preserved.
 - **B12** *pending M3* — Given parallel edges (B3), when rendered, then both
   are drawn as distinct paths, each carrying its own label.
 - **B13** *pending M2* — Given non-rect shapes, when rendered, then boxes are

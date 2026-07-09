@@ -42,8 +42,9 @@ fn golden_parse_snapshots() {
             fs::write(&ir_path, &got).unwrap();
             continue;
         }
-        let want = fs::read_to_string(&ir_path)
-            .unwrap_or_else(|_| panic!("missing snapshot {name}.ir — run UPDATE_GOLDEN=1 cargo test"));
+        let want = fs::read_to_string(&ir_path).unwrap_or_else(|_| {
+            panic!("missing snapshot {name}.ir — run UPDATE_GOLDEN=1 cargo test")
+        });
         if got != want {
             failures.push(format!(
                 "case `{name}` diverged from snapshot:\n--- want ---\n{want}\n--- got ---\n{got}"
@@ -58,7 +59,11 @@ fn parse_errors_name_line_and_expectation() {
     let err = llmaid::parse::parse("flowchart LR\nA[unclosed").unwrap_err();
     assert_eq!(err.line, 2);
     assert!(err.msg.contains("unterminated"), "got: {}", err.msg);
-    assert!(err.msg.contains("]"), "should name the expected closer: {}", err.msg);
+    assert!(
+        err.msg.contains("]"),
+        "should name the expected closer: {}",
+        err.msg
+    );
 
     let err = llmaid::parse::parse("flowchart LR\nA -->").unwrap_err();
     assert_eq!(err.line, 2);
@@ -70,7 +75,11 @@ fn parse_errors_name_line_and_expectation() {
 
     let err = llmaid::parse::parse("flowchart LR\nA -->|no close B").unwrap_err();
     assert_eq!(err.line, 2);
-    assert!(err.msg.contains("unterminated edge label"), "got: {}", err.msg);
+    assert!(
+        err.msg.contains("unterminated edge label"),
+        "got: {}",
+        err.msg
+    );
 }
 
 #[test]

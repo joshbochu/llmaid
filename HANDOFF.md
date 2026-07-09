@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-06, end of first session.
+Last updated: 2026-07-09, after committing M2 renderer + B11.
 
 ## What this project is
 
@@ -13,91 +13,57 @@ Read these before writing code, in this order:
 
 1. `AGENTS.md` — commands, module map, non-negotiable invariants, conventions.
 2. `DESIGN.md` — full v1 design: scope, architecture, aesthetic spec, milestones.
-3. `BEHAVIORS.md` — behavior contracts B1–B14; B9–B14 are *pending* and land
-   with M2/M3 (each needs its `b<N>_...` test when implemented).
+3. `BEHAVIORS.md` — behavior contracts B1–B14; B9–B10 and B12–B14 are
+   *pending* and land with M2/M3 (each needs its `b<N>_...` test when
+   implemented).
 4. `CHANGELOG.md` — decisions D1–D14 with rationale and rejected alternatives.
    Do not relitigate these; extend the log if you make new decisions.
 
 ## Current state (exact)
 
-**Milestone M1 is complete and green. M2 is ~40% written and NOT yet compiling
-as a unit — see "M2 in flight" below.**
+**M2 renderer + B11 are committed on `main`.** Working tree should be clean.
 
-- `cargo test`: 13/13 pass (10 behavior + 3 golden/error/determinism).
-  NOTE: tests currently compile because `src/lib.rs` only declares
-  `pub mod parse;` — the new M2 files are not yet registered as modules and
-  have therefore NEVER been compiled. Expect compile errors on first build.
-- **Nothing is committed yet.** All files untracked; git repo initialized with
-  no commits. The user has not asked for commits — ask before committing.
-- Sandbox note: cargo builds default to a shared cache target dir; use
-  `CARGO_TARGET_DIR=$PWD/target` when you need `./target/release/llmaid` to
-  exist in-workspace.
+- Baseline includes parse → layout → render end-to-end; layout/style wired in
+  `lib.rs`; CLI honors `--ascii` (`--width` still unused).
+- `cargo test`: 14/14 pass (11 behavior + 3 golden/error/determinism).
+- `src/render.rs` draws boxes, forward channel edges, arrowheads, on-arrow
+  labels for LR/RL, ASCII/Unicode glyphs, self-loops, and cycle back edges.
+- `tests/cases/*.txt` rendered snapshots are in the tree for eyeballing; they
+  are not yet byte-compared (B14).
 
-### Done (M1 + grilled behaviors)
+### Done
 
-- `src/parse.rs` (583 lines) — full v1 syntax: 7 shapes, `-->`/`---`/`-.->`/
-  `==>` + `-- text -->` and `|label|` forms, `&` fan-out, chaining, `;`
-  statements, `%%` comments, quoted labels, `<br/>` → newline in labels (B1),
-  redeclaration warns + last wins (B2), forgiving directives (B5), errors with
-  line + expectation (B4). `dump()` = golden format (includes warnings);
-  `dump_diagram()` = stdout format (no warnings — B6).
-- `src/main.rs` (133 lines) — std-only CLI: `--ascii --width --strict -h -V`,
-  file-or-stdin. stdout purity (B6), empty graph → exit 0 + stderr warning
-  (B7), fixed default width 100 (B8). Currently prints the IR dump as a
-  placeholder — M2 replaces that with the render.
-- `tests/golden.rs` + `tests/cases/*.mmd`→`*.ir` (10 cases) — regenerate with
-  `UPDATE_GOLDEN=1 cargo test`. Cases include the user's reference diagrams
-  (pipeline, diamond, forkmerge, cycle w/ self-loop) — these are the quality
-  bar for rendering; the user picked their style preferences from these.
-- `tests/behavior.rs` — b1..b8 given/when/then tests; CLI ones run the real
-  binary via `CARGO_BIN_EXE_llmaid`.
+- Parser behaviors B1–B5 and CLI behaviors B6–B8 are still green.
+- Minimal M2 pipeline is wired: `pipeline.mmd` renders at the quality bar.
+- LR/TB layouts, fork/merge, fanout, dotted/thick edge styles, Unicode labels,
+  and `--ascii` are working in the current renderer.
+- B11 is landed: self-loops hug the node and cycle back edges use perimeter
+  return routes with arrows/labels preserved. `tests/behavior.rs` includes
+  `b11_given_self_loop_and_back_edge_then_routes_return_to_targets`.
 
-### M2 in flight (written this session, unverified)
+### Still missing
 
-- `src/style.rs` (89 lines) — Unicode/ASCII glyph sets; junction resolution by
-  N/E/S/W bitmask (`─` meets `│` ⇒ `┼`); rounded corners; dotted `┄┊`, thick
-  `━┃`; arrowheads `▶◀▲▼` / `>< ^v`.
-- `src/layout.rs` (686 lines) — the Sugiyama implementation in integer grid
-  coords. Key abstraction: **flow space** — `f` along the rank axis, `c`
-  across; LR/RL map flow→screen-x, TB/BT flow→screen-y, RL/BT mirror the flow
-  axis at render time. One layout implementation serves all four directions.
-  Pipeline: DFS back-edge marking (declaration order) → longest-path ranks
-  (Kahn) → dummy nodes for multi-rank edges → 4 barycenter sweeps (ties by
-  declaration index) → cross-coordinate legalization sweeps → port assignment
-  (edges spread across a box side's interior rows, ordered by far-end cross
-  position) → channel segments between adjacent ranks with a label zone +
-  numbered jog tracks (`Channel::track_f`). Self-loops and back edges are
-  classified and left for route/render (B11: tight side loop; back edges:
-  perimeter channel).
-
-### Not started
-
-- `src/render.rs` — canvas + box drawing + shape hints (B13: rect frame with
-  hint glyphs, e.g. ◇ corners for diamond — see DESIGN.md aesthetic spec) +
-  consuming `layout::Placed` (boxes, segs, channels, pass_through) to draw
-  edges, elbows, on-arrow labels, arrowheads, self-loops, back edges.
-- Registering modules in `src/lib.rs` (`pub mod layout; pub mod style;` +
-  render when it exists) and wiring `main.rs`: parse → layout → render,
-  honoring `--ascii` and `--width`.
-- `.txt` golden snapshots for rendered output; invariant checks (B14);
-  behavior tests b9–b14; the D9 overflow ladder (compact → wrap → over-width);
-  `--width` is currently accepted but unused.
+- B9/B10: `--width` overflow ladder (compact gaps → wrap labels → over-width
+  rather than truncating/failing).
+- B12: parallel edges need fully distinct paths and labels; `edge-labels.mmd`
+  is still the main quality bar.
+- B13: shape hints for non-rect shapes (diamond/cylinder/stadium/circle/etc.).
+- B14: rendered `.txt` golden comparison plus invariants (closed borders,
+  edges reach endpoints, no label overwrite).
+- Behavior tests b9, b10, b12, b13, b14 and corresponding pending-marker
+  removals in `BEHAVIORS.md`.
+- RL/BT mirroring needs explicit verification beyond compile/test coverage.
 
 ## Suggested next steps, in order
 
-1. Add `pub mod layout; pub mod style;` to `lib.rs`, run `cargo build`, fix
-   compile errors in `layout.rs` (it has never compiled; expect borrow-checker
-   friction in `order_by_barycenter`'s `split_at_mut` usage and the
-   `legalize`/`neighbor_centers` call in the alignment sweep).
-2. Write a minimal `render.rs` for LR only: boxes + straight/elbow channel
-   edges + arrowheads, no labels. Wire into main. Eyeball
-   `tests/cases/pipeline.mmd` — get first light before adding features.
-3. Iterate: on-arrow edge labels (space already reserved via channel
-   `label_zone`), fork/merge (diamond case), TB, then RL/BT mirroring.
-4. Then: shape hints (B13), self-loops (B11), back edges, `--ascii`,
-   invariants (B14), `.txt` goldens, remaining behavior tests, overflow ladder
-   (B9/B10), parallel edges (B12).
-5. Keep `CHANGELOG.md` and `BEHAVIORS.md` current as behaviors land — this is
+1. B12 parallel routing: make `edge-labels.mmd` show each A↔B/C path and label
+   distinctly without merged thick/dotted spans.
+2. B13 shape hints: rect frame + hint glyphs per DESIGN.md.
+3. B9/B10 width ladder: wire the fixed default width through layout/render.
+4. B14 rendered goldens + invariants: byte-compare `tests/cases/*.txt` and add
+   border/endpoint/label overwrite checks.
+5. Verify RL/BT mirroring with explicit cases.
+6. Keep `CHANGELOG.md` and `BEHAVIORS.md` current as behaviors land — this is
    a logged convention in AGENTS.md.
 
 ## Quality bar (what "done" looks like)

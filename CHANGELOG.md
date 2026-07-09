@@ -6,6 +6,11 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Renderer: self-loops and cycle back edges now render as explicit return
+  routes (B11), preserving arrows and labels instead of leaving disconnected
+  stubs.
+- Renderer: labeled edges reserve more horizontal breathing room around the
+  label so arrows and text are easier to scan.
 - Behavior contracts (`BEHAVIORS.md`, B1–B14) from a grilling session, with a
   given/when/then test layer (`tests/behavior.rs`) — one named test per landed
   contract; B9–B14 land with M2/M3. B6 immediately caught the placeholder CLI

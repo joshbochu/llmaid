@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::process::ExitCode;
 
-use llmaid::parse;
+use llmaid::{layout, parse, render, style::Style};
 
 const USAGE: &str = "\
 llmaid — Mermaid flowcharts rendered for the terminal
@@ -48,7 +48,9 @@ fn parse_args() -> Result<Option<Opts>, String> {
             "--ascii" => opts.ascii = true,
             "--strict" => opts.strict = true,
             "--width" => {
-                let value = args.next().ok_or("--width needs a number, e.g. --width 100")?;
+                let value = args
+                    .next()
+                    .ok_or("--width needs a number, e.g. --width 100")?;
                 let n: usize = value
                     .parse()
                     .map_err(|_| format!("--width needs a number, got `{value}`"))?;
@@ -125,9 +127,9 @@ fn main() -> ExitCode {
     // B8: default width is fixed (no terminal detection) for byte-determinism.
     let _width = opts.width.unwrap_or(100);
 
-    // M2 will replace this IR dump with the rendered diagram
-    // (wiring _width and opts.ascii into layout/render).
-    let _ = opts.ascii;
-    print!("{}", parse::dump_diagram(&graph));
+    // TODO(M2): apply the overflow ladder to honor --width without truncation.
+    let placed = layout::layout(&graph);
+    let diagram = render::render(&graph, &placed, Style { ascii: opts.ascii });
+    print!("{diagram}");
     ExitCode::SUCCESS
 }

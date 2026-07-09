@@ -342,7 +342,10 @@ fn parse_node(g: &mut Graph, cur: &mut Cur, line: usize) -> Result<usize, ParseE
 ///   solid   -->  ---          -- text -->   -- text ---
 ///   dotted  -.-> -.-          -. text .->   -. text .-
 ///   thick   ==>  ===          == text ==>   == text ===
-fn parse_edge_op(cur: &mut Cur, line: usize) -> Result<(EdgeKind, bool, Option<String>), ParseError> {
+fn parse_edge_op(
+    cur: &mut Cur,
+    line: usize,
+) -> Result<(EdgeKind, bool, Option<String>), ParseError> {
     if cur.starts_with("-.") {
         cur.advance(2);
         if cur.peek() == Some('-') || cur.peek() == Some('>') {
@@ -350,7 +353,9 @@ fn parse_edge_op(cur: &mut Cur, line: usize) -> Result<(EdgeKind, bool, Option<S
             let arrow = cur.eat('>');
             return Ok((EdgeKind::Dotted, arrow, None));
         }
-        let text = cur.take_until_str(".-").ok_or_else(|| unterminated_edge(line, "-.", ".->"))?;
+        let text = cur
+            .take_until_str(".-")
+            .ok_or_else(|| unterminated_edge(line, "-.", ".->"))?;
         cur.take_while(|c| c == '-' || c == '.');
         let arrow = cur.eat('>');
         return Ok((EdgeKind::Dotted, arrow, Some(clean_label(&text))));
@@ -364,7 +369,9 @@ fn parse_edge_op(cur: &mut Cur, line: usize) -> Result<(EdgeKind, bool, Option<S
         if eqs.len() >= 3 {
             return Ok((EdgeKind::Thick, false, None));
         }
-        let text = cur.take_until_str("==").ok_or_else(|| unterminated_edge(line, "==", "==>"))?;
+        let text = cur
+            .take_until_str("==")
+            .ok_or_else(|| unterminated_edge(line, "==", "==>"))?;
         cur.take_while(|c| c == '=');
         let arrow = cur.eat('>');
         return Ok((EdgeKind::Thick, arrow, Some(clean_label(&text))));
@@ -378,7 +385,9 @@ fn parse_edge_op(cur: &mut Cur, line: usize) -> Result<(EdgeKind, bool, Option<S
         if dashes.len() >= 3 {
             return Ok((EdgeKind::Solid, false, None));
         }
-        let text = cur.take_until_str("--").ok_or_else(|| unterminated_edge(line, "--", "-->"))?;
+        let text = cur
+            .take_until_str("--")
+            .ok_or_else(|| unterminated_edge(line, "--", "-->"))?;
         cur.take_while(|c| c == '-');
         let arrow = cur.eat('>');
         return Ok((EdgeKind::Solid, arrow, Some(clean_label(&text))));
@@ -419,10 +428,7 @@ fn clean_label(raw: &str) -> String {
             i += 1;
         }
     }
-    out.lines()
-        .map(str::trim)
-        .collect::<Vec<_>>()
-        .join("\n")
+    out.lines().map(str::trim).collect::<Vec<_>>().join("\n")
 }
 
 /// If a `<br>` / `<br/>` / `<br />` tag starts at `i`, return the index past it.

@@ -1,8 +1,9 @@
 //! Behavior-driven tests. One test per contract in BEHAVIORS.md, named
 //! `b<N>_given_..._then_...`. Parser behaviors call the library; CLI
-//! behaviors (B6–B8) run the real binary. B9–B14 land with M2/M3.
+//! behaviors (B6–B8, B11) run the real binary. B9–B10 and B12–B14 land with
+//! M2/M3.
 
-use llmaid::parse::{parse, Shape};
+use llmaid::parse::{Shape, parse};
 use std::process::{Command, Stdio};
 
 // ---------- Parsing ----------
@@ -22,7 +23,9 @@ fn b2_given_redeclared_node_then_last_wins_with_warning() {
     let g = parse("flowchart LR\nA[First]\nA[Second]\nA --> B").unwrap();
     assert_eq!(g.nodes[0].label, "Second");
     assert!(
-        g.warnings.iter().any(|w| w.line == 3 && w.msg.contains("redeclared")),
+        g.warnings
+            .iter()
+            .any(|w| w.line == 3 && w.msg.contains("redeclared")),
         "expected a redeclaration warning, got: {:?}",
         g.warnings
     );
@@ -36,7 +39,11 @@ fn b2_given_redeclared_node_then_last_wins_with_warning() {
 fn b2_given_shape_change_then_warning_names_previous() {
     let g = parse("flowchart LR\nA[Box]\nA{Box}").unwrap();
     assert_eq!(g.nodes[0].shape, Shape::Diamond);
-    assert!(g.warnings[0].msg.contains("rect \"Box\""), "got: {}", g.warnings[0].msg);
+    assert!(
+        g.warnings[0].msg.contains("rect \"Box\""),
+        "got: {}",
+        g.warnings[0].msg
+    );
 }
 
 #[test]
@@ -45,7 +52,10 @@ fn b3_given_parallel_edges_then_both_kept_with_labels() {
     assert_eq!(g.edges.len(), 2);
     assert_eq!(g.edges[0].label.as_deref(), Some("x"));
     assert_eq!(g.edges[1].label.as_deref(), Some("y"));
-    assert_eq!((g.edges[0].from, g.edges[0].to), (g.edges[1].from, g.edges[1].to));
+    assert_eq!(
+        (g.edges[0].from, g.edges[0].to),
+        (g.edges[1].from, g.edges[1].to)
+    );
 }
 
 #[test]
@@ -54,7 +64,11 @@ fn b4_given_malformed_input_then_error_names_line_and_expectation() {
         ("flowchart LR\nA[unclosed", 2, "expected closing `]`"),
         ("flowchart LR\nA -->", 2, "expected a node id"),
         ("flowchart LR\nA --> B\nB ->> C", 3, "expected an edge"),
-        ("flowchart LR\nA -->|no close B", 2, "unterminated edge label"),
+        (
+            "flowchart LR\nA -->|no close B",
+            2,
+            "unterminated edge label",
+        ),
     ];
     for (src, line, needle) in cases {
         let err = parse(src).unwrap_err();
@@ -82,7 +96,12 @@ fn run_llmaid(args: &[&str], stdin: &str) -> (String, String, i32) {
         .spawn()
         .unwrap();
     use std::io::Write;
-    child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     (
         String::from_utf8(out.stdout).unwrap(),
@@ -103,7 +122,10 @@ fn b6_given_warnings_then_stdout_has_only_the_diagram() {
     let (stdout, stderr, code) = run_llmaid(&[], "classDef x fill:#f9f\nflowchart LR\nA --> B\n");
     assert_eq!(code, 0);
     assert!(stderr.contains("warning"), "warnings must go to stderr");
-    assert!(!stdout.contains("warning"), "stdout must never carry diagnostics");
+    assert!(
+        !stdout.contains("warning"),
+        "stdout must never carry diagnostics"
+    );
     assert!(!stdout.trim().is_empty());
 }
 
@@ -113,7 +135,10 @@ fn b7_given_no_nodes_then_exit_0_empty_stdout_warning_on_stderr() {
         let (stdout, stderr, code) = run_llmaid(&[], input);
         assert_eq!(code, 0, "for {input:?}");
         assert_eq!(stdout, "", "for {input:?}");
-        assert!(stderr.contains("nothing to render"), "for {input:?}: {stderr}");
+        assert!(
+            stderr.contains("nothing to render"),
+            "for {input:?}: {stderr}"
+        );
     }
 }
 
@@ -124,4 +149,30 @@ fn b8_given_same_input_then_byte_identical_output_across_runs() {
     let (out2, _, _) = run_llmaid(&[], src);
     assert_eq!(out1, out2);
     assert!(!out1.is_empty());
+}
+
+// ---------- Layout & rendering ----------
+
+#[test]
+fn b11_given_self_loop_and_back_edge_then_routes_return_to_targets() {
+    let src = "\
+flowchart TB
+  scan[Scanner] --> parse[Parser] --> eval[Interpreter]
+  eval -->|next line| scan
+  eval --> eval
+";
+    let (stdout, stderr, code) = run_llmaid(&[], src);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stdout.contains("next line"),
+        "back-edge label was lost:\n{stdout}"
+    );
+    assert!(
+        stdout.contains('◀'),
+        "back edge should return from the perimeter:\n{stdout}"
+    );
+    assert!(
+        stdout.contains('▲'),
+        "self-loop should return into the node:\n{stdout}"
+    );
 }

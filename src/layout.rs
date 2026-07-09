@@ -13,6 +13,7 @@ use unicode_width::UnicodeWidthStr;
 /// Padding inside a box between border and label, in flow-space cross terms
 /// this is only horizontal on screen (label lines are padded when rendered).
 pub const PAD: usize = 1;
+pub const EDGE_LABEL_PAD: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Slot {
@@ -95,7 +96,11 @@ pub fn layout(g: &Graph) -> Placed {
         if e.from == e.to {
             return None;
         }
-        Some(if reversed[ei] { (e.to, e.from) } else { (e.from, e.to) })
+        Some(if reversed[ei] {
+            (e.to, e.from)
+        } else {
+            (e.from, e.to)
+        })
     };
 
     // --- Rank assignment: longest path (Kahn).
@@ -213,7 +218,16 @@ pub fn layout(g: &Graph) -> Placed {
             let desired: Vec<Option<usize>> = ranks[r]
                 .iter()
                 .map(|slot| {
-                    neighbor_centers(g, slot, r, &ranks, &slot_cross, &boxes, &reversed, &edge_spans)
+                    neighbor_centers(
+                        g,
+                        slot,
+                        r,
+                        &ranks,
+                        &slot_cross,
+                        &boxes,
+                        &reversed,
+                        &edge_spans,
+                    )
                 })
                 .collect();
             legalize(
@@ -274,13 +288,23 @@ pub fn layout(g: &Graph) -> Placed {
     let in_port = port_map(g, &boxes, &reversed, &edge_spans, &pass_through, false);
 
     for ei in 0..g.edges.len() {
-        let Some((rs, rt)) = edge_spans[ei] else { continue };
+        let Some((rs, rt)) = edge_spans[ei] else {
+            continue;
+        };
         if reversed[ei] {
             continue; // routed as a perimeter back edge
         }
         for r in rs..rt {
-            let from_c = if r == rs { out_port[ei] } else { dummy_cross(ei, r) };
-            let to_c = if r + 1 == rt { in_port[ei] } else { dummy_cross(ei, r + 1) };
+            let from_c = if r == rs {
+                out_port[ei]
+            } else {
+                dummy_cross(ei, r)
+            };
+            let to_c = if r + 1 == rt {
+                in_port[ei]
+            } else {
+                dummy_cross(ei, r + 1)
+            };
             segs[ei].push(Seg {
                 channel: r,
                 from: (0, from_c), // f filled in after flow assignment
@@ -298,10 +322,11 @@ pub fn layout(g: &Graph) -> Placed {
         let mut tracks = 0usize;
         for &ei in &channel_edges[r] {
             let seg = segs[ei].iter().find(|s| s.channel == r).unwrap();
-            let labeled_here = g.edges[ei].label.is_some()
-                && edge_spans[ei].map(|(rs, _)| rs) == Some(r);
+            let labeled_here =
+                g.edges[ei].label.is_some() && edge_spans[ei].map(|(rs, _)| rs) == Some(r);
             if labeled_here {
-                label_zone = label_zone.max(g.edges[ei].label.as_deref().unwrap().width());
+                label_zone = label_zone
+                    .max(g.edges[ei].label.as_deref().unwrap().width() + 2 * EDGE_LABEL_PAD);
             }
             if seg.from.1 != seg.to.1 {
                 tracks += 1;
@@ -330,11 +355,7 @@ pub fn layout(g: &Graph) -> Placed {
             (s.from.1, ei)
         });
         for (t, &ei) in benders.iter().enumerate() {
-            segs[ei]
-                .iter_mut()
-                .find(|s| s.channel == r)
-                .unwrap()
-                .track = Some(t);
+            segs[ei].iter_mut().find(|s| s.channel == r).unwrap().track = Some(t);
         }
     }
 
@@ -367,7 +388,9 @@ pub fn layout(g: &Graph) -> Placed {
 
     // Fill in segment endpoint flow coords (border cells).
     for ei in 0..g.edges.len() {
-        let Some((rs, rt)) = edge_spans[ei] else { continue };
+        let Some((rs, rt)) = edge_spans[ei] else {
+            continue;
+        };
         if reversed[ei] {
             continue;
         }
@@ -463,12 +486,22 @@ fn slot_neighbors(
                 if e.from == e.to || reversed[ei] {
                     continue;
                 }
-                let Some((rs, rt)) = edge_spans[ei] else { continue };
+                let Some((rs, rt)) = edge_spans[ei] else {
+                    continue;
+                };
                 if toward_prev && e.to == *i && rt == r {
-                    out.push(if rt - rs == 1 { Slot::Real(e.from) } else { Slot::Dummy(ei) });
+                    out.push(if rt - rs == 1 {
+                        Slot::Real(e.from)
+                    } else {
+                        Slot::Dummy(ei)
+                    });
                 }
                 if !toward_prev && e.from == *i && rs == r {
-                    out.push(if rt - rs == 1 { Slot::Real(e.to) } else { Slot::Dummy(ei) });
+                    out.push(if rt - rs == 1 {
+                        Slot::Real(e.to)
+                    } else {
+                        Slot::Dummy(ei)
+                    });
                 }
             }
         }
@@ -476,9 +509,17 @@ fn slot_neighbors(
             let e = &g.edges[*ei];
             let (rs, rt) = edge_spans[*ei].unwrap();
             if toward_prev {
-                out.push(if r - 1 == rs { Slot::Real(e.from) } else { Slot::Dummy(*ei) });
+                out.push(if r - 1 == rs {
+                    Slot::Real(e.from)
+                } else {
+                    Slot::Dummy(*ei)
+                });
             } else {
-                out.push(if r + 1 == rt { Slot::Real(e.to) } else { Slot::Dummy(*ei) });
+                out.push(if r + 1 == rt {
+                    Slot::Real(e.to)
+                } else {
+                    Slot::Dummy(*ei)
+                });
             }
         }
     }
@@ -493,9 +534,8 @@ fn order_by_barycenter(
     edge_spans: &[Option<(usize, usize)>],
 ) {
     let nranks = ranks.len();
-    let pos_of = |rslots: &[Slot], want: &Slot| -> Option<usize> {
-        rslots.iter().position(|s| s == want)
-    };
+    let pos_of =
+        |rslots: &[Slot], want: &Slot| -> Option<usize> { rslots.iter().position(|s| s == want) };
     for _ in 0..4 {
         for r in 1..nranks {
             let (before, at) = ranks.split_at_mut(r);
@@ -641,7 +681,9 @@ fn port_map(
             if e.from == e.to || reversed[ei] {
                 continue;
             }
-            let Some((rs, rt)) = edge_spans[ei] else { continue };
+            let Some((rs, rt)) = edge_spans[ei] else {
+                continue;
+            };
             let is_here = if outgoing { e.from == ni } else { e.to == ni };
             if !is_here {
                 continue;
