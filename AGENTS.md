@@ -15,6 +15,10 @@ cargo run -q -- diagram.mmd      # render a file
 echo "graph LR; A-->B" | cargo run -q    # render stdin
 cargo test                       # golden snapshots + invariants (< 5s budget)
 cargo build --release            # optimized binary at target/release/llmaid
+
+./scripts/show-gallery.sh        # eyeball all golden cases (live render)
+./scripts/show-gallery.sh --txt  # same, from committed *.txt (fast)
+UPDATE_GOLDEN=1 cargo test        # regen tests/cases/*.{ir,txt} after intentional changes
 ```
 
 ## Architecture
