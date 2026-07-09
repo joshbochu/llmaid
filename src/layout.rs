@@ -657,11 +657,13 @@ fn cluster_origin_shift(g: &Graph, boxes: &[BoxGeom], horizontal: bool) -> (usiz
         }
         let min_f = members.iter().map(|&i| boxes[i].f).min().unwrap();
         let min_c = members.iter().map(|&i| boxes[i].c).min().unwrap();
+        let has_child = g.subgraphs.iter().any(|s| s.parent == Some(si));
+        let top_strip = CLUSTER_TITLE_STRIP + usize::from(has_child);
         if horizontal {
-            shift_c = shift_c.max((CLUSTER_PAD + CLUSTER_TITLE_STRIP).saturating_sub(min_c));
+            shift_c = shift_c.max((CLUSTER_PAD + top_strip).saturating_sub(min_c));
             shift_f = shift_f.max(CLUSTER_PAD.saturating_sub(min_f));
         } else {
-            shift_f = shift_f.max((CLUSTER_PAD + CLUSTER_TITLE_STRIP).saturating_sub(min_f));
+            shift_f = shift_f.max((CLUSTER_PAD + top_strip).saturating_sub(min_f));
             shift_c = shift_c.max(CLUSTER_PAD.saturating_sub(min_c));
         }
     }
