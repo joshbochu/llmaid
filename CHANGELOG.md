@@ -6,6 +6,9 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Layout/render (B12): boxes grow along the cross axis so each forward edge
+  owns a distinct port — parallel edges keep separate paths and labels
+  (no more last-label-wins collapse).
 - Renderer: self-loops and cycle back edges now render as explicit return
   routes (B11), preserving arrows and labels instead of leaving disconnected
   stubs.

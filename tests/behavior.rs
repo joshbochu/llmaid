@@ -1,6 +1,6 @@
 //! Behavior-driven tests. One test per contract in BEHAVIORS.md, named
 //! `b<N>_given_..._then_...`. Parser behaviors call the library; CLI
-//! behaviors (B6–B8, B11) run the real binary. B9–B10 and B12–B14 land with
+//! behaviors (B6–B8, B11–B12) run the real binary. B9–B10 and B13–B14 land with
 //! M2/M3.
 
 use llmaid::parse::{Shape, parse};
@@ -174,5 +174,29 @@ flowchart TB
     assert!(
         stdout.contains('▲'),
         "self-loop should return into the node:\n{stdout}"
+    );
+}
+
+#[test]
+fn b12_given_parallel_edges_then_distinct_paths_and_labels() {
+    let src = "\
+flowchart LR
+  A -->|x| B
+  A -->|y| B
+";
+    let (stdout, stderr, code) = run_llmaid(&[], src);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stdout.contains('x'),
+        "first parallel edge label lost:\n{stdout}"
+    );
+    assert!(
+        stdout.contains('y'),
+        "second parallel edge label lost:\n{stdout}"
+    );
+    let arrows = stdout.chars().filter(|&c| c == '▶').count();
+    assert!(
+        arrows >= 2,
+        "expected two distinct arrowheads for parallel edges, got {arrows}:\n{stdout}"
     );
 }

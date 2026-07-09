@@ -153,6 +153,29 @@ pub fn layout(g: &Graph) -> Placed {
         })
         .collect();
 
+    // B12: grow the cross-axis so each forward edge can own a distinct port.
+    // Single-line boxes only have one interior row; without this, parallel and
+    // multi-out edges collapse onto the same path and overwrite labels.
+    for ni in 0..n {
+        let mut out_d = 0usize;
+        let mut in_d = 0usize;
+        for (ei, e) in g.edges.iter().enumerate() {
+            if e.from == e.to || reversed[ei] {
+                continue;
+            }
+            if e.from == ni {
+                out_d += 1;
+            }
+            if e.to == ni {
+                in_d += 1;
+            }
+        }
+        let need = out_d.max(in_d);
+        if need > 0 {
+            boxes[ni].clen = boxes[ni].clen.max(need + 2);
+        }
+    }
+
     // --- Build rank slot lists with dummies for long edges.
     let mut ranks: Vec<Vec<Slot>> = vec![Vec::new(); nranks];
     for (i, b) in boxes.iter().enumerate() {
