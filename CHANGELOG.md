@@ -6,6 +6,8 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Subgraph aesthetics: interior title band (not on the border stroke), larger
+  pad (2), nested parent clearance so Outer/Inner titles do not collide.
 - Phase 1 subgraphs: parse `subgraph`/`end` with membership + optional title;
   layout bounding-box clusters with pad/title strip; render titled rounded
   frames (B15). Nested parent stack supported; edges may cross group borders.

@@ -14,10 +14,12 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 /// this is only horizontal on screen (label lines are padded when rendered).
 pub const PAD: usize = 1;
 pub const EDGE_LABEL_PAD: usize = 2;
-/// Padding between member boxes and subgraph frame (flow / cross).
-pub const CLUSTER_PAD: usize = 1;
-/// Extra strip along the screen-top of a cluster for the title.
-pub const CLUSTER_TITLE_STRIP: usize = 1;
+/// Padding between member boxes and subgraph frame (each side).
+pub const CLUSTER_PAD: usize = 2;
+/// Interior rows under the top border reserved for title (+ optional blank).
+pub const CLUSTER_TITLE_BAND: usize = 2;
+/// Extra padding per nesting level so child frames sit clearly inside parents.
+pub const CLUSTER_NEST_GAP: usize = 1;
 
 /// Fit mode for the B9 overflow ladder. Labels wrap only when `label_cols` is
 /// set (B10: no arbitrary wrap under a comfortable width budget).
@@ -646,7 +648,17 @@ fn subgraph_members_deep(g: &Graph, sgi: usize) -> Vec<usize> {
     out
 }
 
-/// How far to shift flow/cross so every subgraph has room for pad + title.
+fn subgraph_depth(g: &Graph, sgi: usize) -> usize {
+    let mut d = 0usize;
+    let mut p = g.subgraphs[sgi].parent;
+    while let Some(pi) = p {
+        d += 1;
+        p = g.subgraphs[pi].parent;
+    }
+    d
+}
+
+/// How far to shift flow/cross so every subgraph has room for pad + title band.
 fn cluster_origin_shift(g: &Graph, boxes: &[BoxGeom], horizontal: bool) -> (usize, usize) {
     let mut shift_f = 0usize;
     let mut shift_c = 0usize;
@@ -657,14 +669,23 @@ fn cluster_origin_shift(g: &Graph, boxes: &[BoxGeom], horizontal: bool) -> (usiz
         }
         let min_f = members.iter().map(|&i| boxes[i].f).min().unwrap();
         let min_c = members.iter().map(|&i| boxes[i].c).min().unwrap();
-        let has_child = g.subgraphs.iter().any(|s| s.parent == Some(si));
-        let top_strip = CLUSTER_TITLE_STRIP + usize::from(has_child);
-        if horizontal {
-            shift_c = shift_c.max((CLUSTER_PAD + top_strip).saturating_sub(min_c));
-            shift_f = shift_f.max(CLUSTER_PAD.saturating_sub(min_f));
+        // Parents need extra top room so the title band does not sit on the
+        // child's top border (title is drawn at frame_top+1).
+        let nest = if g.subgraphs.iter().any(|s| s.parent == Some(si)) {
+            CLUSTER_TITLE_BAND + CLUSTER_NEST_GAP
         } else {
-            shift_f = shift_f.max((CLUSTER_PAD + top_strip).saturating_sub(min_f));
-            shift_c = shift_c.max(CLUSTER_PAD.saturating_sub(min_c));
+            0
+        };
+        // Top inset includes title band; other sides are pad + nest gap only.
+        let top = CLUSTER_PAD + CLUSTER_TITLE_BAND + nest;
+        let side = CLUSTER_PAD + if nest > 0 { CLUSTER_NEST_GAP } else { 0 };
+        if horizontal {
+            // Title band is on the cross axis (screen top = smaller c).
+            shift_c = shift_c.max(top.saturating_sub(min_c));
+            shift_f = shift_f.max(side.saturating_sub(min_f));
+        } else {
+            shift_f = shift_f.max(top.saturating_sub(min_f));
+            shift_c = shift_c.max(side.saturating_sub(min_c));
         }
     }
     (shift_f, shift_c)
@@ -707,7 +728,7 @@ fn shift_placed(
     *cross_extent += dc;
 }
 
-/// Bounding-box clusters around subgraph members with padding + title strip.
+/// Bounding-box clusters around subgraph members with pad + interior title band.
 fn place_clusters(
     g: &Graph,
     boxes: &[BoxGeom],
@@ -735,31 +756,45 @@ fn place_clusters(
         if f0 == usize::MAX {
             continue;
         }
-        // Parents need an extra top strip so nested titles don't share a row.
-        let has_child = g.subgraphs.iter().any(|s| s.parent == Some(si));
-        let top_strip = CLUSTER_TITLE_STRIP + if has_child { 1 } else { 0 };
-        // Screen-top title strip: smaller cross for LR, smaller flow for TB.
-        if horizontal {
-            c0 = c0.saturating_sub(CLUSTER_PAD + top_strip);
-            c1 += CLUSTER_PAD;
-            f0 = f0.saturating_sub(CLUSTER_PAD);
-            f1 += CLUSTER_PAD;
+        let nest = if g.subgraphs.iter().any(|s| s.parent == Some(si)) {
+            CLUSTER_TITLE_BAND + CLUSTER_NEST_GAP
         } else {
-            f0 = f0.saturating_sub(CLUSTER_PAD + top_strip);
-            f1 += CLUSTER_PAD;
-            c0 = c0.saturating_sub(CLUSTER_PAD);
-            c1 += CLUSTER_PAD;
+            0
+        };
+        let side = CLUSTER_PAD + if nest > 0 { CLUSTER_NEST_GAP } else { 0 };
+        let top = CLUSTER_PAD + CLUSTER_TITLE_BAND + nest;
+        // Screen-top title band: smaller cross for LR, smaller flow for TB.
+        if horizontal {
+            c0 = c0.saturating_sub(top);
+            c1 += side;
+            f0 = f0.saturating_sub(side);
+            f1 += side;
+        } else {
+            f0 = f0.saturating_sub(top);
+            f1 += side;
+            c0 = c0.saturating_sub(side);
+            c1 += side;
         }
         let title = g.subgraphs[si].title.clone();
-        let tw = title.width() + 2; // ` title `
-        // Leave corner cells free for box-drawing (+2).
-        let need = tw + 2;
+        // Interior width for ` title ` plus side borders: need >= tw + 4.
+        let tw = title.width() + 2;
+        let need = tw + 4;
         if horizontal {
-            if f1.saturating_sub(f0) < need {
-                f1 = f0 + need;
+            let span = f1.saturating_sub(f0);
+            if span < need {
+                let extra = need - span;
+                let left = extra / 2;
+                f0 = f0.saturating_sub(left);
+                f1 += extra - left;
             }
-        } else if c1.saturating_sub(c0) < need {
-            c1 = c0 + need;
+        } else {
+            let span = c1.saturating_sub(c0);
+            if span < need {
+                let extra = need - span;
+                let left = extra / 2;
+                c0 = c0.saturating_sub(left);
+                c1 += extra - left;
+            }
         }
         flow_extent = flow_extent.max(f1);
         cross_extent = cross_extent.max(c1);
@@ -773,15 +808,7 @@ fn place_clusters(
         });
     }
     // Shallowest first (outer frames drawn under nested ones).
-    clusters.sort_by_key(|cl| {
-        let mut d = 0usize;
-        let mut p = g.subgraphs[cl.subgraph].parent;
-        while let Some(pi) = p {
-            d += 1;
-            p = g.subgraphs[pi].parent;
-        }
-        d
-    });
+    clusters.sort_by_key(|cl| subgraph_depth(g, cl.subgraph));
     (clusters, flow_extent, cross_extent)
 }
 

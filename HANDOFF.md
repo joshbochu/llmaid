@@ -25,7 +25,8 @@ without losing glance quality.
 **v1 contracts B1–B15 + Phase 0–1 are landed.**
 
 - Pipeline: parse → layout (width ladder, mono-chain straighten, clusters) → render
-- **Subgraphs:** titled frames around members (B15); nested parent tracked
+- **Subgraphs:** titled frames around members (B15); interior title band +
+  spacious pad; nested parent tracked
 - Edge labels: padded on-shaft (` scan `); TB/BT labels beside vertical runs
 - Directions: LR/RL/TB/BT with goldens
 - CLI: `--ascii`, `--width N` (default 100), `--strict`

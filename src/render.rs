@@ -506,12 +506,12 @@ fn draw_cluster(canvas: &mut Canvas, placed: &Placed, cl: &ClusterGeom, style: S
     canvas.mark_rounded(x, y + h - 1);
     canvas.mark_rounded(x + w - 1, y + h - 1);
 
-    // Title on top edge with breathing spaces (same idea as edge labels).
+    // Title on the first *interior* row (not the border stroke), centered.
     let title = format!(" {} ", cl.title);
     let tw = title.width();
-    if tw > 0 && tw <= w.saturating_sub(2) {
+    if tw > 0 && h >= 3 && tw <= w.saturating_sub(2) {
         let tx = x + (w.saturating_sub(tw)) / 2;
-        canvas.put_text(tx, y, &title);
+        canvas.put_text(tx, y + 1, &title);
     }
 
     let _ = style;

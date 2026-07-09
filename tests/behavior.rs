@@ -116,6 +116,11 @@ flowchart TB
         stdout.contains("Pipeline"),
         "subgraph title missing from render:\n{stdout}"
     );
+    // Title sits on an interior row (│ … Pipeline …), not welded into ╭──╮.
+    assert!(
+        stdout.lines().any(|l| l.contains('│') && l.contains("Pipeline")),
+        "title should be on an interior frame row:\n{stdout}"
+    );
     assert!(
         stdout.contains("src") && stdout.contains("tok") && stdout.contains("out"),
         "node labels missing:\n{stdout}"
@@ -123,6 +128,28 @@ flowchart TB
     assert!(
         !stderr.contains("subgraph ignored"),
         "should not warn ignore: {stderr}"
+    );
+
+    // Nested: outer frame above inner title.
+    let nested = "\
+flowchart TB
+  subgraph Outer
+    subgraph Inner
+      A --> B
+    end
+    B --> C
+  end
+  C --> D
+";
+    let (nout, nerr, ncode) = run_llmaid(&[], nested);
+    assert_eq!(ncode, 0, "{nerr}");
+    assert!(nout.contains("Outer") && nout.contains("Inner"), "\n{nout}");
+    let lines: Vec<&str> = nout.lines().collect();
+    let outer_i = lines.iter().position(|l| l.contains("Outer")).expect("Outer");
+    let inner_i = lines.iter().position(|l| l.contains("Inner")).expect("Inner");
+    assert!(
+        outer_i < inner_i,
+        "Outer title should appear above Inner:\n{nout}"
     );
 }
 
