@@ -317,13 +317,13 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     } else {
         EDGE_LABEL_PAD
     };
-    // Vertical channels only need a short band for beside-shaft labels.
+    // Vertical: a bit more air between ranks (TB chains inside groups).
     let channel_min = if fit.compact {
         3
     } else if horizontal {
         5
     } else {
-        3
+        5
     };
     let has_self_loop = |ni: usize| self_loops.iter().any(|&ei| g.edges[ei].from == ni);
 
@@ -508,7 +508,7 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         } else if horizontal {
             3
         } else {
-            1
+            2
         };
         let width = channel_min.max(label_zone + 2 * tracks + slack);
         channels.push(Channel {
@@ -619,6 +619,9 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     let (clusters, flow_extent, cross_extent) =
         place_clusters(g, &boxes, horizontal, flow_extent, cross_extent);
 
+    // Center member blocks inside each cluster (title expand used to leave them left-heavy).
+    center_cluster_members(g, &clusters, &mut boxes, &mut segs, &mut pass_through, horizontal);
+
     Placed {
         horizontal,
         flipped,
@@ -632,6 +635,112 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         rank_span,
         flow_extent,
         cross_extent,
+    }
+}
+
+/// Shift subgraph members so their content block is centered in the cluster frame.
+fn center_cluster_members(
+    g: &Graph,
+    clusters: &[ClusterGeom],
+    boxes: &mut [BoxGeom],
+    segs: &mut [Vec<Seg>],
+    pass_through: &mut [(usize, usize, usize)],
+    horizontal: bool,
+) {
+    // Deepest first so outer centering runs after inner.
+    let mut order: Vec<&ClusterGeom> = clusters.iter().collect();
+    order.sort_by_key(|cl| std::cmp::Reverse(subgraph_depth(g, cl.subgraph)));
+
+    for cl in order {
+        let members = subgraph_members_deep(g, cl.subgraph);
+        if members.is_empty() {
+            continue;
+        }
+        let add = |v: usize, d: isize| -> usize {
+            if d >= 0 {
+                v + d as usize
+            } else {
+                v.saturating_sub((-d) as usize)
+            }
+        };
+
+        if horizontal {
+            // Center along flow (screen x for LR).
+            let min_f = members.iter().map(|&i| boxes[i].f).min().unwrap();
+            let max_f = members
+                .iter()
+                .map(|&i| boxes[i].f + boxes[i].flen)
+                .max()
+                .unwrap();
+            let content_mid = (min_f + max_f) / 2;
+            let frame_mid = cl.f + cl.flen / 2;
+            let df = frame_mid as isize - content_mid as isize;
+            if df == 0 {
+                continue;
+            }
+            for &i in &members {
+                boxes[i].f = add(boxes[i].f, df);
+            }
+            for (ei, edge_segs) in segs.iter_mut().enumerate() {
+                let e = &g.edges[ei];
+                let sf = members.contains(&e.from);
+                let st = members.contains(&e.to);
+                if !sf && !st {
+                    continue;
+                }
+                for s in edge_segs.iter_mut() {
+                    if sf && st {
+                        s.from.0 = add(s.from.0, df);
+                        s.to.0 = add(s.to.0, df);
+                    } else if sf {
+                        s.from.0 = add(s.from.0, df);
+                    } else {
+                        s.to.0 = add(s.to.0, df);
+                    }
+                }
+            }
+        } else {
+            // TB/BT: center along cross (screen x).
+            let min_c = members.iter().map(|&i| boxes[i].c).min().unwrap();
+            let max_c = members
+                .iter()
+                .map(|&i| boxes[i].c + boxes[i].clen)
+                .max()
+                .unwrap();
+            let content_mid = (min_c + max_c) / 2;
+            let frame_mid = cl.c + cl.clen / 2;
+            let dc = frame_mid as isize - content_mid as isize;
+            if dc == 0 {
+                continue;
+            }
+            for &i in &members {
+                boxes[i].c = add(boxes[i].c, dc);
+            }
+            for (ei, edge_segs) in segs.iter_mut().enumerate() {
+                let e = &g.edges[ei];
+                let sf = members.contains(&e.from);
+                let st = members.contains(&e.to);
+                if !sf && !st {
+                    continue;
+                }
+                for s in edge_segs.iter_mut() {
+                    if sf && st {
+                        s.from.1 = add(s.from.1, dc);
+                        s.to.1 = add(s.to.1, dc);
+                    } else if sf {
+                        s.from.1 = add(s.from.1, dc);
+                    } else {
+                        s.to.1 = add(s.to.1, dc);
+                    }
+                }
+            }
+            for p in pass_through.iter_mut() {
+                let e = &g.edges[p.0];
+                if members.contains(&e.from) && members.contains(&e.to) {
+                    p.2 = add(p.2, dc);
+                }
+            }
+        }
     }
 }
 
