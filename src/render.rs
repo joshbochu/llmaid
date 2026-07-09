@@ -292,10 +292,9 @@ fn draw_box(canvas: &mut Canvas, placed: &Placed, b: &BoxGeom, shape: Shape, sty
     let kind = EdgeKind::Solid;
     // B13 / D13: always a rect frame; shape is conveyed by corner/cap/lid hints
     // so grid alignment never depends on true diamond walls.
-    let rounded = matches!(
-        shape,
-        Shape::Rounded | Shape::Stadium | Shape::Circle | Shape::Cylinder | Shape::Hexagon
-    );
+    // House style (D7): rounded corners by default — including Mermaid `[rect]`.
+    // Only diamond/hex replace corners with facet glyphs; stadium/circle add caps.
+    let rounded = !matches!(shape, Shape::Diamond | Shape::Hexagon);
 
     for xx in x + 1..x + w - 1 {
         canvas.add_line_bits(xx, y, E | W, kind);

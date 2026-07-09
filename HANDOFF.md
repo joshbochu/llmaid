@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-09, after B13 shape hints.
+Last updated: 2026-07-09, after B9/B10 width ladder.
 
 ## What this project is
 
@@ -13,8 +13,8 @@ Read these before writing code, in this order:
 
 1. `AGENTS.md` — commands, module map, non-negotiable invariants, conventions.
 2. `DESIGN.md` — full v1 design: scope, architecture, aesthetic spec, milestones.
-3. `BEHAVIORS.md` — behavior contracts B1–B14; B9–B10 and B14 are
-   *pending* (each needs its `b<N>_...` test when implemented).
+3. `BEHAVIORS.md` — behavior contracts B1–B14; B14 is *pending*
+   (needs its `b14_...` test when implemented).
 4. `CHANGELOG.md` — decisions D1–D14 with rationale and rejected alternatives.
    Do not relitigate these; extend the log if you make new decisions.
 
@@ -24,13 +24,10 @@ Read these before writing code, in this order:
 
 - Baseline includes parse → layout → render end-to-end; layout/style wired in
   `lib.rs`; CLI honors `--ascii` (`--width` still unused).
-- `cargo test`: 16/16 pass (13 behavior + 3 golden/error/determinism).
-- `src/render.rs` draws boxes, forward channel edges, arrowheads, on-arrow
-  labels for LR/RL, ASCII/Unicode glyphs, self-loops, cycle back edges, and
-  B13 shape hints.
+- `cargo test`: 18/18 pass (15 behavior + 3 golden/error/determinism).
+- Full pipeline: parse → layout (width ladder) → render with shape hints.
 - `tests/cases/*.txt` rendered snapshots are in the tree for eyeballing; they
   are not yet byte-compared (B14).
-- `--width` is still parsed but unused (B9/B10).
 
 ### Done
 
@@ -38,32 +35,23 @@ Read these before writing code, in this order:
 - Minimal M2 pipeline is wired: `pipeline.mmd` renders at the quality bar.
 - LR/TB layouts, fork/merge, fanout, dotted/thick edge styles, Unicode labels,
   and `--ascii` are working in the current renderer.
-- B11 is landed: self-loops hug the node and cycle back edges use perimeter
-  return routes with arrows/labels preserved. `tests/behavior.rs` includes
-  `b11_given_self_loop_and_back_edge_then_routes_return_to_targets`.
-- B12 is landed: forward degree grows box `clen` so each edge gets a distinct
-  port; parallel edges keep separate paths and labels
-  (`b12_given_parallel_edges_then_distinct_paths_and_labels`).
-- B13 is landed: rect frames with shape-hint glyphs
-  (`b13_given_non_rect_shapes_then_rect_frame_with_shape_hints`).
+- B9/B10: `--width` overflow ladder (compact → wrap → over-width); labels stay
+  one line when they fit.
+- B11–B13: cycles, parallel ports, shape hints (see `tests/behavior.rs`).
 
 ### Still missing
 
-- B9/B10: `--width` overflow ladder (compact gaps → wrap labels → over-width
-  rather than truncating/failing).
 - B14: rendered `.txt` golden comparison plus invariants (closed borders,
   edges reach endpoints, no label overwrite).
-- Behavior tests b9, b10, b14 and corresponding pending-marker
-  removals in `BEHAVIORS.md`.
+- Behavior test b14 and pending-marker removal in `BEHAVIORS.md`.
 - RL/BT mirroring needs explicit verification beyond compile/test coverage.
 
 ## Suggested next steps, in order
 
-1. B9/B10 width ladder: wire the fixed default width through layout/render.
-2. B14 rendered goldens + invariants: byte-compare `tests/cases/*.txt` and add
+1. B14 rendered goldens + invariants: byte-compare `tests/cases/*.txt` and add
    border/endpoint/label overwrite checks.
-3. Verify RL/BT mirroring with explicit cases.
-4. Keep `CHANGELOG.md` and `BEHAVIORS.md` current as behaviors land — this is
+2. Verify RL/BT mirroring with explicit cases.
+3. Keep `CHANGELOG.md` and `BEHAVIORS.md` current as behaviors land — this is
    a logged convention in AGENTS.md.
 
 ## Quality bar (what "done" looks like)

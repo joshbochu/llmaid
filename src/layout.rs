@@ -8,12 +8,30 @@
 //! by declaration index. No HashMap iteration anywhere.
 
 use crate::parse::{Dir, Graph};
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// Padding inside a box between border and label, in flow-space cross terms
 /// this is only horizontal on screen (label lines are padded when rendered).
 pub const PAD: usize = 1;
 pub const EDGE_LABEL_PAD: usize = 2;
+
+/// Fit mode for the B9 overflow ladder. Labels wrap only when `label_cols` is
+/// set (B10: no arbitrary wrap under a comfortable width budget).
+#[derive(Clone, Copy, Debug)]
+struct Fit {
+    compact: bool,
+    /// Max display columns per node label line; `None` means no forced wrap.
+    label_cols: Option<usize>,
+}
+
+const FIT_NORMAL: Fit = Fit {
+    compact: false,
+    label_cols: None,
+};
+const FIT_COMPACT: Fit = Fit {
+    compact: true,
+    label_cols: None,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Slot {
@@ -74,7 +92,64 @@ pub struct Placed {
     pub cross_extent: usize,
 }
 
-pub fn layout(g: &Graph) -> Placed {
+/// Lay out `g` aiming for at most `max_width` screen columns (B8/B9).
+/// Degradation: normal → compact gaps → wrap labels → over-width (never
+/// truncate, never fail).
+pub fn layout(g: &Graph, max_width: usize) -> Placed {
+    let normal = layout_fit(g, FIT_NORMAL);
+    if approx_width(g, &normal) <= max_width {
+        return normal;
+    }
+    let compact = layout_fit(g, FIT_COMPACT);
+    if approx_width(g, &compact) <= max_width {
+        return compact;
+    }
+    // Wrap under pressure: target content width from budget and rank count.
+    let nranks = compact.rank_span.len().max(1);
+    let content = max_width
+        .saturating_sub(nranks.saturating_mul(2)) // borders
+        .saturating_sub(nranks.saturating_sub(1).saturating_mul(3)) // min channels
+        / nranks;
+    let label_cols = content.saturating_sub(2 * PAD).max(4);
+    layout_fit(
+        g,
+        Fit {
+            compact: true,
+            label_cols: Some(label_cols),
+        },
+    )
+}
+
+fn approx_width(g: &Graph, p: &Placed) -> usize {
+    let base = if p.horizontal {
+        p.flow_extent
+    } else {
+        p.cross_extent
+    };
+    let mut right = 0usize;
+    if !p.back_edges.is_empty() && !p.horizontal {
+        right = right.max(6 + p.back_edges.len() * 2);
+    }
+    if !p.self_loops.is_empty() {
+        right = right.max(6);
+    }
+    for &ei in p.back_edges.iter().chain(&p.self_loops) {
+        let label_w = g.edges[ei]
+            .label
+            .as_deref()
+            .map(UnicodeWidthStr::width)
+            .unwrap_or(0);
+        if label_w > 0 {
+            let is_horizontal_back = p.horizontal && p.back_edges.contains(&ei);
+            if !is_horizontal_back {
+                right = right.max(label_w + 8 + 2 * EDGE_LABEL_PAD + p.back_edges.len() * 2);
+            }
+        }
+    }
+    base + right
+}
+
+fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     let dir = g.direction();
     let horizontal = matches!(dir, Dir::LR | Dir::RL);
     let flipped = matches!(dir, Dir::RL | Dir::BT);
@@ -131,13 +206,16 @@ pub fn layout(g: &Graph) -> Placed {
 
     let nranks = rank.iter().copied().max().unwrap_or(0) + 1;
 
-    // --- Box sizes from labels.
+    // --- Box sizes from labels (optional wrap under width pressure — B9/B10).
     let mut boxes: Vec<BoxGeom> = g
         .nodes
         .iter()
         .enumerate()
         .map(|(i, node)| {
-            let lines: Vec<String> = node.label.split('\n').map(str::to_string).collect();
+            let lines: Vec<String> = match fit.label_cols {
+                Some(cols) => wrap_label(&node.label, cols),
+                None => node.label.split('\n').map(str::to_string).collect(),
+            };
             let text_w = lines.iter().map(|l| l.width()).max().unwrap_or(1).max(1);
             let w = text_w + 2 * PAD + 2;
             let h = lines.len() + 2;
@@ -202,7 +280,23 @@ pub fn layout(g: &Graph) -> Placed {
         .map(|e| e.label.as_deref().map(|l| l.width()).unwrap_or(0))
         .max()
         .unwrap_or(0);
-    let base_gap = if horizontal { 1 } else { 4.max(max_label + 3) };
+    let base_gap = if fit.compact {
+        if horizontal {
+            0
+        } else {
+            2.max(max_label.saturating_add(1).min(3))
+        }
+    } else if horizontal {
+        1
+    } else {
+        4.max(max_label + 3)
+    };
+    let edge_label_pad = if fit.compact {
+        1
+    } else {
+        EDGE_LABEL_PAD
+    };
+    let channel_min = if fit.compact { 3 } else { 5 };
     let has_self_loop = |ni: usize| self_loops.iter().any(|&ei| g.edges[ei].from == ni);
 
     let slot_clen = |slot: &Slot, boxes: &[BoxGeom]| -> usize {
@@ -349,13 +443,13 @@ pub fn layout(g: &Graph) -> Placed {
                 g.edges[ei].label.is_some() && edge_spans[ei].map(|(rs, _)| rs) == Some(r);
             if labeled_here {
                 label_zone = label_zone
-                    .max(g.edges[ei].label.as_deref().unwrap().width() + 2 * EDGE_LABEL_PAD);
+                    .max(g.edges[ei].label.as_deref().unwrap().width() + 2 * edge_label_pad);
             }
             if seg.from.1 != seg.to.1 {
                 tracks += 1;
             }
         }
-        let width = 5usize.max(label_zone + 2 * tracks + 3);
+        let width = channel_min.max(label_zone + 2 * tracks + if fit.compact { 2 } else { 3 });
         channels.push(Channel {
             start: 0,
             width,
@@ -451,6 +545,75 @@ pub fn layout(g: &Graph) -> Placed {
         flow_extent,
         cross_extent,
     }
+}
+
+/// Width-aware wrap for node labels under B9 pressure. Never truncates; breaks
+/// on spaces when possible, otherwise on grapheme-ish char boundaries.
+fn wrap_label(text: &str, max_cols: usize) -> Vec<String> {
+    let max_cols = max_cols.max(1);
+    let mut out = Vec::new();
+    for para in text.split('\n') {
+        if para.is_empty() {
+            out.push(String::new());
+            continue;
+        }
+        if para.width() <= max_cols {
+            out.push(para.to_string());
+            continue;
+        }
+        let mut cur = String::new();
+        let mut cur_w = 0usize;
+        for word in para.split(' ') {
+            let ww = word.width();
+            if cur.is_empty() {
+                if ww <= max_cols {
+                    cur = word.to_string();
+                    cur_w = ww;
+                } else {
+                    // Hard-break an overlong token.
+                    for ch in word.chars() {
+                        let cw = ch.width().unwrap_or(1).max(1);
+                        if cur_w + cw > max_cols && !cur.is_empty() {
+                            out.push(std::mem::take(&mut cur));
+                            cur_w = 0;
+                        }
+                        cur.push(ch);
+                        cur_w += cw;
+                    }
+                }
+                continue;
+            }
+            if cur_w + 1 + ww <= max_cols {
+                cur.push(' ');
+                cur.push_str(word);
+                cur_w += 1 + ww;
+            } else {
+                out.push(std::mem::take(&mut cur));
+                cur_w = 0;
+                if ww <= max_cols {
+                    cur = word.to_string();
+                    cur_w = ww;
+                } else {
+                    for ch in word.chars() {
+                        let cw = ch.width().unwrap_or(1).max(1);
+                        if cur_w + cw > max_cols && !cur.is_empty() {
+                            out.push(std::mem::take(&mut cur));
+                            cur_w = 0;
+                        }
+                        cur.push(ch);
+                        cur_w += cw;
+                    }
+                }
+            }
+        }
+        if !cur.is_empty() {
+            out.push(cur);
+        }
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
 }
 
 /// DFS in declaration order; an edge to a node on the current stack is a back edge.

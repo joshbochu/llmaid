@@ -6,9 +6,12 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Layout (B9/B10): `--width` overflow ladder — normal → compact gaps → wrap
+  labels under pressure → over-width if still needed; never truncate or fail.
+  Comfortable budgets leave single-line labels intact.
 - Renderer (B13): non-rect shapes stay rect-framed with hint glyphs — ◇
   diamond corners, ( ) stadium/circle caps, ═ cylinder lid, ╱╲ hex facets;
-  plain rect uses sharp corners (D13).
+  house style keeps rounded corners on rect/rounded (D7/D13).
 - Layout/render (B12): boxes grow along the cross axis so each forward edge
   owns a distinct port — parallel edges keep separate paths and labels
   (no more last-label-wins collapse).

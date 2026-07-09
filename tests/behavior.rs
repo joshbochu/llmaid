@@ -1,7 +1,6 @@
 //! Behavior-driven tests. One test per contract in BEHAVIORS.md, named
 //! `b<N>_given_..._then_...`. Parser behaviors call the library; CLI
-//! behaviors (B6–B8, B11–B13) run the real binary. B9–B10 and B14 land with
-//! remaining milestones.
+//! behaviors (B6–B13) run the real binary. B14 lands with rendered goldens.
 
 use llmaid::parse::{Shape, parse};
 use std::process::{Command, Stdio};
@@ -152,6 +151,71 @@ fn b8_given_same_input_then_byte_identical_output_across_runs() {
 }
 
 // ---------- Layout & rendering ----------
+
+#[test]
+fn b9_given_over_width_then_degrade_without_truncation_or_failure() {
+    let src = "\
+flowchart LR
+  a[source alpha] -->|scan tokens| b[Vec of Token]
+  b -->|parse tree| c[Expr AST node]
+  c -->|eval result| d[Value output]
+";
+    let (stdout, stderr, code) = run_llmaid(&["--width", "36"], src);
+    assert_eq!(code, 0, "must not fail on overflow: {stderr}");
+    assert!(
+        !stdout.contains('…') && !stdout.contains("..."),
+        "must never truncate labels:\n{stdout}"
+    );
+    // Edge labels are short enough to stay intact; node labels may wrap mid-word
+    // under extreme pressure — require full text as a char subsequence (B9).
+    for needle in ["scan tokens", "parse tree", "eval result"] {
+        assert!(
+            stdout.contains(needle),
+            "edge label `{needle}` missing under width pressure:\n{stdout}"
+        );
+    }
+    for needle in ["sourcealpha", "VecofToken", "ExprASTnode", "Valueoutput"] {
+        assert!(
+            alnum_subsequence(&stdout, needle),
+            "node label `{needle}` not fully present (wrapped or otherwise):\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn b10_given_label_fits_then_stays_one_line() {
+    let src = "flowchart LR\nA[hello world] --> B[ok]\n";
+    // Default width (100) is comfortable — must not wrap "hello world".
+    let (stdout, stderr, code) = run_llmaid(&[], src);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stdout.contains("hello world"),
+        "label should stay on one line when it fits:\n{stdout}"
+    );
+    // Under severe width pressure, wrapping is allowed (B9) — full text preserved.
+    let (tight, _, code) = run_llmaid(&["--width", "12"], src);
+    assert_eq!(code, 0);
+    assert!(
+        alnum_subsequence(&tight, "helloworld"),
+        "wrapped form must still carry full text:\n{tight}"
+    );
+}
+
+/// True if `needle`'s alphanumeric chars appear in order in `hay` (ignoring
+/// other characters). Used when labels wrap across lines under B9 pressure.
+fn alnum_subsequence(hay: &str, needle: &str) -> bool {
+    let mut it = hay.chars().filter(|c| c.is_alphanumeric());
+    for want in needle.chars() {
+        loop {
+            match it.next() {
+                Some(c) if c == want => break,
+                Some(_) => continue,
+                None => return false,
+            }
+        }
+    }
+    true
+}
 
 #[test]
 fn b11_given_self_loop_and_back_edge_then_routes_return_to_targets() {

@@ -125,10 +125,10 @@ fn main() -> ExitCode {
     }
 
     // B8: default width is fixed (no terminal detection) for byte-determinism.
-    let _width = opts.width.unwrap_or(100);
+    // B9: overflow ladder lives in layout (compact → wrap → over-width).
+    let width = opts.width.unwrap_or(100);
 
-    // TODO(M2): apply the overflow ladder to honor --width without truncation.
-    let placed = layout::layout(&graph);
+    let placed = layout::layout(&graph, width);
     let diagram = render::render(&graph, &placed, Style { ascii: opts.ascii });
     print!("{diagram}");
     ExitCode::SUCCESS

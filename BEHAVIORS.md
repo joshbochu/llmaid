@@ -33,12 +33,12 @@ their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–
 
 ## Layout & rendering (tests land with M2/M3)
 
-- **B9** *pending M2* — Given a diagram wider than the width budget, when
-  rendered, then degradation is: compact gaps → wrap labels → render over-width
-  anyway. Never truncate a label, never fail on overflow.
-- **B10** *pending M2* — Given a label that fits, when rendered, then it stays
-  on one line; wrapping happens only under width pressure (B9), never at an
-  arbitrary box-width cap.
+- **B9** Given a diagram wider than the width budget, when rendered, then
+  degradation is: compact gaps → wrap labels → render over-width anyway. Never
+  truncate a label, never fail on overflow.
+- **B10** Given a label that fits, when rendered, then it stays on one line;
+  wrapping happens only under width pressure (B9), never at an arbitrary
+  box-width cap.
 - **B11** Given a self-loop (`eval --> eval`) or cycle back edge, when
   rendered, then a tight loop or perimeter route returns to the target with
   its arrow and label preserved.
