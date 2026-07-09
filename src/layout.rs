@@ -714,7 +714,7 @@ fn place_clusters(
     mut cross_extent: usize,
 ) -> (Vec<ClusterGeom>, usize, usize) {
     let mut clusters = Vec::new();
-    for (si, sg) in g.subgraphs.iter().enumerate() {
+    for si in 0..g.subgraphs.len() {
         let members = subgraph_members_deep(g, si);
         if members.is_empty() {
             continue;
@@ -733,14 +733,17 @@ fn place_clusters(
         if f0 == usize::MAX {
             continue;
         }
+        // Parents need an extra top strip so nested titles don't share a row.
+        let has_child = g.subgraphs.iter().any(|s| s.parent == Some(si));
+        let top_strip = CLUSTER_TITLE_STRIP + if has_child { 1 } else { 0 };
         // Screen-top title strip: smaller cross for LR, smaller flow for TB.
         if horizontal {
-            c0 = c0.saturating_sub(CLUSTER_PAD + CLUSTER_TITLE_STRIP);
+            c0 = c0.saturating_sub(CLUSTER_PAD + top_strip);
             c1 += CLUSTER_PAD;
             f0 = f0.saturating_sub(CLUSTER_PAD);
             f1 += CLUSTER_PAD;
         } else {
-            f0 = f0.saturating_sub(CLUSTER_PAD + CLUSTER_TITLE_STRIP);
+            f0 = f0.saturating_sub(CLUSTER_PAD + top_strip);
             f1 += CLUSTER_PAD;
             c0 = c0.saturating_sub(CLUSTER_PAD);
             c1 += CLUSTER_PAD;
