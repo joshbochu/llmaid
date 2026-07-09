@@ -619,9 +619,6 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     let (clusters, flow_extent, cross_extent) =
         place_clusters(g, &boxes, horizontal, flow_extent, cross_extent);
 
-    // Center member blocks inside each cluster (title expand used to leave them left-heavy).
-    center_cluster_members(g, &clusters, &mut boxes, &mut segs, &mut pass_through, horizontal);
-
     Placed {
         horizontal,
         flipped,
@@ -635,112 +632,6 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         rank_span,
         flow_extent,
         cross_extent,
-    }
-}
-
-/// Shift subgraph members so their content block is centered in the cluster frame.
-fn center_cluster_members(
-    g: &Graph,
-    clusters: &[ClusterGeom],
-    boxes: &mut [BoxGeom],
-    segs: &mut [Vec<Seg>],
-    pass_through: &mut [(usize, usize, usize)],
-    horizontal: bool,
-) {
-    // Deepest first so outer centering runs after inner.
-    let mut order: Vec<&ClusterGeom> = clusters.iter().collect();
-    order.sort_by_key(|cl| std::cmp::Reverse(subgraph_depth(g, cl.subgraph)));
-
-    for cl in order {
-        let members = subgraph_members_deep(g, cl.subgraph);
-        if members.is_empty() {
-            continue;
-        }
-        let add = |v: usize, d: isize| -> usize {
-            if d >= 0 {
-                v + d as usize
-            } else {
-                v.saturating_sub((-d) as usize)
-            }
-        };
-
-        if horizontal {
-            // Center along flow (screen x for LR).
-            let min_f = members.iter().map(|&i| boxes[i].f).min().unwrap();
-            let max_f = members
-                .iter()
-                .map(|&i| boxes[i].f + boxes[i].flen)
-                .max()
-                .unwrap();
-            let content_mid = (min_f + max_f) / 2;
-            let frame_mid = cl.f + cl.flen / 2;
-            let df = frame_mid as isize - content_mid as isize;
-            if df == 0 {
-                continue;
-            }
-            for &i in &members {
-                boxes[i].f = add(boxes[i].f, df);
-            }
-            for (ei, edge_segs) in segs.iter_mut().enumerate() {
-                let e = &g.edges[ei];
-                let sf = members.contains(&e.from);
-                let st = members.contains(&e.to);
-                if !sf && !st {
-                    continue;
-                }
-                for s in edge_segs.iter_mut() {
-                    if sf && st {
-                        s.from.0 = add(s.from.0, df);
-                        s.to.0 = add(s.to.0, df);
-                    } else if sf {
-                        s.from.0 = add(s.from.0, df);
-                    } else {
-                        s.to.0 = add(s.to.0, df);
-                    }
-                }
-            }
-        } else {
-            // TB/BT: center along cross (screen x).
-            let min_c = members.iter().map(|&i| boxes[i].c).min().unwrap();
-            let max_c = members
-                .iter()
-                .map(|&i| boxes[i].c + boxes[i].clen)
-                .max()
-                .unwrap();
-            let content_mid = (min_c + max_c) / 2;
-            let frame_mid = cl.c + cl.clen / 2;
-            let dc = frame_mid as isize - content_mid as isize;
-            if dc == 0 {
-                continue;
-            }
-            for &i in &members {
-                boxes[i].c = add(boxes[i].c, dc);
-            }
-            for (ei, edge_segs) in segs.iter_mut().enumerate() {
-                let e = &g.edges[ei];
-                let sf = members.contains(&e.from);
-                let st = members.contains(&e.to);
-                if !sf && !st {
-                    continue;
-                }
-                for s in edge_segs.iter_mut() {
-                    if sf && st {
-                        s.from.1 = add(s.from.1, dc);
-                        s.to.1 = add(s.to.1, dc);
-                    } else if sf {
-                        s.from.1 = add(s.from.1, dc);
-                    } else {
-                        s.to.1 = add(s.to.1, dc);
-                    }
-                }
-            }
-            for p in pass_through.iter_mut() {
-                let e = &g.edges[p.0];
-                if members.contains(&e.from) && members.contains(&e.to) {
-                    p.2 = add(p.2, dc);
-                }
-            }
-        }
     }
 }
 
@@ -872,39 +763,56 @@ fn place_clusters(
         };
         let side = CLUSTER_PAD + if nest > 0 { CLUSTER_NEST_GAP } else { 0 };
         let top = CLUSTER_PAD + CLUSTER_TITLE_BAND + nest;
-        // Screen-top title band: smaller cross for LR, smaller flow for TB.
-        if horizontal {
-            c0 = c0.saturating_sub(top);
-            c1 += side;
-            f0 = f0.saturating_sub(side);
-            f1 += side;
-        } else {
-            f0 = f0.saturating_sub(top);
-            f1 += side;
-            c0 = c0.saturating_sub(side);
-            c1 += side;
-        }
+        // Keep member content center fixed; grow the frame around it so title
+        // width never left-shifts the boxes (which broke exit-edge alignment).
         let title = g.subgraphs[si].title.clone();
-        // Interior width for ` title ` plus side borders: need >= tw + 4.
-        let tw = title.width() + 2;
-        let need = tw + 4;
-        if horizontal {
-            let span = f1.saturating_sub(f0);
-            if span < need {
-                let extra = need - span;
-                let left = extra / 2;
-                f0 = f0.saturating_sub(left);
-                f1 += extra - left;
-            }
+        let tw = title.width() + 2; // ` title `
+        let need_span = tw + 4; // title + side borders + pad
+
+        let (f0, f1, c0, c1) = if horizontal {
+            // Title band on cross (top); center frame on content along flow.
+            let content_mid_f = (f0 + f1) / 2;
+            let content_mid_c = (c0 + c1) / 2;
+            let padded_flen = (f1 - f0) + 2 * side;
+            let padded_clen = (c1 - c0) + top + side;
+            let flen = padded_flen.max(need_span);
+            let clen = padded_clen;
+            let nf0 = content_mid_f.saturating_sub(flen / 2);
+            let nc0 = content_mid_c.saturating_sub(top); // more room above content
+            // Ensure members still sit inside with at least `side` on flow ends
+            // and top/side padding on cross.
+            let nf0 = nf0.min(f0.saturating_sub(side));
+            let nf1 = (nf0 + flen).max(f1 + side);
+            let nc0 = nc0.min(c0.saturating_sub(top));
+            let nc1 = (nc0 + clen).max(c1 + side);
+            (nf0, nf1, nc0, nc1)
         } else {
-            let span = c1.saturating_sub(c0);
-            if span < need {
-                let extra = need - span;
-                let left = extra / 2;
-                c0 = c0.saturating_sub(left);
-                c1 += extra - left;
-            }
-        }
+            // TB: title band on flow (top); center frame on content along cross.
+            let content_mid_f = (f0 + f1) / 2;
+            let content_mid_c = (c0 + c1) / 2;
+            let padded_flen = (f1 - f0) + top + side;
+            let padded_clen = (c1 - c0) + 2 * side;
+            let flen = padded_flen;
+            let clen = padded_clen.max(need_span);
+            let nf0 = content_mid_f.saturating_sub(top); // bias top for title band
+            let nc0 = content_mid_c.saturating_sub(clen / 2);
+            let nf0 = nf0.min(f0.saturating_sub(top));
+            let nf1 = (nf0 + flen).max(f1 + side);
+            let nc0 = nc0.min(c0.saturating_sub(side));
+            let nc1 = (nc0 + clen).max(c1 + side);
+            // Re-center horizontally if min/max clamp skewed the frame.
+            let content_mid_c = (c0 + c1) / 2;
+            let span = nc1 - nc0;
+            let nc0 = content_mid_c.saturating_sub(span / 2);
+            let nc1 = nc0 + span;
+            let nc0 = nc0.min(c0.saturating_sub(side));
+            let nc1 = nc1.max(c1 + side);
+            (nf0, nf1, nc0, nc1)
+        };
+        let f0 = f0;
+        let f1 = f1;
+        let c0 = c0;
+        let c1 = c1;
         flow_extent = flow_extent.max(f1);
         cross_extent = cross_extent.max(c1);
         clusters.push(ClusterGeom {

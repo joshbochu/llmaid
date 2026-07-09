@@ -164,10 +164,6 @@ fn paint(g: &Graph, placed: &Placed, style: Style) -> Canvas {
     let (right_extra, bottom_extra) = canvas_extra(g, placed);
     let mut canvas = Canvas::new(w.max(1) + right_extra, h.max(1) + bottom_extra);
 
-    // Clusters under nodes so member boxes and edges win on shared cells.
-    for cl in &placed.clusters {
-        draw_cluster(&mut canvas, placed, cl, style);
-    }
     for (i, b) in placed.boxes.iter().enumerate() {
         draw_box(&mut canvas, placed, b, g.nodes[i].shape, style);
     }
@@ -222,6 +218,11 @@ fn paint(g: &Graph, placed: &Placed, style: Style) -> Canvas {
     }
     for &ei in &placed.self_loops {
         draw_self_loop(&mut canvas, placed, g, ei, style);
+    }
+    // Cluster frames last, only on empty cells so exit edges punch clean gaps
+    // instead of merging into ┬┴ on the border.
+    for cl in &placed.clusters {
+        draw_cluster(&mut canvas, placed, cl, style);
     }
 
     canvas
@@ -488,30 +489,54 @@ fn draw_cluster(canvas: &mut Canvas, placed: &Placed, cl: &ClusterGeom, style: S
         return;
     }
     let kind = EdgeKind::Solid;
+    // Only paint empty cells so boxes/edges already drawn punch clean gaps
+    // through the frame (no ┬┴ merge on exit shafts).
+    let paint = |canvas: &mut Canvas, px: usize, py: usize, bits: u8| {
+        if !canvas.in_bounds(px, py) {
+            return;
+        }
+        let ix = canvas.idx(px, py);
+        if !matches!(canvas.cells[ix], Cell::Empty) {
+            return;
+        }
+        canvas.add_line_bits(px, py, bits, kind);
+    };
 
     for xx in x + 1..x + w - 1 {
-        canvas.add_line_bits(xx, y, E | W, kind);
-        canvas.add_line_bits(xx, y + h - 1, E | W, kind);
+        paint(canvas, xx, y, E | W);
+        paint(canvas, xx, y + h - 1, E | W);
     }
     for yy in y + 1..y + h - 1 {
-        canvas.add_line_bits(x, yy, N | S, kind);
-        canvas.add_line_bits(x + w - 1, yy, N | S, kind);
+        paint(canvas, x, yy, N | S);
+        paint(canvas, x + w - 1, yy, N | S);
     }
-    canvas.add_line_bits(x, y, E | S, kind);
-    canvas.add_line_bits(x + w - 1, y, S | W, kind);
-    canvas.add_line_bits(x, y + h - 1, N | E, kind);
-    canvas.add_line_bits(x + w - 1, y + h - 1, N | W, kind);
+    paint(canvas, x, y, E | S);
+    paint(canvas, x + w - 1, y, S | W);
+    paint(canvas, x, y + h - 1, N | E);
+    paint(canvas, x + w - 1, y + h - 1, N | W);
     canvas.mark_rounded(x, y);
     canvas.mark_rounded(x + w - 1, y);
     canvas.mark_rounded(x, y + h - 1);
     canvas.mark_rounded(x + w - 1, y + h - 1);
 
     // Title on the first *interior* row (not the border stroke), centered.
+    // Only write into empty cells so we never clobber edges/boxes.
     let title = format!(" {} ", cl.title);
     let tw = title.width();
     if tw > 0 && h >= 3 && tw <= w.saturating_sub(2) {
         let tx = x + (w.saturating_sub(tw)) / 2;
-        canvas.put_text(tx, y + 1, &title);
+        let mut ok = true;
+        for dx in 0..tw {
+            if !canvas.in_bounds(tx + dx, y + 1)
+                || !matches!(canvas.cells[canvas.idx(tx + dx, y + 1)], Cell::Empty)
+            {
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            canvas.put_text(tx, y + 1, &title);
+        }
     }
 
     let _ = style;
