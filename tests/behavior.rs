@@ -1,7 +1,7 @@
 //! Behavior-driven tests. One test per contract in BEHAVIORS.md, named
 //! `b<N>_given_..._then_...`. Parser behaviors call the library; CLI
-//! behaviors (B6–B8, B11–B12) run the real binary. B9–B10 and B13–B14 land with
-//! M2/M3.
+//! behaviors (B6–B8, B11–B13) run the real binary. B9–B10 and B14 land with
+//! remaining milestones.
 
 use llmaid::parse::{Shape, parse};
 use std::process::{Command, Stdio};
@@ -198,5 +198,45 @@ flowchart LR
     assert!(
         arrows >= 2,
         "expected two distinct arrowheads for parallel edges, got {arrows}:\n{stdout}"
+    );
+}
+
+#[test]
+fn b13_given_non_rect_shapes_then_rect_frame_with_shape_hints() {
+    let src = "\
+flowchart LR
+  r[rect] --> ro(rounded) --> st([stadium]) --> ci((circle))
+  cy[(cylinder)] --> di{diamond} --> hx{{hexagon}}
+";
+    let (stdout, stderr, code) = run_llmaid(&[], src);
+    assert_eq!(code, 0, "{stderr}");
+    // All labels present (never truncated / lost to shape drawing).
+    for label in ["rect", "rounded", "stadium", "circle", "cylinder", "diamond", "hexagon"] {
+        assert!(
+            stdout.contains(label),
+            "missing label `{label}`:\n{stdout}"
+        );
+    }
+    // D13 hints: diamond corners, stadium/circle caps, cylinder lid, hex facets.
+    assert!(
+        stdout.contains('◇'),
+        "diamond should use ◇ corner hints:\n{stdout}"
+    );
+    assert!(
+        stdout.contains('(') && stdout.contains(')'),
+        "stadium/circle should use ( ) caps:\n{stdout}"
+    );
+    assert!(
+        stdout.contains('═'),
+        "cylinder should use a lid on the top edge:\n{stdout}"
+    );
+    assert!(
+        stdout.contains('╱') && stdout.contains('╲'),
+        "hexagon should use faceted corner hints:\n{stdout}"
+    );
+    // Rect frame still present (grid discipline).
+    assert!(
+        stdout.contains('│') || stdout.contains('╭') || stdout.contains('┌'),
+        "expected rect-framed boxes:\n{stdout}"
     );
 }

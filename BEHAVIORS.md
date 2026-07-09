@@ -44,9 +44,9 @@ their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–
   its arrow and label preserved.
 - **B12** Given parallel edges (B3), when rendered, then both are drawn as
   distinct paths, each carrying its own label.
-- **B13** *pending M2* — Given non-rect shapes, when rendered, then boxes are
-  rect-framed with shape-hint glyphs (◇ corners, rounded caps, cylinder lid) —
-  grid alignment is never risked for shape fidelity (termiflow's failure mode).
+- **B13** Given non-rect shapes, when rendered, then boxes are rect-framed with
+  shape-hint glyphs (◇ corners, rounded caps, cylinder lid) — grid alignment
+  is never risked for shape fidelity (termiflow's failure mode).
 - **B14** *pending M2* — Given any rendered frame, then invariants hold:
   no truncated labels, all borders closed, every edge reaches both endpoints,
   no character overwrites label text. (Doubles as the fuzz oracle.)

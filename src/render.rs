@@ -1,7 +1,7 @@
 //! Render placed flowchart geometry onto a character canvas.
 
 use crate::layout::{BoxGeom, EDGE_LABEL_PAD, Placed};
-use crate::parse::{EdgeKind, Graph};
+use crate::parse::{EdgeKind, Graph, Shape};
 use crate::style::{E, N, S, Style, W};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -148,8 +148,8 @@ pub fn render(g: &Graph, placed: &Placed, style: Style) -> String {
     let (right_extra, bottom_extra) = canvas_extra(g, placed);
     let mut canvas = Canvas::new(w.max(1) + right_extra, h.max(1) + bottom_extra);
 
-    for b in &placed.boxes {
-        draw_box(&mut canvas, placed, b, style);
+    for (i, b) in placed.boxes.iter().enumerate() {
+        draw_box(&mut canvas, placed, b, g.nodes[i].shape, style);
     }
     for (ei, segs) in placed.segs.iter().enumerate() {
         for (si, seg) in segs.iter().enumerate() {
@@ -287,9 +287,15 @@ impl ScreenMap for Placed {
     }
 }
 
-fn draw_box(canvas: &mut Canvas, placed: &Placed, b: &BoxGeom, style: Style) {
+fn draw_box(canvas: &mut Canvas, placed: &Placed, b: &BoxGeom, shape: Shape, style: Style) {
     let (x, y, w, h) = placed.box_rect(b);
     let kind = EdgeKind::Solid;
+    // B13 / D13: always a rect frame; shape is conveyed by corner/cap/lid hints
+    // so grid alignment never depends on true diamond walls.
+    let rounded = matches!(
+        shape,
+        Shape::Rounded | Shape::Stadium | Shape::Circle | Shape::Cylinder | Shape::Hexagon
+    );
 
     for xx in x + 1..x + w - 1 {
         canvas.add_line_bits(xx, y, E | W, kind);
@@ -304,10 +310,14 @@ fn draw_box(canvas: &mut Canvas, placed: &Placed, b: &BoxGeom, style: Style) {
     canvas.add_line_bits(x + w - 1, y, S | W, kind);
     canvas.add_line_bits(x, y + h - 1, N | E, kind);
     canvas.add_line_bits(x + w - 1, y + h - 1, N | W, kind);
-    canvas.mark_rounded(x, y);
-    canvas.mark_rounded(x + w - 1, y);
-    canvas.mark_rounded(x, y + h - 1);
-    canvas.mark_rounded(x + w - 1, y + h - 1);
+    if rounded {
+        canvas.mark_rounded(x, y);
+        canvas.mark_rounded(x + w - 1, y);
+        canvas.mark_rounded(x, y + h - 1);
+        canvas.mark_rounded(x + w - 1, y + h - 1);
+    }
+
+    apply_shape_hints(canvas, x, y, w, h, shape, style);
 
     let inner_w = w.saturating_sub(2);
     for (i, line) in b.lines.iter().enumerate() {
@@ -315,8 +325,61 @@ fn draw_box(canvas: &mut Canvas, placed: &Placed, b: &BoxGeom, style: Style) {
         let start = x + 1 + inner_w.saturating_sub(text_w) / 2;
         canvas.put_text(start, y + 1 + i, line);
     }
+}
 
-    let _ = style;
+/// Overlay shape-hint glyphs on a rect frame (D13). Corners preferred so side
+/// ports for edges stay free; stadium/circle caps sit on the vertical mid of
+/// the left/right borders (same cells edges may use — still readable).
+fn apply_shape_hints(
+    canvas: &mut Canvas,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    shape: Shape,
+    style: Style,
+) {
+    let mid_y = y + h / 2;
+    match shape {
+        Shape::Rect | Shape::Rounded => {}
+        Shape::Stadium | Shape::Circle => {
+            let (left, right) = if style.ascii {
+                ('(', ')')
+            } else {
+                ('(', ')')
+            };
+            canvas.put_text_char(x, mid_y, left);
+            canvas.put_text_char(x + w - 1, mid_y, right);
+        }
+        Shape::Diamond => {
+            let ch = if style.ascii { '*' } else { '◇' };
+            canvas.put_text_char(x, y, ch);
+            canvas.put_text_char(x + w - 1, y, ch);
+            canvas.put_text_char(x, y + h - 1, ch);
+            canvas.put_text_char(x + w - 1, y + h - 1, ch);
+        }
+        Shape::Cylinder => {
+            // Lid on the top edge (distinct from a plain rect top).
+            let lid = if style.ascii { '=' } else { '═' };
+            for xx in x + 1..x + w - 1 {
+                canvas.put_text_char(xx, y, lid);
+            }
+        }
+        Shape::Hexagon => {
+            if style.ascii {
+                canvas.put_text_char(x, y, '/');
+                canvas.put_text_char(x + w - 1, y, '\\');
+                canvas.put_text_char(x, y + h - 1, '\\');
+                canvas.put_text_char(x + w - 1, y + h - 1, '/');
+            } else {
+                // Faceted corners without breaking the rect grid.
+                canvas.put_text_char(x, y, '╱');
+                canvas.put_text_char(x + w - 1, y, '╲');
+                canvas.put_text_char(x, y + h - 1, '╲');
+                canvas.put_text_char(x + w - 1, y + h - 1, '╱');
+            }
+        }
+    }
 }
 
 fn draw_flow_segment(

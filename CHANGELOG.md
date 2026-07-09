@@ -6,6 +6,9 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Renderer (B13): non-rect shapes stay rect-framed with hint glyphs — ◇
+  diamond corners, ( ) stadium/circle caps, ═ cylinder lid, ╱╲ hex facets;
+  plain rect uses sharp corners (D13).
 - Layout/render (B12): boxes grow along the cross axis so each forward edge
   owns a distinct port — parallel edges keep separate paths and labels
   (no more last-label-wins collapse).

@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-09, after B12 parallel edge ports.
+Last updated: 2026-07-09, after B13 shape hints.
 
 ## What this project is
 
@@ -13,7 +13,7 @@ Read these before writing code, in this order:
 
 1. `AGENTS.md` — commands, module map, non-negotiable invariants, conventions.
 2. `DESIGN.md` — full v1 design: scope, architecture, aesthetic spec, milestones.
-3. `BEHAVIORS.md` — behavior contracts B1–B14; B9–B10 and B13–B14 are
+3. `BEHAVIORS.md` — behavior contracts B1–B14; B9–B10 and B14 are
    *pending* (each needs its `b<N>_...` test when implemented).
 4. `CHANGELOG.md` — decisions D1–D14 with rationale and rejected alternatives.
    Do not relitigate these; extend the log if you make new decisions.
@@ -24,11 +24,13 @@ Read these before writing code, in this order:
 
 - Baseline includes parse → layout → render end-to-end; layout/style wired in
   `lib.rs`; CLI honors `--ascii` (`--width` still unused).
-- `cargo test`: 15/15 pass (12 behavior + 3 golden/error/determinism).
+- `cargo test`: 16/16 pass (13 behavior + 3 golden/error/determinism).
 - `src/render.rs` draws boxes, forward channel edges, arrowheads, on-arrow
-  labels for LR/RL, ASCII/Unicode glyphs, self-loops, and cycle back edges.
+  labels for LR/RL, ASCII/Unicode glyphs, self-loops, cycle back edges, and
+  B13 shape hints.
 - `tests/cases/*.txt` rendered snapshots are in the tree for eyeballing; they
   are not yet byte-compared (B14).
+- `--width` is still parsed but unused (B9/B10).
 
 ### Done
 
@@ -42,26 +44,26 @@ Read these before writing code, in this order:
 - B12 is landed: forward degree grows box `clen` so each edge gets a distinct
   port; parallel edges keep separate paths and labels
   (`b12_given_parallel_edges_then_distinct_paths_and_labels`).
+- B13 is landed: rect frames with shape-hint glyphs
+  (`b13_given_non_rect_shapes_then_rect_frame_with_shape_hints`).
 
 ### Still missing
 
 - B9/B10: `--width` overflow ladder (compact gaps → wrap labels → over-width
   rather than truncating/failing).
-- B13: shape hints for non-rect shapes (diamond/cylinder/stadium/circle/etc.).
 - B14: rendered `.txt` golden comparison plus invariants (closed borders,
   edges reach endpoints, no label overwrite).
-- Behavior tests b9, b10, b13, b14 and corresponding pending-marker
+- Behavior tests b9, b10, b14 and corresponding pending-marker
   removals in `BEHAVIORS.md`.
 - RL/BT mirroring needs explicit verification beyond compile/test coverage.
 
 ## Suggested next steps, in order
 
-1. B13 shape hints: rect frame + hint glyphs per DESIGN.md.
-2. B9/B10 width ladder: wire the fixed default width through layout/render.
-3. B14 rendered goldens + invariants: byte-compare `tests/cases/*.txt` and add
+1. B9/B10 width ladder: wire the fixed default width through layout/render.
+2. B14 rendered goldens + invariants: byte-compare `tests/cases/*.txt` and add
    border/endpoint/label overwrite checks.
-4. Verify RL/BT mirroring with explicit cases.
-5. Keep `CHANGELOG.md` and `BEHAVIORS.md` current as behaviors land — this is
+3. Verify RL/BT mirroring with explicit cases.
+4. Keep `CHANGELOG.md` and `BEHAVIORS.md` current as behaviors land — this is
    a logged convention in AGENTS.md.
 
 ## Quality bar (what "done" looks like)
