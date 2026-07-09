@@ -31,7 +31,7 @@ their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–
   TTY state), then output is byte-identical. Default width is a fixed 100;
   only `--width` changes it. No terminal detection.
 
-## Layout & rendering (tests land with M2/M3)
+## Layout & rendering
 
 - **B9** Given a diagram wider than the width budget, when rendered, then
   degradation is: compact gaps → wrap labels → render over-width anyway. Never
