@@ -39,8 +39,10 @@ Mermaid `flowchart` / `graph`, directions `LR` `RL` `TB` `BT`:
 - Node declaration and reference, `&` fan-out (`A --> B & C`)
 - Unicode default, `--ascii` fallback (`+-|>`), `--width N` fit
 
-Explicitly out of v1 (v2 candidates): sequence diagrams, trees/mindmaps,
-subgraphs, styling directives (`classDef`, `style` — parsed and ignored, never an error).
+Explicitly out of v1: sequence diagrams, trees/mindmaps, subgraphs (parsed and
+flattened with a warning), styling directives (`classDef`, `style` — ignored,
+never an error). Post-v1 expansion is tracked in `ROADMAP.md`; competitor and
+Mermaid coverage checklist in `MATRIX.md`.
 
 ## Architecture
 

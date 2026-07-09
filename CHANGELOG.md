@@ -6,6 +6,11 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Docs: `ROADMAP.md` (phased plan: flowchart polish → subgraphs → sequence →
+  design types → planning → charts → agent diagnostics → distribute) and
+  `MATRIX.md` (capability × tool coverage: llmaid, termiflow, termaid, diagon,
+  graph-easy, mermaid.js). Product stance: agents create/self-debug, humans
+  view. Linked from `AGENTS.md`, `HANDOFF.md`, `DESIGN.md`.
 - Testing (B14): rendered `.txt` golden snapshots byte-compared; canvas
   invariants (closed borders, label cells intact, edge endpoints, no
   truncation glyphs) via `render::render_with_checks` on every case.

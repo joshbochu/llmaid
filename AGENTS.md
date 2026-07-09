@@ -1,10 +1,12 @@
 # llmaid — agent guide
 
-Mermaid flowcharts in, clean deterministic terminal diagrams out. A single fast
-Rust binary that coding agents use to compose diagrams into their output.
-Read `DESIGN.md` for the full v1 design, `BEHAVIORS.md` for the promised
-behavior contracts (B1–B14); log notable decisions in `CHANGELOG.md`.
-Picking up mid-stream? `HANDOFF.md` has the current state and next steps.
+Mermaid in, clean deterministic terminal diagrams out. A single fast Rust
+binary that coding agents use to compose diagrams into their output (agents
+create/self-debug; humans look at the visuals).
+
+Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B14),
+`ROADMAP.md` for phased work, `MATRIX.md` for capability coverage vs other
+tools. Log decisions in `CHANGELOG.md`. Mid-stream? `HANDOFF.md`.
 
 ## Commands
 

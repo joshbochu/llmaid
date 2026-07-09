@@ -1,76 +1,58 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-09, after B14 rendered goldens + invariants.
+Last updated: 2026-07-09 — roadmap + coverage matrix added.
 
 ## What this project is
 
-`llmaid` renders Mermaid flowcharts as clean, deterministic Unicode diagrams in
-the terminal. Target user: coding agents composing diagrams into their output.
-Thesis: diagon's alignment correctness + termiflow's aesthetic (rounded,
-spacious, minimalist), behind Mermaid syntax, in one fast Rust binary.
+`llmaid` renders Mermaid as clean, deterministic Unicode diagrams in the
+terminal. **Agents create and self-debug; humans look at the visuals.**
 
-Read these before writing code, in this order:
+Thesis: diagon's alignment correctness + termiflow's aesthetic, behind Mermaid
+syntax, in one fast Rust binary — expanding toward multi-type Mermaid breadth
+without losing glance quality.
 
-1. `AGENTS.md` — commands, module map, non-negotiable invariants, conventions.
-2. `DESIGN.md` — full v1 design: scope, architecture, aesthetic spec, milestones.
-3. `BEHAVIORS.md` — behavior contracts B1–B14 (all landed).
-4. `CHANGELOG.md` — decisions D1–D14 with rationale and rejected alternatives.
-   Do not relitigate these; extend the log if you make new decisions.
+## Read order
 
-## Current state (exact)
+1. `AGENTS.md` — commands, modules, invariants, conventions  
+2. `DESIGN.md` — v1 design thesis and architecture  
+3. `ROADMAP.md` — phased plan (what to build next)  
+4. `MATRIX.md` — capability × tool coverage checklist  
+5. `BEHAVIORS.md` — shipped contracts B1–B14  
+6. `CHANGELOG.md` — decisions D1–D14  
 
-**v1 behavior contracts B1–B14 are landed on `main`.** Working tree should be clean.
+## Current state
 
-- Full pipeline: parse → layout (width ladder) → render (shape hints, cycles,
-  parallel ports).
-- `cargo test`: behavior suite + IR/render goldens + B14 canvas invariants.
-- CLI: `--ascii`, `--width N` (default 100), `--strict`, file or stdin.
-- Regenerate goldens: `UPDATE_GOLDEN=1 cargo test` (only when output is better).
+**v1 flowchart contracts B1–B14 are landed.** Working tree may still hold
+uncommitted **edge-label spacing** (` scan `) polish — commit that as Phase 0.1.
 
-### Done
+- Pipeline: parse → layout (width ladder) → render (shapes, cycles, parallel ports)
+- CLI: `--ascii`, `--width N` (default 100), `--strict`
+- Tests: behavior + IR/render goldens + B14 canvas invariants
+- Regenerate goldens: `UPDATE_GOLDEN=1 cargo test`
 
-- B1–B8: parse + CLI contracts.
-- B9/B10: `--width` overflow ladder (compact → wrap → over-width).
-- B11: self-loops and back-edge perimeter routes.
-- B12: distinct ports for parallel edges.
-- B13: rect-framed shape hints (◇ ( ) ═ ╱╲).
-- B14: `.txt` goldens + `render_with_checks` invariants.
+## Next steps (from ROADMAP)
 
-### Still open (post-contract polish)
+1. **Phase 0** — flowchart polish (commit spacing, RL/BT goldens, TB labels, aesthetics)  
+2. **Phase 1** — real subgraphs  
+3. **Phase 2** — sequence diagrams  
+4. Then design types → planning → selective charts → agent diagnostics → distribute  
 
-- Explicit RL/BT verification cases (mirroring is implemented; light coverage).
-- Multi-rank dummy conflicts for rare parallel long edges.
-- Edge-label placement for TB (on-arrow labels are LR-focused today).
-- Optional: tighten channel/jog aesthetics on `edge-labels.mmd`.
+Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 
-## Suggested next steps, in order
-
-1. Explicit RL/BT golden cases.
-2. TB edge labels on the vertical run when space allows.
-3. Any aesthetic pass against reference tools (termiflow/diagon).
-4. Keep `CHANGELOG.md` and `BEHAVIORS.md` current as behaviors land.
-
-## Quality bar (what "done" looks like)
-
-The user's reference for taste — output should look like:
+## Quality bar
 
 ```
-╭─────────╮  scan   ╭──────────────╮  parse   ╭──────────╮
-│ source  ├────────▶│  Vec<Token>  ├─────────▶│ Expr AST │
-╰─────────╯         ╰──────────────╯          ╰──────────╯
+╭────────╮             ╭────────────╮              ╭──────────╮
+│ source ├─── scan ───▶│ Vec<Token> ├─── parse ───▶│ Expr AST │
+╰────────╯             ╰────────────╯              ╰──────────╯
 ```
 
-Rounded corners, labels sitting on the arrow, generous-but-consistent gaps,
-nothing truncated, nothing floating. When in doubt render `tests/cases/*.mmd`
-and eyeball against the aesthetic spec in DESIGN.md. The failure modes to
-avoid are termiflow's: truncated labels (`pr…`), floating edge labels,
-detached shape glyphs.
+Rounded, labels on the arrow with spaces, nothing truncated. Eyeball
+`tests/cases/*.mmd` when unsure.
 
-## Context that is easy to lose
+## Local comparison tools
 
-- The user cares most about: minimalist readable output, correct alignment,
-  speed. They explicitly dislike dense/heavy table-style output.
-- Comparison tools installed locally for reference renders: `tw` (termiflow,
-  `~/.cargo/bin/tw`), diagon wrapper (`node ~/dev/lox-rs/tools/diagon.mjs`),
-  graph-easy (`PERL5LIB=~/perl5/lib/perl5 ~/perl5/bin/graph-easy`), and
-  `uvx termaid` (the PyPI competitor; also why our name isn't termaid).
+- termiflow: `tw` (`~/.cargo/bin/tw`)  
+- diagon: `node ~/dev/lox-rs/tools/diagon.mjs <seq|tree|math|table|frame|dag|grammar>`  
+- graph-easy: `PERL5LIB=~/perl5/lib/perl5 ~/perl5/bin/graph-easy`  
+- termaid: `uvx --from termaid termaid`  
