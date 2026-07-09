@@ -66,6 +66,8 @@ Mermaid as the only primary agent language.
 | Labels **on** edge shaft | Y | N | P | P | Y | — |
 | Solid / dotted / thick edges | Y | Y | Y | P | Y | Y |
 | LR / RL / TB / BT | Y | Y | Y | P | Y | Y |
+| TB/BT edge labels on shaft | Y | ? | P | — | P | Y |
+| RL edge labels | Y | ? | P | — | P | Y |
 | Fork / merge | Y | Y | Y | Y | Y | Y |
 | Cycles / back-edges | Y | P | P | N (dag) | Y | Y |
 | Self-loops | Y | P | P | N | Y | Y |
@@ -243,3 +245,4 @@ When you ship a feature:
 | Date | Note |
 |------|------|
 | 2026-07-09 | Initial matrix from design + local tool probes (tw, termaid demos, diagon modes, graph-easy). |
+| 2026-07-09 | Phase 0: TB/BT labels, RL goldens, mono-chain straighten; flowchart direction cells strengthened. |

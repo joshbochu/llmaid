@@ -1,0 +1,6 @@
+direction: BT
+nodes:
+  low rect "bottom"
+  high rect "top"
+edges:
+  low -->|up| high

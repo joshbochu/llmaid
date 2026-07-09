@@ -289,14 +289,24 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     } else if horizontal {
         1
     } else {
-        4.max(max_label + 3)
+        // Vertical flow: cross-axis gap between siblings — not edge-label width
+        // (labels sit beside the vertical run; see render).
+        let _ = max_label;
+        2
     };
     let edge_label_pad = if fit.compact {
         1
     } else {
         EDGE_LABEL_PAD
     };
-    let channel_min = if fit.compact { 3 } else { 5 };
+    // Vertical channels only need a short band for beside-shaft labels.
+    let channel_min = if fit.compact {
+        3
+    } else if horizontal {
+        5
+    } else {
+        3
+    };
     let has_self_loop = |ni: usize| self_loops.iter().any(|&ei| g.edges[ei].from == ni);
 
     let slot_clen = |slot: &Slot, boxes: &[BoxGeom]| -> usize {
@@ -367,6 +377,20 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
             }
         }
     }
+
+    // Phase 0.4: straighten mono-rank chains so simple A→B columns share a
+    // centerline (fewer needless elbows when each rank has one real node).
+    straighten_mono_chains(g, &ranks, &mut boxes, &reversed);
+
+    // Keep slot_cross in sync for reals after straightening (dummies unchanged).
+    for (r, rslots) in ranks.iter().enumerate() {
+        for (si, slot) in rslots.iter().enumerate() {
+            if let Slot::Real(i) = slot {
+                slot_cross[r][si] = boxes[*i].c;
+            }
+        }
+    }
+
     let mut pass_through = Vec::new();
     for (r, rslots) in ranks.iter().enumerate() {
         for (si, slot) in rslots.iter().enumerate() {
@@ -376,15 +400,16 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         }
     }
 
-    let cross_extent = (0..nranks)
-        .flat_map(|r| {
-            ranks[r]
-                .iter()
-                .zip(&slot_cross[r])
-                .map(|(slot, &c)| c + slot_clen(slot, &boxes))
-        })
-        .max()
-        .unwrap_or(0);
+    let mut cross_extent = 0usize;
+    for r in 0..nranks {
+        for (si, slot) in ranks[r].iter().enumerate() {
+            let end = match slot {
+                Slot::Real(i) => boxes[*i].c + boxes[*i].clen,
+                Slot::Dummy(_) => slot_cross[r][si] + 1,
+            };
+            cross_extent = cross_extent.max(end);
+        }
+    }
 
     // --- Ports and channel segments.
     let dummy_cross = |ei: usize, r: usize| -> usize {
@@ -401,8 +426,10 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
 
     // First cross positions of each edge's endpoints per channel; ports assigned
     // per node so several edges on one side spread across interior rows.
-    let out_port = port_map(g, &boxes, &reversed, &edge_spans, &pass_through, true);
-    let in_port = port_map(g, &boxes, &reversed, &edge_spans, &pass_through, false);
+    let mut out_port = port_map(g, &boxes, &reversed, &edge_spans, &pass_through, true);
+    let mut in_port = port_map(g, &boxes, &reversed, &edge_spans, &pass_through, false);
+    // Snap single-attachment edges to a shared cross so mono-chains stay straight.
+    snap_mono_edge_ports(g, &boxes, &reversed, &mut out_port, &mut in_port);
 
     for ei in 0..g.edges.len() {
         let Some((rs, rt)) = edge_spans[ei] else {
@@ -442,16 +469,30 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
             let labeled_here =
                 g.edges[ei].label.is_some() && edge_spans[ei].map(|(rs, _)| rs) == Some(r);
             if labeled_here {
-                // +2 for the spaces drawn around the word (` scan `).
-                label_zone = label_zone.max(
-                    g.edges[ei].label.as_deref().unwrap().width() + 2 + 2 * edge_label_pad,
-                );
+                if horizontal {
+                    // Label lies along the channel (flow axis): need full text width.
+                    // +2 for the spaces drawn around the word (` scan `).
+                    label_zone = label_zone.max(
+                        g.edges[ei].label.as_deref().unwrap().width() + 2 + 2 * edge_label_pad,
+                    );
+                } else {
+                    // Vertical flow: label is a single horizontal band beside the
+                    // shaft — only a few rows of channel height.
+                    label_zone = label_zone.max(3);
+                }
             }
             if seg.from.1 != seg.to.1 {
                 tracks += 1;
             }
         }
-        let width = channel_min.max(label_zone + 2 * tracks + if fit.compact { 2 } else { 3 });
+        let slack = if fit.compact {
+            2
+        } else if horizontal {
+            3
+        } else {
+            1
+        };
+        let width = channel_min.max(label_zone + 2 * tracks + slack);
         channels.push(Channel {
             start: 0,
             width,
@@ -546,6 +587,97 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         rank_span,
         flow_extent,
         cross_extent,
+    }
+}
+
+/// For forward edges that are each endpoint's only attachment, force a shared
+/// port cross (clamped into each box) so the shaft does not jog.
+fn snap_mono_edge_ports(
+    g: &Graph,
+    boxes: &[BoxGeom],
+    reversed: &[bool],
+    out_port: &mut [usize],
+    in_port: &mut [usize],
+) {
+    let mut out_deg = vec![0usize; g.nodes.len()];
+    let mut in_deg = vec![0usize; g.nodes.len()];
+    for (ei, e) in g.edges.iter().enumerate() {
+        if e.from == e.to || reversed[ei] {
+            continue;
+        }
+        out_deg[e.from] += 1;
+        in_deg[e.to] += 1;
+    }
+    for (ei, e) in g.edges.iter().enumerate() {
+        if e.from == e.to || reversed[ei] {
+            continue;
+        }
+        if out_deg[e.from] != 1 || in_deg[e.to] != 1 {
+            continue;
+        }
+        let mid = (out_port[ei] + in_port[ei]) / 2;
+        let clamp = |ni: usize, p: usize| {
+            let b = &boxes[ni];
+            let lo = b.c + 1;
+            let hi = b.c + b.clen.saturating_sub(2);
+            if lo > hi {
+                b.c + b.clen / 2
+            } else {
+                p.clamp(lo, hi)
+            }
+        };
+        out_port[ei] = clamp(e.from, mid);
+        in_port[ei] = clamp(e.to, mid);
+        // If clamps still disagree (non-overlapping boxes), prefer source port
+        // and re-clamp into the target so at least one side is exact.
+        if out_port[ei] != in_port[ei] {
+            in_port[ei] = clamp(e.to, out_port[ei]);
+            if out_port[ei] != in_port[ei] {
+                out_port[ei] = clamp(e.from, in_port[ei]);
+            }
+        }
+    }
+}
+
+/// When consecutive ranks each hold a single real node connected by a forward
+/// edge, share a centerline so the edge can run straight.
+fn straighten_mono_chains(
+    g: &Graph,
+    ranks: &[Vec<Slot>],
+    boxes: &mut [BoxGeom],
+    reversed: &[bool],
+) {
+    for r in 0..ranks.len().saturating_sub(1) {
+        let reals = |rr: usize| -> Vec<usize> {
+            ranks[rr]
+                .iter()
+                .filter_map(|s| match s {
+                    Slot::Real(i) => Some(*i),
+                    Slot::Dummy(_) => None,
+                })
+                .collect()
+        };
+        let a = reals(r);
+        let b = reals(r + 1);
+        if a.len() != 1 || b.len() != 1 {
+            continue;
+        }
+        let (ai, bi) = (a[0], b[0]);
+        let connected = g.edges.iter().enumerate().any(|(ei, e)| {
+            !reversed[ei]
+                && e.from != e.to
+                && e.from == ai
+                && e.to == bi
+                && boxes[ai].rank + 1 == boxes[bi].rank
+        });
+        if !connected {
+            continue;
+        }
+        let ca = boxes[ai].c + boxes[ai].clen / 2;
+        let cb = boxes[bi].c + boxes[bi].clen / 2;
+        let mid = (ca + cb) / 2;
+        boxes[ai].c = mid.saturating_sub(boxes[ai].clen / 2);
+        boxes[bi].c = mid.saturating_sub(boxes[bi].clen / 2);
     }
 }
 
@@ -905,7 +1037,9 @@ fn port_map(
         let interior = b.clen.saturating_sub(2).max(1);
         for (idx, &(ei, _)) in attached.iter().enumerate() {
             let offset = if k == 1 {
-                (b.clen - 1) / 2
+                // Match box center (`c + clen/2`) so mono-chains stay straight
+                // on even widths too (Phase 0.4).
+                b.clen / 2
             } else {
                 1 + (idx * (interior - 1)) / (k - 1).max(1)
             };

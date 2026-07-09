@@ -1,0 +1,8 @@
+direction: TB
+nodes:
+  top rect "Scanner"
+  mid rect "Parser"
+  bot rect "Eval"
+edges:
+  top -->|lex| mid
+  mid -->|run| bot

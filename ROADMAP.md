@@ -30,8 +30,8 @@ Agents speak Mermaid; we own primitives behind the door.
 | Phase | Name | Status |
 |-------|------|--------|
 | — | v1 flowchart baseline (B1–B14) | **done** |
-| 0 | Ship & tighten flowchart | **next** |
-| 1 | Flowchart completeness (subgraphs / graph-easy parity) | later |
+| 0 | Ship & tighten flowchart | **done** |
+| 1 | Flowchart completeness (subgraphs / graph-easy parity) | **next** |
 | 2 | Sequence diagrams | later |
 | 3 | Design-doc types (state / class / ER) | later |
 | 4 | Hierarchy & planning (mindmap / gantt / git) | later |
@@ -52,22 +52,19 @@ Flowchart-only terminal Mermaid with contracts B1–B14:
 
 See `BEHAVIORS.md`, `CHANGELOG.md`.
 
-**Pending commit (polish on tree):** edge labels padded as ` scan ` (space each
-side) — land before Phase 0 closes.
-
 ---
 
-## Phase 0 — Ship & tighten flowchart · **next**
+## Phase 0 — Ship & tighten flowchart · **done**
 
 | ID | Item | Notes |
 |----|------|--------|
-| 0.1 | Commit label-spacing polish + refresh `.txt` goldens | Aesthetic win in working tree |
-| 0.2 | RL/BT explicit golden cases | Mirroring implemented; under-tested |
-| 0.3 | TB on-arrow edge labels | Today LR-focused |
-| 0.4 | Optional: simple-chain port alignment | Fewer needless jogs on pure A→B chains |
-| 0.5 | Dense multi-edge aesthetic pass | Quality bar: `tests/cases/edge-labels.mmd` |
+| 0.1 | Label-spacing polish (` scan `) + goldens | Shipped |
+| 0.2 | RL/BT explicit golden cases | `dir-rl`, `dir-bt` + behavior test |
+| 0.3 | TB on-arrow edge labels | Beside vertical shaft; `dir-tb-labels` |
+| 0.4 | Simple-chain port alignment | Mono-rank straighten + mono-edge port snap |
+| 0.5 | Tighter TB channels / multi-edge cases | Less vertical waste; edge-labels still complex but labeled |
 
-**Exit:** every reference flowchart is glance-trusted; Phase 0 rows in MATRIX green where applicable.
+**Exit met:** directions covered; TB labels visible; simple TB chains straight.
 
 ---
 
@@ -205,8 +202,7 @@ Only where glance quality holds (don’t become a junk drawer).
 ## Suggested near-term sequence
 
 ```text
-0.1 commit spacing → 0.2–0.5 flowchart polish
-→ 1.x subgraphs
+1.x subgraphs
 → 2.x sequence
 → 3.x state/class/ER
 → 4.x mindmap/gantt/git

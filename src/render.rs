@@ -209,11 +209,7 @@ fn paint(g: &Graph, placed: &Placed, style: Style) -> Canvas {
                 canvas.mark_rounded(b.0, b.1);
             }
         }
-        if let (true, Some(first), Some(label)) = (
-            placed.horizontal,
-            segs.first(),
-            g.edges[ei].label.as_deref(),
-        ) {
+        if let (Some(first), Some(label)) = (segs.first(), g.edges[ei].label.as_deref()) {
             draw_edge_label(&mut canvas, placed, first.channel, first.from.1, label);
         }
     }
@@ -377,6 +373,19 @@ fn canvas_extra(g: &Graph, placed: &Placed) -> (usize, usize) {
             let is_horizontal_back = placed.horizontal && placed.back_edges.contains(&ei);
             if !is_horizontal_back {
                 right = right.max(label_w + 8 + 2 * EDGE_LABEL_PAD + placed.back_edges.len() * 2);
+            }
+        }
+    }
+
+    // TB/BT forward labels sit to the right of the vertical shaft.
+    if !placed.horizontal {
+        for (ei, segs) in placed.segs.iter().enumerate() {
+            if segs.is_empty() {
+                continue;
+            }
+            if let Some(label) = g.edges[ei].label.as_deref() {
+                let w = label.width() + 2; // padded ` label `
+                right = right.max(w + 2);
             }
         }
     }
@@ -691,14 +700,23 @@ fn draw_edge_label(
     }
     let text = padded_edge_label(label);
     let label_w = text.width();
-    let zone = placed.channels[channel].label_zone;
-    let f = placed.channels[channel].start + 1 + zone.saturating_sub(label_w) / 2;
-    let (x, y) = if placed.flipped {
-        placed.to_screen(f + label_w.saturating_sub(1), cross)
+    let ch = &placed.channels[channel];
+    if placed.horizontal {
+        // Label sits on the horizontal shaft inside the channel label zone.
+        let f = ch.start + 1 + ch.label_zone.saturating_sub(label_w) / 2;
+        let (x, y) = if placed.flipped {
+            placed.to_screen(f + label_w.saturating_sub(1), cross)
+        } else {
+            placed.to_screen(f, cross)
+        };
+        canvas.put_text(x, y, &text);
     } else {
-        placed.to_screen(f, cross)
-    };
-    canvas.put_text(x, y, &text);
+        // Vertical shaft: one horizontal band in the channel, text to the right
+        // of the line so multi-char labels stay readable (Phase 0.3).
+        let f = ch.start + ch.label_zone.max(1) / 2;
+        let (x, y) = placed.to_screen(f, cross);
+        canvas.put_text(x.saturating_add(1), y, &text);
+    }
 }
 
 fn draw_flow_line(

@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-09 — roadmap + coverage matrix added.
+Last updated: 2026-07-09 — Phase 0 flowchart polish complete.
 
 ## What this project is
 
@@ -22,20 +22,20 @@ without losing glance quality.
 
 ## Current state
 
-**v1 flowchart contracts B1–B14 are landed.** Working tree may still hold
-uncommitted **edge-label spacing** (` scan `) polish — commit that as Phase 0.1.
+**v1 contracts B1–B14 + Phase 0 polish are landed.**
 
-- Pipeline: parse → layout (width ladder) → render (shapes, cycles, parallel ports)
+- Pipeline: parse → layout (width ladder, mono-chain straighten) → render
+- Edge labels: padded on-shaft (` scan `); TB/BT labels beside vertical runs
+- Directions: LR/RL/TB/BT with goldens (`dir-rl`, `dir-bt`, `dir-tb-labels`)
 - CLI: `--ascii`, `--width N` (default 100), `--strict`
 - Tests: behavior + IR/render goldens + B14 canvas invariants
 - Regenerate goldens: `UPDATE_GOLDEN=1 cargo test`
 
 ## Next steps (from ROADMAP)
 
-1. **Phase 0** — flowchart polish (commit spacing, RL/BT goldens, TB labels, aesthetics)  
-2. **Phase 1** — real subgraphs  
-3. **Phase 2** — sequence diagrams  
-4. Then design types → planning → selective charts → agent diagnostics → distribute  
+1. **Phase 1** — real subgraphs (graph-easy / architecture parity)  
+2. **Phase 2** — sequence diagrams  
+3. Design types → planning → charts → agent diagnostics → distribute  
 
 Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 

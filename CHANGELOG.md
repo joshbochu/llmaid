@@ -6,6 +6,9 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Phase 0 flowchart polish: TB/BT on-shaft edge labels (beside vertical runs);
+  RL/BT/TB direction goldens; mono-rank centerline straighten + mono-edge port
+  snap (simple chains no longer jog); tighter vertical channels.
 - Docs: `ROADMAP.md` (phased plan: flowchart polish → subgraphs → sequence →
   design types → planning → charts → agent diagnostics → distribute) and
   `MATRIX.md` (capability × tool coverage: llmaid, termiflow, termaid, diagon,

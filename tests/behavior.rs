@@ -219,6 +219,36 @@ fn alnum_subsequence(hay: &str, needle: &str) -> bool {
 }
 
 #[test]
+fn phase0_rl_bt_mirror_and_tb_edge_labels() {
+    // RL: flow flips; label and arrow still present.
+    let (rl, _, code) = run_llmaid(&[], "flowchart RL\nA[src] -->|go| B[dst]\n");
+    assert_eq!(code, 0);
+    assert!(rl.contains("go"), "RL label missing:\n{rl}");
+    assert!(
+        rl.contains('◀') || rl.contains('<'),
+        "RL should arrow toward the flow target:\n{rl}"
+    );
+
+    // BT: upward flow with on-shaft label.
+    let (bt, _, code) = run_llmaid(&[], "flowchart BT\nA[bottom] -->|up| B[top]\n");
+    assert_eq!(code, 0);
+    assert!(bt.contains("up"), "BT label missing:\n{bt}");
+    assert!(
+        bt.contains('▲') || bt.contains('^'),
+        "BT should arrow upward:\n{bt}"
+    );
+
+    // TB: labels sit beside the vertical run (Phase 0.3).
+    let (tb, _, code) = run_llmaid(&[], "flowchart TB\nA[top] -->|down| B[bottom]\n");
+    assert_eq!(code, 0);
+    assert!(tb.contains("down"), "TB edge label missing:\n{tb}");
+    assert!(
+        tb.contains('▼') || tb.contains('v'),
+        "TB should arrow downward:\n{tb}"
+    );
+}
+
+#[test]
 fn b11_given_self_loop_and_back_edge_then_routes_return_to_targets() {
     let src = "\
 flowchart TB

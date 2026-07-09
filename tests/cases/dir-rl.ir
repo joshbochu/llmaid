@@ -1,0 +1,6 @@
+direction: RL
+nodes:
+  src rect "source"
+  dst rect "dest"
+edges:
+  src -->|go| dst
