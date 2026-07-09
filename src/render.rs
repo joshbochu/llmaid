@@ -552,7 +552,7 @@ fn draw_self_loop(
     let label_w = edge
         .label
         .as_deref()
-        .map(UnicodeWidthStr::width)
+        .map(|l| UnicodeWidthStr::width(l) + 2) // spaces around label
         .unwrap_or(0);
     let source = (x + w - 1, y + h / 2);
     let target = (x + w / 2, y + h - 1);
@@ -568,9 +568,11 @@ fn draw_self_loop(
 
     draw_screen_path(canvas, &points, edge.kind, edge.arrow, style);
     if let Some(label) = edge.label.as_deref() {
+        let text = padded_edge_label(label);
+        let tw = text.width();
         let label_x = source.0 + 2 + EDGE_LABEL_PAD;
-        if label_x + label_w < loop_x {
-            canvas.put_text(label_x, source.1, label);
+        if label_x + tw < loop_x {
+            canvas.put_text(label_x, source.1, &text);
         }
     }
 }
@@ -602,7 +604,7 @@ fn draw_vertical_back_edge(
     let label_w = edge
         .label
         .as_deref()
-        .map(UnicodeWidthStr::width)
+        .map(|l| UnicodeWidthStr::width(l) + 2) // spaces around label
         .unwrap_or(0);
     let source = (sx + sw - 1, sy + sh / 2);
     let target = (tx + tw - 1, ty + th / 2);
@@ -622,9 +624,11 @@ fn draw_vertical_back_edge(
 
     draw_screen_path(canvas, &points, edge.kind, edge.arrow, style);
     if let Some(label) = edge.label.as_deref() {
+        let text = padded_edge_label(label);
+        let tw = text.width();
         let label_x = target.0 + EDGE_LABEL_PAD + if edge.arrow { 2 } else { 1 };
-        if label_x + label_w < perimeter_x {
-            canvas.put_text(label_x, target.1, label);
+        if label_x + tw < perimeter_x {
+            canvas.put_text(label_x, target.1, &text);
         }
     }
 }
@@ -639,11 +643,6 @@ fn draw_horizontal_back_edge(
     let edge = &g.edges[edge_index];
     let (sx, sy, sw, sh) = placed.box_rect(&placed.boxes[edge.from]);
     let (tx, ty, tw, th) = placed.box_rect(&placed.boxes[edge.to]);
-    let label_w = edge
-        .label
-        .as_deref()
-        .map(UnicodeWidthStr::width)
-        .unwrap_or(0);
     let source = (sx + sw / 2, sy + sh - 1);
     let target = (tx + tw / 2, ty + th - 1);
     let track = placed
@@ -663,13 +662,21 @@ fn draw_horizontal_back_edge(
 
     draw_screen_path(canvas, &points, edge.kind, edge.arrow, style);
     if let Some(label) = edge.label.as_deref() {
+        let text = padded_edge_label(label);
+        let text_w = text.width();
         let left = source.0.min(target.0);
         let right = source.0.max(target.0);
-        if right > left + label_w {
-            let label_x = left + (right - left - label_w) / 2;
-            canvas.put_text(label_x, perimeter_y, label);
+        if right > left + text_w {
+            let label_x = left + (right - left - text_w) / 2;
+            canvas.put_text(label_x, perimeter_y, &text);
         }
     }
+}
+
+/// On-arrow labels get a space on each side (` scan `) so the word doesn't
+/// jam into the box-drawing strokes.
+fn padded_edge_label(label: &str) -> String {
+    format!(" {label} ")
 }
 
 fn draw_edge_label(
@@ -679,10 +686,11 @@ fn draw_edge_label(
     cross: usize,
     label: &str,
 ) {
-    let label_w = label.width();
-    if label_w == 0 {
+    if label.is_empty() {
         return;
     }
+    let text = padded_edge_label(label);
+    let label_w = text.width();
     let zone = placed.channels[channel].label_zone;
     let f = placed.channels[channel].start + 1 + zone.saturating_sub(label_w) / 2;
     let (x, y) = if placed.flipped {
@@ -690,7 +698,7 @@ fn draw_edge_label(
     } else {
         placed.to_screen(f, cross)
     };
-    canvas.put_text(x, y, label);
+    canvas.put_text(x, y, &text);
 }
 
 fn draw_flow_line(

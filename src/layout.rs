@@ -442,8 +442,10 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
             let labeled_here =
                 g.edges[ei].label.is_some() && edge_spans[ei].map(|(rs, _)| rs) == Some(r);
             if labeled_here {
-                label_zone = label_zone
-                    .max(g.edges[ei].label.as_deref().unwrap().width() + 2 * edge_label_pad);
+                // +2 for the spaces drawn around the word (` scan `).
+                label_zone = label_zone.max(
+                    g.edges[ei].label.as_deref().unwrap().width() + 2 + 2 * edge_label_pad,
+                );
             }
             if seg.from.1 != seg.to.1 {
                 tracks += 1;
