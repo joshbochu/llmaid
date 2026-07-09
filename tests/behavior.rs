@@ -1,6 +1,7 @@
 //! Behavior-driven tests. One test per contract in BEHAVIORS.md, named
 //! `b<N>_given_..._then_...`. Parser behaviors call the library; CLI
-//! behaviors (B6–B13) run the real binary. B14 lands with rendered goldens.
+//! behaviors (B6–B13) run the real binary; B14 frame invariants live in
+//! `tests/golden.rs` (canvas checks on every case).
 
 use llmaid::parse::{Shape, parse};
 use std::process::{Command, Stdio};

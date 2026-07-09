@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-09, after B9/B10 width ladder.
+Last updated: 2026-07-09, after B14 rendered goldens + invariants.
 
 ## What this project is
 
@@ -13,46 +13,42 @@ Read these before writing code, in this order:
 
 1. `AGENTS.md` — commands, module map, non-negotiable invariants, conventions.
 2. `DESIGN.md` — full v1 design: scope, architecture, aesthetic spec, milestones.
-3. `BEHAVIORS.md` — behavior contracts B1–B14; B14 is *pending*
-   (needs its `b14_...` test when implemented).
+3. `BEHAVIORS.md` — behavior contracts B1–B14 (all landed).
 4. `CHANGELOG.md` — decisions D1–D14 with rationale and rejected alternatives.
    Do not relitigate these; extend the log if you make new decisions.
 
 ## Current state (exact)
 
-**M2 renderer + B11 are committed on `main`.** Working tree should be clean.
+**v1 behavior contracts B1–B14 are landed on `main`.** Working tree should be clean.
 
-- Baseline includes parse → layout → render end-to-end; layout/style wired in
-  `lib.rs`; CLI honors `--ascii` (`--width` still unused).
-- `cargo test`: 18/18 pass (15 behavior + 3 golden/error/determinism).
-- Full pipeline: parse → layout (width ladder) → render with shape hints.
-- `tests/cases/*.txt` rendered snapshots are in the tree for eyeballing; they
-  are not yet byte-compared (B14).
+- Full pipeline: parse → layout (width ladder) → render (shape hints, cycles,
+  parallel ports).
+- `cargo test`: behavior suite + IR/render goldens + B14 canvas invariants.
+- CLI: `--ascii`, `--width N` (default 100), `--strict`, file or stdin.
+- Regenerate goldens: `UPDATE_GOLDEN=1 cargo test` (only when output is better).
 
 ### Done
 
-- Parser behaviors B1–B5 and CLI behaviors B6–B8 are still green.
-- Minimal M2 pipeline is wired: `pipeline.mmd` renders at the quality bar.
-- LR/TB layouts, fork/merge, fanout, dotted/thick edge styles, Unicode labels,
-  and `--ascii` are working in the current renderer.
-- B9/B10: `--width` overflow ladder (compact → wrap → over-width); labels stay
-  one line when they fit.
-- B11–B13: cycles, parallel ports, shape hints (see `tests/behavior.rs`).
+- B1–B8: parse + CLI contracts.
+- B9/B10: `--width` overflow ladder (compact → wrap → over-width).
+- B11: self-loops and back-edge perimeter routes.
+- B12: distinct ports for parallel edges.
+- B13: rect-framed shape hints (◇ ( ) ═ ╱╲).
+- B14: `.txt` goldens + `render_with_checks` invariants.
 
-### Still missing
+### Still open (post-contract polish)
 
-- B14: rendered `.txt` golden comparison plus invariants (closed borders,
-  edges reach endpoints, no label overwrite).
-- Behavior test b14 and pending-marker removal in `BEHAVIORS.md`.
-- RL/BT mirroring needs explicit verification beyond compile/test coverage.
+- Explicit RL/BT verification cases (mirroring is implemented; light coverage).
+- Multi-rank dummy conflicts for rare parallel long edges.
+- Edge-label placement for TB (on-arrow labels are LR-focused today).
+- Optional: tighten channel/jog aesthetics on `edge-labels.mmd`.
 
 ## Suggested next steps, in order
 
-1. B14 rendered goldens + invariants: byte-compare `tests/cases/*.txt` and add
-   border/endpoint/label overwrite checks.
-2. Verify RL/BT mirroring with explicit cases.
-3. Keep `CHANGELOG.md` and `BEHAVIORS.md` current as behaviors land — this is
-   a logged convention in AGENTS.md.
+1. Explicit RL/BT golden cases.
+2. TB edge labels on the vertical run when space allows.
+3. Any aesthetic pass against reference tools (termiflow/diagon).
+4. Keep `CHANGELOG.md` and `BEHAVIORS.md` current as behaviors land.
 
 ## Quality bar (what "done" looks like)
 
@@ -78,7 +74,3 @@ detached shape glyphs.
   `~/.cargo/bin/tw`), diagon wrapper (`node ~/dev/lox-rs/tools/diagon.mjs`),
   graph-easy (`PERL5LIB=~/perl5/lib/perl5 ~/perl5/bin/graph-easy`), and
   `uvx termaid` (the PyPI competitor; also why our name isn't termaid).
-- Determinism is a hard invariant (D7/B8): no HashMap iteration, no terminal
-  detection, stable tie-breaks everywhere. If you add an ordering, break ties
-  by declaration index.
-- v1 scope is flowcharts only (D8). Don't start sequence diagrams.

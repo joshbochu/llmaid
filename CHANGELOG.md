@@ -6,6 +6,9 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Testing (B14): rendered `.txt` golden snapshots byte-compared; canvas
+  invariants (closed borders, label cells intact, edge endpoints, no
+  truncation glyphs) via `render::render_with_checks` on every case.
 - Layout (B9/B10): `--width` overflow ladder — normal → compact gaps → wrap
   labels under pressure → over-width if still needed; never truncate or fail.
   Comfortable budgets leave single-line labels intact.

@@ -5,7 +5,7 @@ use crate::parse::{EdgeKind, Graph, Shape};
 use crate::style::{E, N, S, Style, W};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Cell {
     Empty,
     Line {
@@ -140,6 +140,22 @@ impl Canvas {
 }
 
 pub fn render(g: &Graph, placed: &Placed, style: Style) -> String {
+    paint(g, placed, style).finish(style)
+}
+
+/// Render and verify B14 frame invariants (closed borders, labels intact,
+/// edge endpoints marked). Returns the diagram plus any invariant failures.
+pub fn render_with_checks(
+    g: &Graph,
+    placed: &Placed,
+    style: Style,
+) -> (String, Vec<String>) {
+    let canvas = paint(g, placed, style);
+    let failures = check_invariants(g, placed, &canvas);
+    (canvas.finish(style), failures)
+}
+
+fn paint(g: &Graph, placed: &Placed, style: Style) -> Canvas {
     let (w, h) = if placed.horizontal {
         (placed.flow_extent, placed.cross_extent)
     } else {
@@ -208,7 +224,131 @@ pub fn render(g: &Graph, placed: &Placed, style: Style) -> String {
         draw_self_loop(&mut canvas, placed, g, ei, style);
     }
 
-    canvas.finish(style)
+    canvas
+}
+
+/// B14 frame invariants on the pre-trim canvas.
+fn check_invariants(g: &Graph, placed: &Placed, canvas: &Canvas) -> Vec<String> {
+    let mut failures = Vec::new();
+
+    // No truncation glyphs anywhere.
+    for y in 0..canvas.h {
+        for x in 0..canvas.w {
+            if let Cell::Text(ch) = canvas.cells[canvas.idx(x, y)] {
+                if ch == '…' || ch == '⋯' {
+                    failures.push(format!("truncated glyph {ch:?} at ({x},{y})"));
+                }
+            }
+        }
+    }
+
+    // Closed box borders + interior labels still Text (not overwritten by lines).
+    for (i, b) in placed.boxes.iter().enumerate() {
+        let (bx, by, bw, bh) = placed.box_rect(b);
+        let id = &g.nodes[i].id;
+        let corner = |x, y| canvas.in_bounds(x, y) && !matches!(canvas.cells[canvas.idx(x, y)], Cell::Empty);
+        for (cx, cy, name) in [
+            (bx, by, "TL"),
+            (bx + bw - 1, by, "TR"),
+            (bx, by + bh - 1, "BL"),
+            (bx + bw - 1, by + bh - 1, "BR"),
+        ] {
+            if !corner(cx, cy) {
+                failures.push(format!("box `{id}` open {name} corner at ({cx},{cy})"));
+            }
+        }
+        for xx in bx + 1..bx + bw - 1 {
+            if canvas.in_bounds(xx, by)
+                && matches!(canvas.cells[canvas.idx(xx, by)], Cell::Empty)
+            {
+                failures.push(format!("box `{id}` gap on top edge at ({xx},{by})"));
+            }
+            if canvas.in_bounds(xx, by + bh - 1)
+                && matches!(canvas.cells[canvas.idx(xx, by + bh - 1)], Cell::Empty)
+            {
+                failures.push(format!("box `{id}` gap on bottom edge at ({xx},{})", by + bh - 1));
+            }
+        }
+        for yy in by + 1..by + bh - 1 {
+            if canvas.in_bounds(bx, yy)
+                && matches!(canvas.cells[canvas.idx(bx, yy)], Cell::Empty)
+            {
+                failures.push(format!("box `{id}` gap on left edge at ({bx},{yy})"));
+            }
+            if canvas.in_bounds(bx + bw - 1, yy)
+                && matches!(canvas.cells[canvas.idx(bx + bw - 1, yy)], Cell::Empty)
+            {
+                failures.push(format!(
+                    "box `{id}` gap on right edge at ({},{})",
+                    bx + bw - 1,
+                    yy
+                ));
+            }
+        }
+
+        // Label lines written during draw_box must remain Text cells.
+        let inner_w = bw.saturating_sub(2);
+        for (li, line) in b.lines.iter().enumerate() {
+            let text_w = line.width();
+            let mut x = bx + 1 + inner_w.saturating_sub(text_w) / 2;
+            let y = by + 1 + li;
+            for ch in line.chars() {
+                let cw = ch.width().unwrap_or(1).max(1);
+                if !canvas.in_bounds(x, y) {
+                    failures.push(format!(
+                        "box `{id}` label {ch:?} out of bounds at ({x},{y})"
+                    ));
+                } else {
+                    match canvas.cells[canvas.idx(x, y)] {
+                        Cell::Text(got) if got == ch => {}
+                        other => failures.push(format!(
+                            "box `{id}` label {ch:?} overwritten at ({x},{y}): {other:?}"
+                        )),
+                    }
+                }
+                x += cw;
+            }
+        }
+    }
+
+    // Forward edge segments: endpoints carry ink (line or arrow text).
+    for (ei, segs) in placed.segs.iter().enumerate() {
+        if segs.is_empty() {
+            continue;
+        }
+        let first = segs.first().unwrap();
+        let last = segs.last().unwrap();
+        for (pt, which) in [(first.from, "start"), (last.to, "end")] {
+            let (x, y) = placed.to_screen(pt.0, pt.1);
+            if !canvas.in_bounds(x, y) {
+                failures.push(format!("edge {ei} {which} out of bounds ({x},{y})"));
+                continue;
+            }
+            if matches!(canvas.cells[canvas.idx(x, y)], Cell::Empty) {
+                // Arrow may sit one cell before the target border.
+                let ok_near = neighbors(x, y).iter().any(|&(nx, ny)| {
+                    canvas.in_bounds(nx, ny)
+                        && !matches!(canvas.cells[canvas.idx(nx, ny)], Cell::Empty)
+                });
+                if !ok_near {
+                    failures.push(format!(
+                        "edge {ei} {which} does not reach endpoint near ({x},{y})"
+                    ));
+                }
+            }
+        }
+    }
+
+    failures
+}
+
+fn neighbors(x: usize, y: usize) -> [(usize, usize); 4] {
+    [
+        (x.wrapping_sub(1), y),
+        (x + 1, y),
+        (x, y.wrapping_sub(1)),
+        (x, y + 1),
+    ]
 }
 
 fn canvas_extra(g: &Graph, placed: &Placed) -> (usize, usize) {
