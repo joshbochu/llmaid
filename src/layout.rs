@@ -633,16 +633,30 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     }
 }
 
+/// Direct members plus all nodes in descendant subgraphs.
+fn subgraph_members_deep(g: &Graph, sgi: usize) -> Vec<usize> {
+    let mut out = g.subgraphs[sgi].members.clone();
+    for (i, sg) in g.subgraphs.iter().enumerate() {
+        if sg.parent == Some(sgi) {
+            out.extend(subgraph_members_deep(g, i));
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// How far to shift flow/cross so every subgraph has room for pad + title.
 fn cluster_origin_shift(g: &Graph, boxes: &[BoxGeom], horizontal: bool) -> (usize, usize) {
     let mut shift_f = 0usize;
     let mut shift_c = 0usize;
-    for sg in &g.subgraphs {
-        if sg.members.is_empty() {
+    for si in 0..g.subgraphs.len() {
+        let members = subgraph_members_deep(g, si);
+        if members.is_empty() {
             continue;
         }
-        let min_f = sg.members.iter().map(|&i| boxes[i].f).min().unwrap();
-        let min_c = sg.members.iter().map(|&i| boxes[i].c).min().unwrap();
+        let min_f = members.iter().map(|&i| boxes[i].f).min().unwrap();
+        let min_c = members.iter().map(|&i| boxes[i].c).min().unwrap();
         if horizontal {
             shift_c = shift_c.max((CLUSTER_PAD + CLUSTER_TITLE_STRIP).saturating_sub(min_c));
             shift_f = shift_f.max(CLUSTER_PAD.saturating_sub(min_f));
@@ -701,14 +715,15 @@ fn place_clusters(
 ) -> (Vec<ClusterGeom>, usize, usize) {
     let mut clusters = Vec::new();
     for (si, sg) in g.subgraphs.iter().enumerate() {
-        if sg.members.is_empty() {
+        let members = subgraph_members_deep(g, si);
+        if members.is_empty() {
             continue;
         }
         let mut f0 = usize::MAX;
         let mut f1 = 0usize;
         let mut c0 = usize::MAX;
         let mut c1 = 0usize;
-        for &ni in &sg.members {
+        for &ni in &members {
             let b = &boxes[ni];
             f0 = f0.min(b.f);
             f1 = f1.max(b.f + b.flen);
@@ -730,7 +745,7 @@ fn place_clusters(
             c0 = c0.saturating_sub(CLUSTER_PAD);
             c1 += CLUSTER_PAD;
         }
-        let title = sg.title.clone();
+        let title = g.subgraphs[si].title.clone();
         let tw = title.width() + 2; // ` title `
         // Leave corner cells free for box-drawing (+2).
         let need = tw + 2;
