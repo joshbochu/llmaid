@@ -393,6 +393,7 @@ pub fn scene(diagram: &ClassDiagram, width: usize) -> Scene {
     for relation in &diagram.relations {
         let mut edge = boxed.add_edge(nodes[relation.from], nodes[relation.to]);
         edge.without_arrow();
+        edge.endpoint_spacing(4);
         if let Some(label) = &relation.label {
             edge.label(label.clone());
         }

@@ -722,7 +722,7 @@ fn draw_endpoint_decoration(canvas: &mut Canvas, decoration: &EndpointDecoration
                 EndpointDecorationKind::OpenArrow => arrow_toward(
                     point(decoration.at),
                     point(decoration.toward),
-                    crate::scene::ArrowHead::Open,
+                    crate::scene::ArrowHead::Filled,
                     style,
                 ),
                 EndpointDecorationKind::OpenTriangle => {

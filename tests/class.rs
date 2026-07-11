@@ -185,12 +185,17 @@ fn relation_labels_may_contain_relation_operators() {
 #[test]
 fn class_relations_use_semantic_endpoint_decorations_not_generic_arrowheads() {
     let diagram = class::parse(
-        "classDiagram\nA <|-- B\nB *-- C\nC o-- D\nD --> E\nE -- F\nF ..> G\nG ..|> H\n",
+        "classDiagram\ndirection LR\nA <|-- B\nB *-- C\nC o-- D\nD --> E\nE -- F\nF ..> G\nG ..|> H\n",
     )
     .unwrap();
     let scene = class::scene(&diagram, 120);
     assert!(scene.edges.iter().all(|edge| edge.arrow.is_none()));
     assert_eq!(scene.endpoint_decorations.len(), 6);
+    let rendered = render::render_scene(&scene, Style { ascii: false });
+    assert!(
+        rendered.contains("▶─┤"),
+        "directed association/dependency head needs clear box spacing:\n{rendered}"
+    );
 }
 
 #[test]
@@ -222,6 +227,14 @@ fn visual_fidelity_uses_compartments_and_endpoint_adornments() {
     assert!(
         !unicode.contains("o--") && !unicode.contains("..|>"),
         "{unicode}"
+    );
+    assert!(
+        unicode.contains("├─◇"),
+        "diamond needs space from its box:\n{unicode}"
+    );
+    assert!(
+        unicode.contains("▷┄┤"),
+        "triangle needs space from its box:\n{unicode}"
     );
 
     let ascii = render::render_scene(&scene, Style { ascii: true });

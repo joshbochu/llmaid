@@ -170,9 +170,17 @@ fn scene_is_deterministic_ascii_capable_and_invariant_clean() {
         !unicode.contains("||--o{") && !unicode.contains("}o..||"),
         "{unicode}"
     );
+    assert!(
+        unicode.contains("│─│"),
+        "one/one bars need separation:\n{unicode}"
+    );
+    assert!(
+        unicode.contains("○─<"),
+        "optional-many marks need separation:\n{unicode}"
+    );
     let ascii = render::render_scene(&first, Style { ascii: true });
     assert!(ascii.is_ascii(), "{ascii}");
-    assert!(ascii.contains("o<"), "{ascii}");
+    assert!(ascii.contains("o-<"), "{ascii}");
 }
 
 #[test]

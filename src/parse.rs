@@ -51,6 +51,8 @@ pub struct Edge {
     pub kind: EdgeKind,
     pub arrow: bool,
     pub label: Option<String>,
+    /// Extra flow-axis cells reserved for paint-level endpoint adornments.
+    pub endpoint_reserve: usize,
 }
 
 impl Edge {
@@ -348,6 +350,7 @@ fn parse_statement(g: &mut Graph, stmt: &str, line: usize) -> Result<(), ParseEr
                     kind,
                     arrow,
                     label: label.clone(),
+                    endpoint_reserve: 0,
                 });
             }
         }

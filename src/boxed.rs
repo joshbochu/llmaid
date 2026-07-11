@@ -61,6 +61,7 @@ struct BoxEdge {
     kind: EdgeKind,
     arrow: bool,
     label: Option<String>,
+    endpoint_reserve: usize,
 }
 
 /// Builder returned for an edge. Mutations preserve its declaration position.
@@ -86,6 +87,11 @@ impl EdgeBuilder<'_> {
 
     pub fn label(&mut self, label: impl Into<String>) -> &mut Self {
         self.edge.label = Some(label.into());
+        self
+    }
+
+    pub fn endpoint_spacing(&mut self, cells: usize) -> &mut Self {
+        self.edge.endpoint_reserve = cells;
         self
     }
 }
@@ -129,6 +135,7 @@ impl BoxDiagram {
             kind: EdgeKind::Solid,
             arrow: true,
             label: None,
+            endpoint_reserve: 0,
         });
         EdgeBuilder {
             edge: self.edges.last_mut().expect("edge was just inserted"),
@@ -163,6 +170,7 @@ impl BoxDiagram {
                 kind: edge.kind,
                 arrow: edge.arrow,
                 label: edge.label.clone(),
+                endpoint_reserve: edge.endpoint_reserve,
             })
             .collect();
         graph
@@ -210,24 +218,29 @@ pub fn annotate_endpoint(scene: &mut Scene, edge_index: usize, end: EdgeEnd, tex
 
 fn endpoint_anchor(scene: &Scene, edge_index: usize, end: EdgeEnd) -> Option<(Point, Point)> {
     let edge = scene.edges.iter().find(|edge| edge.edge == edge_index)?;
+    let cells = crate::scene::path_cells(&edge.points);
     match end {
         EdgeEnd::Source => {
-            let toward = *edge.points.first()?;
-            let next = *edge.points.get(1)?;
-            Some((step_toward(toward, next), toward))
+            let toward = *cells.first()?;
+            let at = *cells.get(2).or_else(|| cells.get(1))?;
+            Some((at, toward))
         }
         EdgeEnd::Target => {
             let toward = edge
                 .arrow
                 .as_ref()
                 .map(|arrow| arrow.toward)
-                .or_else(|| edge.points.last().copied())?;
-            let previous = if edge.arrow.is_some() {
-                *edge.points.last()?
+                .or_else(|| cells.last().copied())?;
+            let at = if edge.arrow.is_some() {
+                let previous = *edge.points.last()?;
+                let before = *edge.points.get(edge.points.len().checked_sub(2)?)?;
+                step_toward(previous, before)
             } else {
-                *edge.points.get(edge.points.len().checked_sub(2)?)?
+                *cells
+                    .get(cells.len().checked_sub(3)?)
+                    .or_else(|| cells.get(cells.len().saturating_sub(2)))?
             };
-            Some((step_toward(toward, previous), toward))
+            Some((at, toward))
         }
     }
 }

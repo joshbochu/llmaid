@@ -597,6 +597,11 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         if vertical_labels > 0 {
             label_zone = label_zone.max(2 * vertical_labels - 1);
         }
+        let endpoint_reserve = channel_edges[r]
+            .iter()
+            .map(|&edge| g.edges[edge].endpoint_reserve)
+            .max()
+            .unwrap_or(0);
         let slack = if fit.compact {
             2
         } else if horizontal {
@@ -604,7 +609,8 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         } else {
             2
         };
-        let width = channel_min.max(label_zone + 2 * channel_track_count[r] + slack);
+        let width =
+            channel_min.max(label_zone + 2 * channel_track_count[r] + slack + endpoint_reserve);
         channels.push(Channel {
             start: 0,
             width,

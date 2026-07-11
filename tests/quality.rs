@@ -339,13 +339,17 @@ fn class_adornments_are_exactly_adjacent_to_their_semantic_endpoint() {
     assert_eq!(
         (decoration.at.x - decoration.toward.x).abs()
             + (decoration.at.y - decoration.toward.y).abs(),
-        1
+        2
     );
     assert!(scene.boxes[0].rect.contains(decoration.toward));
     assert!(!scene.boxes[0].rect.contains(decoration.at));
     assert_eq!(scene.texts.len(), 2);
     assert_eq!(scene.boxes[0].table.as_ref().unwrap().rows.len(), 1);
     assert_eq!(scene.boxes[0].rect.h, 5);
+    assert!(
+        scene.boxes[1].rect.x - scene.boxes[0].rect.right() >= 17,
+        "class relationship channel should reserve visible endpoint breathing room"
+    );
 }
 
 #[test]
@@ -374,7 +378,7 @@ fn er_cardinalities_are_exactly_adjacent_and_tables_keep_one_row_per_attribute()
         assert_eq!(
             (decoration.at.x - decoration.toward.x).abs()
                 + (decoration.at.y - decoration.toward.y).abs(),
-            1
+            2
         );
         assert!(box_.rect.contains(decoration.toward));
         assert!(!box_.rect.contains(decoration.at));

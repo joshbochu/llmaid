@@ -278,10 +278,17 @@ impl EndpointDecoration {
         if self.at.x == self.toward.x {
             vec![
                 Point::new(self.at.x + 2, self.at.y),
-                Point::new(self.at.x + 3, self.at.y),
+                Point::new(self.at.x + 4, self.at.y),
             ]
         } else {
-            vec![self.at, self.away()]
+            let away = self.away();
+            vec![
+                self.at,
+                Point::new(
+                    away.x + (away.x - self.at.x).signum(),
+                    away.y + (away.y - self.at.y).signum(),
+                ),
+            ]
         }
     }
 }

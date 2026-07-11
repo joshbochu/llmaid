@@ -6,6 +6,11 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Fixed
+- Phase 3.4 gallery feedback: class/ER relationship channels reserve explicit
+  endpoint space; diamonds, triangles, and arrows sit two cells from box
+  borders; ER min/max marks have a line cell between them; and dependency
+  arrows use a stronger filled head. Multiplicity labels move with the widened
+  endpoint footprint instead of crowding class borders.
 - Generated small-graph coverage found a fork box widening across an unrelated
   long-edge dummy lane. The late quality pass now refuses that expansion while
   retaining incident attachment lanes; the minimized four-node case is a
