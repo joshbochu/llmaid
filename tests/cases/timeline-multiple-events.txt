@@ -1,7 +1,7 @@
-              ┌─── Interview users
-Discovery ────┼─── Map constraints
-              ├─── Approve direction
-              │
-              ├─── Build
- Delivery ────┼─── Verify
-              └─── Publish
+                      ┌─── Interview users
+Discovery ────────────┼─── Map constraints
+                      ├─── Approve direction
+                      │
+                      ├─── Build
+ Delivery ────────────┼─── Verify
+                      └─── Publish

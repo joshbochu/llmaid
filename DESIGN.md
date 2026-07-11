@@ -130,8 +130,11 @@ Timelines do not lower through flowchart ranks. `temporal.rs` accepts only
 measured leading/trailing extents, declaration-ordered band ranges, and integer
 spacing. It right-aligns period slots, fixes one common vertical spine, centers
 each period anchor on its ordered event span, attaches every event on its exact
-text row, and returns separated containing band rectangles. It performs no
-date parsing, duration calculation, or calendar arithmetic.
+text row, balances the measured left/right extents around that spine, and
+returns separated containing band rectangles whose exact integer centers share
+the axis. Diagram titles use the same centerline, with only an unavoidable
+half-cell residual for even-width text. It performs no date parsing, duration
+calculation, or calendar arithmetic.
 
 `timeline.rs` owns Mermaid semantics and the B9 width ladder: unwrapped normal
 spacing, unwrapped compact spacing, stable two-column wrapping, then natural

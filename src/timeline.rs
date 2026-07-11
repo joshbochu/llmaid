@@ -421,7 +421,7 @@ fn lower(
         let bounds = scene.bounds();
         let title_width = title.width() as i32;
         scene.texts.push(SceneText::new(
-            crate::scene::Point::new(bounds.x + (bounds.w - title_width) / 2, bounds.y - 2),
+            crate::scene::Point::new(placed.spine_x - title_width / 2, bounds.y - 2),
             title.clone(),
         ));
     }

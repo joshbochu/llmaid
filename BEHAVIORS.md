@@ -142,8 +142,8 @@ structural coverage lives beside its engine tests. Decisions behind these:
 - **B26** Given a core `timeline` with an optional title, ordered periods,
   one or more events per period, continuation events, and named sections,
   when rendered, then source chronology and event ownership are preserved on
-  one deterministic vertical spine with source-ordered containing section
-  frames. Unicode and `--ascii` structure are deterministic; labels follow
+  one deterministic centered vertical spine with source-ordered containing
+  section frames. Unicode and `--ascii` structure are deterministic; labels follow
   B9/B10 and never truncate; `--audit=json` reports semantic period/event
   counts and chronological period ranks. Events without a current period,
   empty periods/events/sections, malformed `:` syntax, late/duplicate titles,

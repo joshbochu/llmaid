@@ -50,10 +50,11 @@ without losing glance quality.
   attachments, and source-ordered separated band rectangles. Calendar/date
   arithmetic and gantt bars remain deferred
 - Timeline visual grammar: right-aligned period text and one-sided event
-  branches use a compact changelog rail; every label keeps a visible blank cell
-  from its connector, section frames contain all assigned content, and B9 wraps
-  before the documented over-width fallback. Phase 4.1 mindmap visuals and
-  contracts remain byte-identical
+  branches use a compact changelog rail; measured left/right extents balance
+  around the common spine, titles and section frames share that centerline,
+  every label keeps a visible blank cell from its connector, section frames
+  contain all assigned content, and B9 wraps before the documented over-width
+  fallback. Phase 4.1 mindmap visuals and contracts remain byte-identical
 - Typed boxed adapter: state/class/ER retain independent semantic IR and join
   the established integer layered geometry only when lowering to `Scene`
 - Design-doc visual grammar: class headers/members use compartments; UML

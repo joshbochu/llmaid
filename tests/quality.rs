@@ -498,6 +498,24 @@ fn temporal_ranks_have_strict_chronology_one_spine_exact_attachments_and_separat
             .iter()
             .all(|anchor| anchor.x == placed.spine_x)
     );
+    let content_left = placed
+        .leading_boxes
+        .iter()
+        .map(|rect| rect.x)
+        .min()
+        .unwrap();
+    let content_right = placed
+        .trailing_boxes
+        .iter()
+        .flatten()
+        .map(|rect| rect.right())
+        .max()
+        .unwrap();
+    assert_eq!(
+        2 * placed.spine_x,
+        content_left + content_right,
+        "the temporal content envelope must balance exactly around the spine"
+    );
     for entry in 0..entries.len() {
         let lead = &placed.connectors[placed
             .connectors
@@ -535,6 +553,7 @@ fn temporal_ranks_have_strict_chronology_one_spine_exact_attachments_and_separat
     }
     assert!(placed.band_rects[0].bottom() < placed.band_rects[1].y);
     for (band, rect) in placed.band_rects.iter().enumerate() {
+        assert_eq!(rect.center2().x, 2 * placed.spine_x);
         let entry = bands[band].first_entry;
         assert!(rect.contains(placed.anchors[entry]));
         for corner in rect_corners(placed.leading_boxes[entry]) {
@@ -546,6 +565,50 @@ fn temporal_ranks_have_strict_chronology_one_spine_exact_attachments_and_separat
             }
         }
     }
+}
+
+#[test]
+fn timeline_title_unsectioned_envelope_and_section_frames_center_on_the_spine() {
+    let unsectioned = timeline::parse(
+        "timeline\n  title Product launch\n  Plan : Define scope\n  Build : Implement core\n  Ship : Release\n",
+    )
+    .unwrap();
+    let scene = timeline::scene(&unsectioned, 100);
+    let spine_x = scene.paths[0].points[0].x;
+    assert!(
+        (scene.bounds().center2().x - 2 * spine_x).abs() <= 1,
+        "unsectioned content must center on the chronological spine"
+    );
+    let title = scene
+        .texts
+        .iter()
+        .find(|text| text.text == "Product launch")
+        .unwrap();
+    let title_center2 = 2 * title.at.x + title.text.width() as i32 - 1;
+    assert!(
+        (title_center2 - 2 * spine_x).abs() <= 1,
+        "title must center on the chronological spine"
+    );
+
+    let sectioned = timeline::parse(
+        "timeline\n  title Delivery roadmap\n  section Foundation\n  Q1 : Parser\n  Q2 : Renderer\n  section Adoption\n  Q3 : Documentation\n  Q4 : Release\n",
+    )
+    .unwrap();
+    let scene = timeline::scene(&sectioned, 100);
+    let spine_x = scene.paths[0].points[0].x;
+    assert!(
+        scene
+            .groups
+            .iter()
+            .all(|group| group.rect.center2().x == 2 * spine_x)
+    );
+    let title = scene
+        .texts
+        .iter()
+        .find(|text| text.text == "Delivery roadmap")
+        .unwrap();
+    let title_center2 = 2 * title.at.x + title.text.width() as i32 - 1;
+    assert!((title_center2 - 2 * spine_x).abs() <= 1);
 }
 
 #[test]
