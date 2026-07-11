@@ -143,11 +143,16 @@ Only where glance quality holds (don’t become a junk drawer).
 | ID | Item | Notes |
 |----|------|--------|
 | 6.1 | Richer per-type error catalog | Line + expectation everywhere |
-| 6.2 | Optional machine-readable diagnostics | e.g. `--error-format=json` |
-| 6.3 | Invariant failures as actionable stderr | Not only test-time |
-| 6.4 | Optional JSON IR **input** (same engines) | Tools/compilers; Mermaid remains primary |
+| 6.2 | Machine-readable geometry audit | `--audit=json`; named violations and exact witnesses for any input |
+| 6.3 | Generated + metamorphic topology tests | Enumerate small graphs; mirror/rotate directions; enforce every applicable contract |
+| 6.4 | Optional machine-readable parser diagnostics | e.g. `--error-format=json` |
+| 6.5 | Invariant failures as actionable stderr | Not only test-time |
+| 6.6 | Optional JSON IR **input** (same engines) | Tools/compilers; Mermaid remains primary |
 
-**Exit:** agent fixes failures in one retry without a human reading the parser.
+**Exit:** an agent can render any input, inspect exact structural violations,
+and fix failures in one retry without a human reading either the parser or the
+diagram. Generated topology coverage guards combinations absent from goldens;
+human review remains the oracle for preferences not yet expressed as geometry.
 
 ---
 
@@ -196,6 +201,8 @@ Only where glance quality holds (don’t become a junk drawer).
 3. New type ships with goldens + at least one behavior/invariant check.
 4. Update **MATRIX.md** when coverage changes; mark phase **done** here when exit criteria met.
 5. Prefer glance quality over checkbox parity with termaid.
+6. A visual preference becomes enforceable only when stated as an applicable
+   exact geometry predicate; the grid supplies coordinates, not a beauty score.
 
 ---
 

@@ -45,6 +45,11 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- Documented the quality guarantee boundary and enforcement loop: the integer
+  grid supplies exact coordinates, reusable topology constraints supply the
+  aesthetic rules, goldens prevent known regressions, and human review finds
+  preferences not yet formalized. The roadmap now calls for `--audit=json`
+  named violations plus generated/metamorphic small-graph coverage.
 - Golden review workflow (`scripts/review-gallery.py`): an all-case browser app
   with bulk pass/needs-work controls, annotations, progress, JSON import/export,
   browser-local persistence, and a local server that atomically autosaves into
@@ -218,3 +223,12 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   crossings, bends, wire length, and area remain descriptive trade-offs.
   Global balance and nearest-neighbor mirror scores were rejected because they
   grade asymmetric graphs and can disagree with accepted visual improvements.
+
+- **D17 — Geometry contracts, not the grid alone, define enforceable taste.**
+  Engine-wide invariants cover every scene; aesthetic checks apply only when a
+  graph contains their recognized topology. Goldens are regression examples,
+  not a proof over arbitrary graphs. Each accepted visual preference therefore
+  lands as a minimal case and an exact named predicate before implementation.
+  Machine-readable per-input audit violations and generated/metamorphic graph
+  coverage are the path to stronger assurance without pretending subjective
+  beauty is a scalar or a theorem.

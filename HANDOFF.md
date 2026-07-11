@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-10 — signed Scene/routing simplification landed.
+Last updated: 2026-07-11 — exact geometry contracts and review loop landed.
 
 ## What this project is
 
@@ -18,7 +18,7 @@ without losing glance quality.
 3. `ROADMAP.md` — phased plan (what to build next)  
 4. `MATRIX.md` — capability × tool coverage checklist  
 5. `BEHAVIORS.md` — shipped contracts B1–B16
-6. `CHANGELOG.md` — decisions D1–D14  
+6. `CHANGELOG.md` — decisions D1–D17
 
 ## Current state
 
@@ -35,6 +35,11 @@ without losing glance quality.
   topology-aware quality contracts (`tests/quality.rs`)
 - Quality audit: `cargo run -q --example symmetry` reports hard failures,
   doubled-cell relational residuals, crossings, bends, and wire length
+- Guarantee boundary: engine-wide grid/determinism rules and scene invariants
+  are distinct from topology-specific aesthetic contracts. Known chains,
+  forks, merges, eligible diamonds, and group boundaries have exact tests;
+  goldens do not prove arbitrary unclassified topologies beautiful. See
+  `DESIGN.md` "Quality guarantee model."
 - Vertical routing widens lone distinct-peer junction boxes to preserve straight
   attachment shafts; grouped external children start after internal content;
   labeled rank gaps place their label on the exact middle row
@@ -52,9 +57,11 @@ without losing glance quality.
 
 ## Next steps (from ROADMAP)
 
-1. **Phase 2** — sequence diagrams  
-2. Design types → planning → charts → agent diagnostics → distribute  
-3. Optional: nested subgraph polish / exit-edge routing through frames  
+1. **Phase 2** — sequence diagrams
+2. **Quality self-debug** — expose named geometry violations through
+   `--audit=json`, then add generated/metamorphic small-graph coverage
+3. Design types → planning → charts → broader agent diagnostics → distribute
+4. Optional: nested subgraph polish / exit-edge routing through frames
 
 Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 

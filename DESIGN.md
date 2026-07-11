@@ -169,6 +169,45 @@ diagram; all diagnostics go to stderr.
   because the real terminal remains the final glyph-fidelity oracle.
 - `cargo test` must stay < 5s.
 
+### Quality guarantee model
+
+The integer grid is the measurement space, not by itself an aesthetic
+guarantee. Quality comes from a four-stage loop:
+
+```text
+graph topology
+    -> constraint-based layout
+    -> rendered Scene
+    -> independent geometry audit
+    -> exact pass or named violations
+```
+
+The guarantees have deliberately different scopes:
+
+1. Determinism, integer coordinates, and non-truncation are engine-wide
+   properties. Scene correctness invariants are exercised for every golden
+   frame.
+2. Alignment and symmetry are topology-aware. The layout applies reusable
+   rules to recognized relationships (chains, forks, merges, eligible
+   diamonds, and group boundaries), while `tests/quality.rs` checks exact
+   doubled-cell relations such as equal widths, common centerlines, midpoint
+   labels, mirrored branches, straight shafts, and port clearance.
+3. Goldens prove representative compositions and prevent regressions. They do
+   not prove that an arbitrary, previously unclassified topology is beautiful.
+   The audit intentionally declines to grade inapplicable relationships rather
+   than assigning a misleading global beauty score.
+4. Human review discovers preferences that have not yet been formalized. An
+   accepted preference becomes a minimal fixture plus a failing named geometry
+   contract before the layout rule changes; the golden is updated only after
+   the generalized rule passes the whole corpus.
+
+The remaining step toward a stronger guarantee is to expose the audit for any
+input as machine-readable named violations (for example `unequal-chain-width`,
+`off-center-edge`, `asymmetric-fork`, `non-midpoint-label`, `avoidable-bend`,
+`insufficient-port-clearance`, and `box-crossing`) and exercise generated small
+graph topologies. This can guarantee every preference that has an exact
+geometric definition; subjective beauty still requires the review loop.
+
 ## Milestones
 
 1. **M1**: parser + IR + golden-test harness (parse-only snapshots)
