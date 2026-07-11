@@ -21,7 +21,8 @@ their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–
   (`subgraph` is real layout as of Phase 1 — see B15.)
 - **B15** Given a `subgraph` … `end` block, when parsed and rendered, then
   member nodes are recorded on the subgraph and a titled frame is drawn around
-  them; contents are not silently flattened.
+  them; contents are not silently flattened, and nonmember boxes never
+  intersect the frame.
 
 ## CLI
 

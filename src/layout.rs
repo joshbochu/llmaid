@@ -290,9 +290,10 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     for rslots in &ranks {
         let mut cur = 0usize;
         let mut row = Vec::new();
-        for slot in rslots {
+        for (index, slot) in rslots.iter().enumerate() {
             row.push(cur);
-            let mut adv = slot_clen(slot, &boxes) + base_gap;
+            let mut adv =
+                slot_clen(slot, &boxes) + slot_gap(g, slot, rslots.get(index + 1), base_gap);
             if let Slot::Real(i) = slot
                 && horizontal
                 && has_self_loop(*i)
@@ -907,28 +908,14 @@ fn neighbor_centers(context: &NeighborContext<'_>, slot: &Slot, r: usize) -> Opt
     };
     let mut centers = Vec::new();
     if r > 0 {
-        for nb in slot_neighbors(
-            context.graph,
-            slot,
-            r,
-            context.reversed,
-            context.edge_spans,
-            true,
-        ) {
+        for nb in preferred_neighbors(context, slot, r, true) {
             if let Some(c) = center(r - 1, &nb) {
                 centers.push(c);
             }
         }
     }
     if r + 1 < context.ranks.len() {
-        for nb in slot_neighbors(
-            context.graph,
-            slot,
-            r,
-            context.reversed,
-            context.edge_spans,
-            false,
-        ) {
+        for nb in preferred_neighbors(context, slot, r, false) {
             if let Some(c) = center(r + 1, &nb) {
                 centers.push(c);
             }
@@ -938,6 +925,40 @@ fn neighbor_centers(context: &NeighborContext<'_>, slot: &Slot, r: usize) -> Opt
         None
     } else {
         Some(centers.iter().sum::<usize>() / centers.len())
+    }
+}
+
+fn preferred_neighbors(
+    context: &NeighborContext<'_>,
+    slot: &Slot,
+    rank: usize,
+    toward_previous: bool,
+) -> Vec<Slot> {
+    let neighbors = slot_neighbors(
+        context.graph,
+        slot,
+        rank,
+        context.reversed,
+        context.edge_spans,
+        toward_previous,
+    );
+    let Slot::Real(node) = slot else {
+        return neighbors;
+    };
+    let Some(group) = top_level_group(context.graph, *node) else {
+        return neighbors;
+    };
+    let internal: Vec<Slot> = neighbors
+        .iter()
+        .copied()
+        .filter(|neighbor| {
+            matches!(neighbor, Slot::Real(other) if top_level_group(context.graph, *other) == Some(group))
+        })
+        .collect();
+    if internal.is_empty() {
+        neighbors
+    } else {
+        internal
     }
 }
 
@@ -975,8 +996,32 @@ fn legalize(
             .map(|ctr| ctr.saturating_sub(len / 2))
             .unwrap_or(cross[i]);
         cross[i] = want.max(min_start);
-        min_start = cross[i] + len + gap + extra_after(slot);
+        min_start = cross[i] + len + slot_gap(g, slot, rslots.get(i + 1), gap) + extra_after(slot);
     }
+}
+
+fn slot_gap(g: &Graph, left: &Slot, right: Option<&Slot>, base: usize) -> usize {
+    let (Slot::Real(left), Some(Slot::Real(right))) = (left, right) else {
+        return base;
+    };
+    let left_group = top_level_group(g, *left);
+    let right_group = top_level_group(g, *right);
+    if left_group != right_group && (left_group.is_some() || right_group.is_some()) {
+        base + 2 * CLUSTER_PAD
+    } else {
+        base
+    }
+}
+
+fn top_level_group(g: &Graph, node: usize) -> Option<usize> {
+    let mut group = g
+        .subgraphs
+        .iter()
+        .position(|subgraph| subgraph.members.contains(&node))?;
+    while let Some(parent) = g.subgraphs[group].parent {
+        group = parent;
+    }
+    Some(group)
 }
 
 /// Assign a port cross-row for each forward edge at its real endpoint.

@@ -254,6 +254,50 @@ flowchart LR
     );
 }
 
+#[test]
+fn title_expansion_preserves_a_single_column_groups_structural_center() {
+    let source = "\
+flowchart TB
+  subgraph Pipe [Pipeline]
+    A[src] --> B[tok]
+  end
+  B --> C[out]
+";
+    let graph = parse::parse(source).unwrap();
+    let placed = layout::layout(&graph, 100);
+    let scene = route::route(&graph, &placed);
+    let group = scene.groups[0].rect;
+    let member = scene.boxes[0].rect;
+    let center2 = |rect: Rect| 2 * rect.x + rect.w - 1;
+
+    assert_eq!(center2(group), center2(member));
+}
+
+#[test]
+fn b15_given_an_external_node_then_its_box_does_not_intersect_the_group_frame() {
+    let source = "\
+flowchart TB
+  classDef default fill:#f9f
+  subgraph one
+    A --> B
+  end
+  style A fill:#bbf
+  A --> C
+";
+    let graph = parse::parse(source).unwrap();
+    let placed = layout::layout(&graph, 100);
+    let scene = route::route(&graph, &placed);
+    let group = scene.groups[0].rect;
+    let c_index = graph.nodes.iter().position(|node| node.id == "C").unwrap();
+    let outside = scene.boxes[c_index].rect;
+    let intersects = group.x < outside.right()
+        && group.right() > outside.x
+        && group.y < outside.bottom()
+        && group.bottom() > outside.y;
+
+    assert!(!intersects, "group={group:?}, outside={outside:?}");
+}
+
 fn strip_common_indent(text: &str) -> String {
     let indent = text
         .lines()

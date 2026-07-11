@@ -15,6 +15,12 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   overwritten labels on TB/BT parallel edges and labelled fork/merge diagrams.
 - Channel bend tracks now reuse non-overlapping cross-axis intervals, tightening
   fork/merge, subgraph fan-out, and shape-gallery output without collisions.
+- Title-driven subgraph growth preserves the member content's center parity, so
+  single-column groups keep their frame, nodes, and exit shaft exactly aligned.
+- Cluster-aware cross-axis spacing keeps external nodes disjoint from group
+  frames. Grouped nodes prefer internal neighbors as alignment anchors, so an
+  outside edge bends through a frame gate instead of pulling the internal spine
+  toward—or placing its target inside—the group.
 - B14 scene invariants now verify each edge's exact label cells, orthogonal path,
   painted endpoints, and arrow adjacency; regression coverage includes vertical
   parallel edges and labelled fork/merge.

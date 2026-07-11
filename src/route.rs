@@ -180,8 +180,13 @@ fn route_groups(g: &Graph, boxes: &[SceneBox]) -> Vec<SceneGroup> {
             content.h + top + side,
         );
         let title_width = format!(" {} ", group.title).width() as i32;
-        let needed = title_width + 4;
+        let mut needed = title_width + 4;
         if rect.w < needed {
+            // Grow by an even number of cells so the content's doubled center
+            // remains exact on the integer grid.
+            if (needed - rect.w) % 2 != 0 {
+                needed += 1;
+            }
             let extra = needed - rect.w;
             rect.x -= extra / 2;
             rect.w = needed;
