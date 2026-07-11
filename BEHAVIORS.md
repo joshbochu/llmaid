@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D25.
+`CHANGELOG.md` D9–D26.
 
 ## Parsing
 
@@ -136,3 +136,16 @@ structural coverage lives beside its engine tests. Decisions behind these:
   missing parents, multiple roots, deferred advanced syntax, and terminal-
   unsafe zero-width sequences fail with the source line and a repairable
   expectation instead of producing an ambiguous or corrupt frame.
+
+## Planning diagrams
+
+- **B26** Given a core `timeline` with an optional title, ordered periods,
+  one or more events per period, continuation events, and named sections,
+  when rendered, then source chronology and event ownership are preserved on
+  one deterministic vertical spine with source-ordered containing section
+  frames. Unicode and `--ascii` structure are deterministic; labels follow
+  B9/B10 and never truncate; `--audit=json` reports semantic period/event
+  counts and chronological period ranks. Events without a current period,
+  empty periods/events/sections, malformed `:` syntax, late/duplicate titles,
+  empty named sections, deferred directions, and terminal-unsafe zero-width
+  sequences fail with the source line and a repairable expectation.

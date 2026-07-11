@@ -1,0 +1,10 @@
+timeline
+title=-
+period 0 section=- line=2 label="Discovery"
+  event 0 line=2 label="Interview users"
+  event 1 line=2 label="Map constraints"
+  event 2 line=3 label="Approve direction"
+period 1 section=- line=4 label="Delivery"
+  event 0 line=4 label="Build"
+  event 1 line=4 label="Verify"
+  event 2 line=4 label="Publish"

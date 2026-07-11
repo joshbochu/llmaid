@@ -473,7 +473,7 @@ fn unterminated_edge(line: usize, open: &str, example: &str) -> ParseError {
     }
 }
 
-fn clean_label(raw: &str) -> String {
+pub(crate) fn clean_label(raw: &str) -> String {
     let s = raw.trim();
     let s = s
         .strip_prefix('"')

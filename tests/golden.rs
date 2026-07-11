@@ -151,6 +151,7 @@ fn b14_frame_invariants_hold_for_all_cases() {
             Diagram::Class(class) => class.labels(),
             Diagram::Er(er) => er.labels(),
             Diagram::Mindmap(mindmap) => mindmap.labels(),
+            Diagram::Timeline(timeline) => timeline.labels(),
         };
         for label in labels {
             let want: String = label.chars().filter(|c| c.is_alphanumeric()).collect();

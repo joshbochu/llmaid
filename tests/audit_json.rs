@@ -195,3 +195,18 @@ fn mindmaps_have_a_stable_typed_audit_with_tree_levels() {
     assert!(first.contains("\"metrics\":null"), "{first}");
     assert_eq!(run(&["--audit=json"], source).0, first);
 }
+
+#[test]
+fn timelines_have_stable_semantic_counts_and_chronological_ranks() {
+    let source = "timeline\n  section Build\n  Q1 : Design : Review\n  Q2 : Ship\n";
+    let (first, stderr, code) = run(&["--audit=json"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(first.contains("\"diagram\":\"timeline\""), "{first}");
+    assert!(
+        first.contains("\"elements\":{\"nodes\":5,\"edges\":3,\"ranks\":2}"),
+        "{first}"
+    );
+    assert!(first.contains("\"violations\":[]"), "{first}");
+    assert!(first.contains("\"metrics\":null"), "{first}");
+    assert_eq!(run(&["--audit=json"], source).0, first);
+}

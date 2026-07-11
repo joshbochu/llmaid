@@ -216,10 +216,29 @@ pub fn json(diagram: &crate::diagram::Diagram, max_width: usize) -> String {
             crate::mindmap::scene(mindmap, max_width),
             mindmap.levels(),
         ),
+        crate::diagram::Diagram::Timeline(timeline) => generic_scene_json_with_counts(
+            "timeline",
+            crate::timeline::scene(timeline, max_width),
+            timeline.periods.len() + timeline.event_count(),
+            timeline.event_count(),
+            timeline.periods.len(),
+        ),
     }
 }
 
-fn generic_scene_json(diagram: &str, mut scene: Scene, ranks: usize) -> String {
+fn generic_scene_json(diagram: &str, scene: Scene, ranks: usize) -> String {
+    let nodes = scene.boxes.len();
+    let edges = scene.edges.len();
+    generic_scene_json_with_counts(diagram, scene, nodes, edges, ranks)
+}
+
+fn generic_scene_json_with_counts(
+    diagram: &str,
+    mut scene: Scene,
+    nodes: usize,
+    edges: usize,
+    ranks: usize,
+) -> String {
     scene.normalize();
     let bounds = scene.bounds();
     let violations = violations(&scene);
@@ -227,8 +246,8 @@ fn generic_scene_json(diagram: &str, mut scene: Scene, ranks: usize) -> String {
         width: bounds.w.max(0) as usize,
         height: bounds.h.max(0) as usize,
         area: (bounds.w.max(0) as usize).saturating_mul(bounds.h.max(0) as usize),
-        nodes: scene.boxes.len(),
-        edges: scene.edges.len(),
+        nodes,
+        edges,
         ranks,
         hard_violations: violations.iter().map(GeometryViolation::message).collect(),
         rank_axis_residual2: 0,

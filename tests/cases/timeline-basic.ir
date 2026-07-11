@@ -1,0 +1,8 @@
+timeline
+title="Product launch"
+period 0 section=- line=3 label="Plan"
+  event 0 line=3 label="Define scope"
+period 1 section=- line=4 label="Build"
+  event 0 line=4 label="Implement core"
+period 2 section=- line=5 label="Ship"
+  event 0 line=5 label="Release"

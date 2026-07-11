@@ -9,6 +9,7 @@ use crate::route;
 use crate::scene::Scene;
 use crate::sequence::{self, SequenceDiagram};
 use crate::state::{self, StateDiagram};
+use crate::timeline::{self, Timeline};
 
 #[derive(Debug)]
 pub enum Diagram {
@@ -18,6 +19,7 @@ pub enum Diagram {
     Class(ClassDiagram),
     Er(ErDiagram),
     Mindmap(Mindmap),
+    Timeline(Timeline),
 }
 
 pub fn parse(src: &str) -> Result<Diagram, ParseError> {
@@ -31,6 +33,7 @@ pub fn parse(src: &str) -> Result<Diagram, ParseError> {
         Some("classDiagram") => class::parse(src).map(Diagram::Class),
         Some("erDiagram") => er::parse(src).map(Diagram::Er),
         Some("mindmap") => mindmap::parse(src).map(Diagram::Mindmap),
+        Some("timeline") => timeline::parse(src).map(Diagram::Timeline),
         _ => parse::parse(src).map(Diagram::Flowchart),
     }
 }
@@ -44,6 +47,7 @@ impl Diagram {
             Diagram::Class(class) => &class.warnings,
             Diagram::Er(er) => &er.warnings,
             Diagram::Mindmap(mindmap) => &mindmap.warnings,
+            Diagram::Timeline(timeline) => &timeline.warnings,
         }
     }
 
@@ -55,6 +59,7 @@ impl Diagram {
             Diagram::Class(class) => class.is_empty(),
             Diagram::Er(er) => er.is_empty(),
             Diagram::Mindmap(mindmap) => mindmap.is_empty(),
+            Diagram::Timeline(timeline) => timeline.is_empty(),
         }
     }
 }
@@ -67,6 +72,7 @@ pub fn dump(diagram: &Diagram) -> String {
         Diagram::Class(class) => class::dump(class),
         Diagram::Er(er) => er::dump(er),
         Diagram::Mindmap(mindmap) => mindmap::dump(mindmap),
+        Diagram::Timeline(timeline) => timeline::dump(timeline),
     }
 }
 
@@ -81,5 +87,6 @@ pub fn scene(diagram: &Diagram, width: usize) -> Scene {
         Diagram::Class(class) => class::scene(class, width),
         Diagram::Er(er) => er::scene(er, width),
         Diagram::Mindmap(mindmap) => mindmap::scene(mindmap, width),
+        Diagram::Timeline(timeline) => timeline::scene(timeline, width),
     }
 }

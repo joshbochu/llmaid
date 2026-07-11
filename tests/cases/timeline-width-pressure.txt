@@ -1,0 +1,5 @@
+                                                  A carefully documented event with enough words
+                                              ┌── to require deterministic wrapping
+A deliberately descriptive planning period    │
+              with several important words ───┤   Supercalifragilisticexpialidocious remains
+                                              └── complete

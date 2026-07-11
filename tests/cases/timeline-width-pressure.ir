@@ -1,0 +1,5 @@
+timeline
+title=-
+period 0 section=- line=2 label="A deliberately descriptive planning period with several important words"
+  event 0 line=2 label="A carefully documented event with enough words to require deterministic wrapping"
+  event 1 line=2 label="Supercalifragilisticexpialidocious remains complete"

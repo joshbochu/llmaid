@@ -1,7 +1,7 @@
 use llmaid::audit;
 use llmaid::scene::{CardinalityMaximum, CardinalityMinimum, EndpointDecorationKind};
 use llmaid::style::Style;
-use llmaid::{class, er, layout, mindmap, parse, render, route};
+use llmaid::{class, er, layout, mindmap, parse, render, route, temporal, timeline};
 use unicode_width::UnicodeWidthStr;
 
 fn audit_source(source: &str) -> audit::GeometryAudit {
@@ -441,4 +441,243 @@ fn mindmap_boxes_keep_one_visible_padding_cell_beside_every_label() {
             node.label
         );
     }
+}
+
+#[test]
+fn temporal_ranks_have_strict_chronology_one_spine_exact_attachments_and_separate_bands() {
+    use temporal::{Extent, TemporalBand, TemporalEntry, TemporalGaps};
+
+    let entries = [
+        TemporalEntry {
+            leading: Extent {
+                width: 8,
+                height: 1,
+            },
+            trailing: vec![
+                Extent {
+                    width: 10,
+                    height: 1,
+                },
+                Extent {
+                    width: 7,
+                    height: 3,
+                },
+            ],
+            band: Some(0),
+        },
+        TemporalEntry {
+            leading: Extent {
+                width: 6,
+                height: 3,
+            },
+            trailing: vec![Extent {
+                width: 12,
+                height: 1,
+            }],
+            band: Some(1),
+        },
+    ];
+    let bands = [
+        TemporalBand {
+            first_entry: 0,
+            entry_count: 1,
+            title_width: 10,
+        },
+        TemporalBand {
+            first_entry: 1,
+            entry_count: 1,
+            title_width: 8,
+        },
+    ];
+    let placed = temporal::layout(&entries, &bands, TemporalGaps::compact());
+
+    assert!(placed.anchors.windows(2).all(|pair| pair[0].y < pair[1].y));
+    assert!(
+        placed
+            .anchors
+            .iter()
+            .all(|anchor| anchor.x == placed.spine_x)
+    );
+    for entry in 0..entries.len() {
+        let lead = &placed.connectors[placed
+            .connectors
+            .iter()
+            .position(|connector| connector.entry == entry && connector.trailing.is_none())
+            .unwrap()];
+        assert_eq!(lead.points[0].x, placed.leading_boxes[entry].right() - 1);
+        assert_eq!(lead.points[0].y, placed.anchors[entry].y);
+        assert_eq!(lead.points.last().unwrap(), &placed.anchors[entry]);
+        assert_eq!(
+            placed.leading_boxes[entry].center2().y,
+            2 * placed.anchors[entry].y
+        );
+        for (trailing, rect) in placed.trailing_boxes[entry].iter().enumerate() {
+            let connector = placed
+                .connectors
+                .iter()
+                .find(|connector| connector.entry == entry && connector.trailing == Some(trailing))
+                .unwrap();
+            assert_eq!(connector.points[0].x, placed.spine_x);
+            assert_eq!(connector.points.last().unwrap().x, rect.x);
+            assert_eq!(2 * connector.points.last().unwrap().y, rect.center2().y);
+        }
+        if let (Some(first), Some(last)) = (
+            placed.trailing_boxes[entry].first(),
+            placed.trailing_boxes[entry].last(),
+        ) {
+            let span_sum = first.center2().y / 2 + last.center2().y / 2;
+            assert_eq!(
+                2 * placed.anchors[entry].y,
+                span_sum + span_sum.rem_euclid(2),
+                "period anchors use an exact deterministic lower bias only when the event span midpoint is a half-cell"
+            );
+        }
+    }
+    assert!(placed.band_rects[0].bottom() < placed.band_rects[1].y);
+    for (band, rect) in placed.band_rects.iter().enumerate() {
+        let entry = bands[band].first_entry;
+        assert!(rect.contains(placed.anchors[entry]));
+        for corner in rect_corners(placed.leading_boxes[entry]) {
+            assert!(rect.contains(corner));
+        }
+        for trailing in &placed.trailing_boxes[entry] {
+            for corner in rect_corners(*trailing) {
+                assert!(rect.contains(corner));
+            }
+        }
+    }
+}
+
+#[test]
+fn timeline_labels_have_visible_connector_padding_and_period_connectors_only_share_the_spine() {
+    let diagram = timeline::parse(
+        "timeline\n  section Foundation\n  Q1 : Design : Prototype\n  Q2 : Build\n",
+    )
+    .unwrap();
+    let scene = timeline::scene(&diagram, 100);
+    assert!(
+        scene.boxes.is_empty(),
+        "timeline labels should stay compact plain text"
+    );
+    assert_eq!(scene.groups.len(), 1);
+    assert_eq!(scene.paths.len(), 1);
+    let spine_x = scene.paths[0].points[0].x;
+    assert!(scene.paths[0].points.iter().all(|point| point.x == spine_x));
+
+    // Comfortable-width lowering emits period then event text for each rank.
+    let labels: Vec<_> = scene
+        .texts
+        .iter()
+        .filter(|text| text.text != "Foundation")
+        .collect();
+    assert_eq!(
+        labels
+            .iter()
+            .map(|text| text.text.as_str())
+            .collect::<Vec<_>>(),
+        ["Q1", "Design", "Prototype", "Q2", "Build"]
+    );
+    let leading_edges: Vec<_> = scene
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.points.last().unwrap().x == spine_x && edge.points.first().unwrap().x < spine_x
+        })
+        .collect();
+    assert_eq!(leading_edges.len(), 2);
+    for (text, edge) in [labels[0], labels[3]].into_iter().zip(leading_edges) {
+        assert!(text.at.x + (text.text.width() as i32) < edge.points[0].x);
+    }
+    let trailing_edges: Vec<_> = scene
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.points.first().unwrap().x == spine_x && edge.points.last().unwrap().x > spine_x
+        })
+        .collect();
+    for (text, edge) in [labels[1], labels[2], labels[4]]
+        .into_iter()
+        .zip(trailing_edges)
+    {
+        assert!(text.at.x >= edge.points.last().unwrap().x + 2);
+    }
+
+    let group = &scene.groups[0];
+    for text in &scene.texts {
+        for cell in text_cells(text) {
+            assert!(
+                group.rect.contains(cell),
+                "{} escaped its section",
+                text.text
+            );
+        }
+    }
+    for edge in &scene.edges {
+        for cell in path_cells(&edge.points) {
+            assert!(cell.x > group.rect.x && cell.x < group.rect.right() - 1);
+            assert!(cell.y > group.title.at.y && cell.y < group.rect.bottom() - 1);
+        }
+    }
+    assert!(scene.edge_box_intersections().is_empty());
+
+    let q1_y = scene.edges[0].points.last().unwrap().y;
+    let q2_edge = scene
+        .edges
+        .iter()
+        .find(|edge| {
+            edge.points.last().unwrap().x == spine_x && edge.points.last().unwrap().y > q1_y
+        })
+        .unwrap();
+    for left in &scene.edges[..3] {
+        for right in scene
+            .edges
+            .iter()
+            .filter(|edge| edge.points.last().unwrap().y >= q2_edge.points.last().unwrap().y)
+        {
+            for cell in path_cells(&left.points) {
+                if path_cells(&right.points).contains(&cell) {
+                    assert_eq!(
+                        cell.x, spine_x,
+                        "different periods overlap away from the spine"
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn rect_corners(rect: llmaid::scene::Rect) -> [llmaid::scene::Point; 4] {
+    use llmaid::scene::Point;
+    [
+        Point::new(rect.x, rect.y),
+        Point::new(rect.right() - 1, rect.y),
+        Point::new(rect.x, rect.bottom() - 1),
+        Point::new(rect.right() - 1, rect.bottom() - 1),
+    ]
+}
+
+fn text_cells(text: &llmaid::scene::SceneText) -> Vec<llmaid::scene::Point> {
+    use llmaid::scene::Point;
+    (0..text.text.width() as i32)
+        .map(|dx| Point::new(text.at.x + dx, text.at.y))
+        .collect()
+}
+
+fn path_cells(points: &[llmaid::scene::Point]) -> Vec<llmaid::scene::Point> {
+    use llmaid::scene::Point;
+    let mut cells = Vec::new();
+    for pair in points.windows(2) {
+        let mut point = pair[0];
+        if cells.last() != Some(&point) {
+            cells.push(point);
+        }
+        while point != pair[1] {
+            point = Point::new(
+                point.x + (pair[1].x - point.x).signum(),
+                point.y + (pair[1].y - point.y).signum(),
+            );
+            cells.push(point);
+        }
+    }
+    cells
 }

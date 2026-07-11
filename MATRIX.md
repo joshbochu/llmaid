@@ -19,7 +19,7 @@ or competitor notes change. Roadmap phases: [`ROADMAP.md`](ROADMAP.md).
 
 | Tool | Role in comparison |
 |------|-------------------|
-| **llmaid** | This project (flowchart + sequence + core design-doc and mindmap subsets) |
+| **llmaid** | This project (flowchart + sequence + core design-doc, mindmap, and timeline subsets) |
 | **termiflow** | Terminal Mermaid flowchart (`tw`) |
 | **termaid** | Terminal multi-type Mermaid (Python) |
 | **diagon** | Non-Mermaid ASCII generators |
@@ -41,7 +41,7 @@ not a formal audit. llmaid cells should stay honest.
 | Mermaid class | P | N | Y | N | N | Y |
 | Mermaid ER | P | N | Y | N | N | Y |
 | Mermaid mindmap | P | N | Y | N | N | Y |
-| Mermaid gantt / timeline | N | N | Y | N | N | Y |
+| Mermaid gantt / timeline | P (timeline) | N | Y | N | N | Y |
 | Mermaid gitGraph | N | N | Y | N | N | Y |
 | Mermaid pie / charts | N | N | Y | N | N | Y |
 | Mermaid journey / kanban / block | N | N | Y | N | N | Y |
@@ -129,7 +129,7 @@ Mermaid as the only primary agent language.
 
 | Capability | llmaid | termiflow | termaid | diagon | graph-easy | mermaid.js |
 |------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
-| Gantt / timeline | N | N | Y | N | N | Y |
+| Gantt / timeline | P (timeline) | N | Y | N | N | Y |
 | Git graph | N | N | Y | N | N | Y |
 
 **Roadmap:** Phase 4.2–4.3.
@@ -200,7 +200,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Tree hierarchy | Y | N | Y | Y (tree) | P | Y |
 | Math typography | N | N | N | Y | N | N |
 | Table grid | N | N | N | Y | N | P |
-| Time-axis bars (gantt) | N | N | Y | N | N | Y |
+| Ordered time axis / bars | P (timeline axis) | N | Y | N | N | Y |
 | Chart geometry | N | N | Y | N | N | Y |
 
 **llmaid plan:** implement engines behind Mermaid parsers (see ROADMAP engine map).
@@ -218,6 +218,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Sequence | `sequenceDiagram` | **P** (participants, messages, notes, activation, loop/alt/opt) |
 | Tree | `mindmap` or flowchart TB | **P** (one plain-label root hierarchy) |
 | Class / ER / state | respective types | **P** (core subsets) |
+| Timeline | `timeline` | **P** (title, periods/events, sections) |
 | Table | Markdown table (not Mermaid) | park |
 | Math | not Mermaid | park |
 
@@ -228,7 +229,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Goal | Leader today | llmaid |
 |------|--------------|--------|
 | Terminal flowchart **quality** (thesis) | **llmaid** | Leading |
-| Terminal Mermaid **breadth** | **termaid** | Flowchart, sequence, core design-doc types, and core mindmap |
+| Terminal Mermaid **breadth** | **termaid** | Flowchart, sequence, core design-doc types, mindmap, and timeline slices |
 | Non-Mermaid ASCII kit | **diagon** | — |
 | General graph language + clusters | **graph-easy** | Missing subgraphs |
 | Full language reference | **mermaid.js** | Slice only |
@@ -257,3 +258,4 @@ When you ship a feature:
 | 2026-07-11 | Sequence controls: nested loop/alt/else/opt frames; B20 + golden coverage. |
 | 2026-07-11 | Agent audit: stable `--audit=json` plus 284 generated directional renders and 71 mirror-signature checks. |
 | 2026-07-11 | Phase 4.1: core ordered `mindmap`, reusable integer tree layout, exact parent-child contracts, and four goldens. |
+| 2026-07-11 | Phase 4.2: core ordered `timeline`, reusable integer temporal layout, exact spine/attachment/section contracts, 170 generated structures, and five goldens. Local termaid 0.7.1 comparison confirmed its compact rail as a useful baseline but found weaker continuation ownership, section containment, and width semantics. |

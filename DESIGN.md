@@ -46,7 +46,10 @@ activation bars. Balanced nested `loop`, `alt` / `else`, and `opt` control
 blocks render as labeled frames. Phase 3 adds flat state diagrams, core class
 diagrams, and core ER diagrams through separate semantic IRs and a shared
 typed-box geometry adapter. Phase 4.1 adds a core `mindmap` slice with one
-ordered indentation-defined hierarchy of plain labels. Icons, custom classes,
+ordered indentation-defined hierarchy of plain labels. Phase 4.2 adds a core
+`timeline` slice with an optional title, ordered periods and continuation
+events, and named containing sections on one vertical chronological spine.
+Icons, custom classes,
 Markdown, general mindmap shapes, and styling directives remain expansion work
 tracked in `ROADMAP.md`; coverage lives in `MATRIX.md`.
 
@@ -66,6 +69,8 @@ src/
   boxed.rs     semantic-free typed boxes/relations → layered layout + routing
   mindmap.rs   ordered indentation IR + width fallback → tree geometry → Scene
   tree.rs      reusable deterministic integer layout for ordered rooted trees
+  timeline.rs  ordered period/event/section IR + width fallback → Scene
+  temporal.rs  reusable deterministic integer layout for temporal ranks/bands
   scene.rs     Signed Point/Rect/Path/Text primitives + exact bounds
   render.rs    Scene → grid canvas → styled box-drawing output
   style.rs     Charsets: unicode (default) / ascii
@@ -119,6 +124,23 @@ rejected explicitly. Zero-width Unicode sequences are also rejected in this
 slice because the current cell painter cannot preserve them without corrupting
 geometry; precomposed text, CJK, and single-scalar emoji remain supported.
 
+### Temporal layout — ordered, integer, planning-native
+
+Timelines do not lower through flowchart ranks. `temporal.rs` accepts only
+measured leading/trailing extents, declaration-ordered band ranges, and integer
+spacing. It right-aligns period slots, fixes one common vertical spine, centers
+each period anchor on its ordered event span, attaches every event on its exact
+text row, and returns separated containing band rectangles. It performs no
+date parsing, duration calculation, or calendar arithmetic.
+
+`timeline.rs` owns Mermaid semantics and the B9 width ladder: unwrapped normal
+spacing, unwrapped compact spacing, stable two-column wrapping, then natural
+over-width output for intrinsically wide titles, sections, or labels. Timeline
+labels remain plain terminal text with one visible blank cell between text and
+connector; named sections reuse generic rounded `SceneGroup` frames. This keeps
+the familiar compact changelog rail while making period/event ownership and
+section containment exact.
+
 ### Renderer
 
 A diagram engine emits a signed screen-space `Scene`, which is normalized once
@@ -171,7 +193,7 @@ all diagnostics go to stderr.
 
 ## Testing
 
-- **Behavior contracts**: `BEHAVIORS.md` (B1–B25) indexes the promised
+- **Behavior contracts**: `BEHAVIORS.md` (B1–B26) indexes the promised
   behaviors; each has a given/when/then test in `tests/behavior.rs`
   (CLI contracts exercise the real binary).
 - **Golden snapshots**: `tests/cases/*.mmd` → `tests/cases/*.txt`, byte-compared.
@@ -191,10 +213,15 @@ all diagnostics go to stderr.
   seven nodes, then adds deep, wide, mixed, CJK/emoji, tight-width, and ASCII
   cases. Exact parent-span centering, border-center attachment, and interior
   padding contracts live in `tests/quality.rs`.
+- **Generated timeline coverage** exhausts 170 small period/event/section-cut
+  structures, then stresses deep/broad, Unicode, long-label, tight-width, and
+  ASCII cases. Exact chronological anchor, spine, attachment, section,
+  padding, and collision contracts live in `tests/quality.rs`.
 - **Machine audit** (`--audit=json`) exposes normalized named violations and
   witnesses plus the existing exact flowchart metric vector through a stable,
   dependency-free `llmaid.audit.v1` schema. Sequence scenes share the generic
-  bounds/count/invariant envelope.
+  bounds/count/invariant envelope; timelines report semantic period+event
+  nodes, event counts, and chronological period ranks.
 - **Vertical junction routing** prefers straight shafts over compact boxes. A
   lone distinct-peer fork/merge may widen across adjacent attachment columns;
   long-edge dummy lanes snap to a source or target column only when every

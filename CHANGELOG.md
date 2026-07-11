@@ -58,6 +58,16 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- Phase 4.2 core timelines (B26): `timeline` dispatch, a type-specific ordered
+  title/period/event/section IR, inline and continuation events, strict
+  line-specific placement/syntax errors, a reusable semantic-free integer
+  temporal layout, compact common-spine Scene geometry, deterministic
+  Unicode/ASCII output, B9 width fallback, typed audit JSON with semantic
+  period/event counts and chronological ranks, 170 exhaustive small structures,
+  deep/broad/Unicode/long-label stress coverage, exact temporal geometry
+  contracts, and five focused goldens. Calendar arithmetic, gantt bars,
+  direction variants, styling, and zero-width terminal sequences remain
+  explicitly deferred; accepted Phase 4.1 mindmap bytes/contracts are unchanged.
 - Phase 4.1 core mindmaps (B25): `mindmap` dispatch, a type-specific ordered
   indentation IR, strict line-specific errors, a reusable native integer tree
   layout, arrowless shared-trunk Scene geometry, deterministic Unicode/ASCII
@@ -208,6 +218,19 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 - `DESIGN.md` (v1 design), `AGENTS.md` (agent guide), this changelog.
 
 ### Decisions
+
+- **D26 — Timeline semantics own a reusable plain temporal spine.** Phase 4.2
+  parses free-text periods, source-ordered events, and contiguous named section
+  ranges into an independent IR, then lowers measured slots through a
+  string-free integer temporal engine. Period labels right-align left of one
+  fixed vertical spine; event branches attach on exact source-ordered rows;
+  named sections are separated containing frames; and every connector retains
+  a visible blank cell before text. Width fallback stays in `timeline.rs`, and
+  audit ranks mean chronological periods. A local termaid 0.7.1 comparison
+  supported the compact rail but exposed ambiguous continuation ownership,
+  non-containing sections, and loose over-width behavior. Rejected: fake
+  flowchart ranks, boxed event cards (too tall for a changelog scan), invoking
+  Mermaid.js/termaid, and premature date/calendar or gantt-bar arithmetic.
 
 - **D25 — Mindmaps own ordered tree geometry, not layered-graph lowering.**
   Phase 4.1 parses a strict two-space indentation subset into a flat preorder

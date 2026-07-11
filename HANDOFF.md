@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-11 — Phase 4.1 core mindmap hierarchy landed.
+Last updated: 2026-07-11 — Phase 4.2 core timeline planning slice landed.
 
 ## What this project is
 
@@ -17,12 +17,12 @@ without losing glance quality.
 2. `DESIGN.md` — v1 design thesis and architecture  
 3. `ROADMAP.md` — phased plan (what to build next)  
 4. `MATRIX.md` — capability × tool coverage checklist  
-5. `BEHAVIORS.md` — shipped contracts B1–B25
-6. `CHANGELOG.md` — decisions D1–D25
+5. `BEHAVIORS.md` — shipped contracts B1–B26
+6. `CHANGELOG.md` — decisions D1–D26
 
 ## Current state
 
-**Contracts B1–B25 + Phase 0–3 core + Phase 4.1 + Phase 6.2–6.3/6.5 are landed.**
+**Contracts B1–B26 + Phase 0–3 core + Phase 4.1–4.2 + Phase 6.2–6.3/6.5 are landed.**
 
 - Pipeline: parse → flow layout → route into signed `Scene` → pure canvas render
 - Diagram dispatch: flowcharts retain their established pipeline; the sequence
@@ -42,6 +42,18 @@ without losing glance quality.
 - Reusable tree geometry: independent integer-grid ordered-tree layout with
   left-to-right depth columns, exact parent/child-span centering, shared
   arrowless trunks, Unicode measurement, width fallback, and shared-Scene output
+- Core timelines: `timeline` dispatch, optional title, ordered free-text
+  periods, inline/continuation events, and named containing sections with
+  strict line-specific diagnostics for orphan/empty/malformed placement
+- Reusable temporal geometry: independent string-free integer-grid ranks,
+  measured leading/trailing slots, fixed chronological spine, exact event
+  attachments, and source-ordered separated band rectangles. Calendar/date
+  arithmetic and gantt bars remain deferred
+- Timeline visual grammar: right-aligned period text and one-sided event
+  branches use a compact changelog rail; every label keeps a visible blank cell
+  from its connector, section frames contain all assigned content, and B9 wraps
+  before the documented over-width fallback. Phase 4.1 mindmap visuals and
+  contracts remain byte-identical
 - Typed boxed adapter: state/class/ER retain independent semantic IR and join
   the established integer layered geometry only when lowering to `Scene`
 - Design-doc visual grammar: class headers/members use compartments; UML
@@ -68,7 +80,8 @@ without losing glance quality.
   doubled-cell relational residuals, crossings, bends, and wire length
 - CLI audit: `--audit=json` emits byte-stable `llmaid.audit.v1` for every
   shipped type with normalized bounds/counts and named invariant violations;
-  mindmaps report exact level counts and flowcharts add the geometry metric vector
+  mindmaps report exact level counts, timelines report semantic period/event
+  counts plus chronological ranks, and flowcharts add the geometry metric vector
 - Generated coverage: all 71 non-empty forward DAGs on 2–4 nodes render in all
   four directions (284 cases); opposite directions have exact audit signatures
 - Generated design coverage: 40 state/class/ER direction renders verify
@@ -76,6 +89,9 @@ without losing glance quality.
 - Generated hierarchy coverage: all 197 ordered tree shapes through seven
   nodes plus deep, wide, mixed, Unicode, tight-width, and ASCII cases verify
   determinism, source order, label survival, and Scene invariants
+- Generated timeline coverage: all 170 small combinations of one-to-four
+  periods, one-to-two events, and section-cut masks plus deep, broad, Unicode,
+  long-label, tight-width, determinism, ASCII, and same-width metamorphic cases
 - Guarantee boundary: engine-wide grid/determinism rules and scene invariants
   are distinct from topology-specific aesthetic contracts. Known chains,
   forks, merges, eligible diamonds, group boundaries, and ordered tree spans
@@ -98,19 +114,18 @@ without losing glance quality.
 
 ## Next steps (from ROADMAP)
 
-1. **Phase 4.2** — planning timelines (`gantt` or `timeline`)
-2. **Phase 4.3** — `gitGraph`, then selective charts
-3. Remaining agent diagnostics (JSON parser errors / optional JSON IR input)
-4. Optional visual polish: native state pseudo-markers and nested
+1. **Phase 4.3** — `gitGraph`, then selective charts
+2. Remaining agent diagnostics (JSON parser errors / optional JSON IR input)
+3. Optional visual polish: native state pseudo-markers and nested
    state/subgraph handling
 
 Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 
 ### Suggested next pickup
 
-Apply the same thin vertical-slice discipline to a time-axis engine: type-
-specific ordered IR, shared `Scene`, behavior contract, deterministic generated
-coverage, focused goldens, and visual review.
+Apply the same thin vertical-slice discipline to `gitGraph`: type-specific
+ordered IR, native integer geometry, shared `Scene`, behavior contract,
+deterministic generated coverage, focused goldens, and visual review.
 
 ## Quality bar
 
@@ -129,3 +144,6 @@ Rounded, labels on the arrow with spaces, nothing truncated. Eyeball
 - diagon: `node ~/dev/lox-rs/tools/diagon.mjs <seq|tree|math|table|frame|dag|grammar>`  
 - graph-easy: `PERL5LIB=~/perl5/lib/perl5 ~/perl5/bin/graph-easy`  
 - termaid: `uvx --from termaid termaid`  
+  Phase 4.2 compared against termaid 0.7.1: retain its compact rail idea, not
+  its ambiguous continuation ownership, non-containing sections, or loose
+  width semantics.

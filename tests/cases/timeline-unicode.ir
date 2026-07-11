@@ -1,0 +1,8 @@
+timeline
+title="国際 release 🚀"
+section 0 first=0 periods=2 line=3 label="基盤"
+period 0 section=0 line=4 label="段階一"
+  event 0 line=4 label="解析"
+  event 1 line=4 label="δοκιμή"
+period 1 section=0 line=5 label="段階二"
+  event 0 line=5 label="配布 🚀"

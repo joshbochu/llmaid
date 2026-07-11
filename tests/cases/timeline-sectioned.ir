@@ -1,0 +1,12 @@
+timeline
+title="Delivery roadmap"
+section 0 first=0 periods=2 line=3 label="Foundation"
+section 1 first=2 periods=2 line=6 label="Adoption"
+period 0 section=0 line=4 label="Q1"
+  event 0 line=4 label="Parser"
+period 1 section=0 line=5 label="Q2"
+  event 0 line=5 label="Renderer"
+period 2 section=1 line=7 label="Q3"
+  event 0 line=7 label="Documentation"
+period 3 section=1 line=8 label="Q4"
+  event 0 line=8 label="Release"

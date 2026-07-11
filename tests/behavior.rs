@@ -814,3 +814,64 @@ mindmap
         "{stderr}"
     );
 }
+
+#[test]
+fn b26_given_core_timeline_then_chronology_sections_and_events_are_preserved_and_self_debuggable() {
+    let source = "\
+timeline
+  title Release plan
+  section Foundation
+    Q1 : Design : Prototype
+       : Review
+    Q2 : Build
+  section Delivery
+    Q3 : Ship
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    for label in [
+        "Release plan",
+        "Foundation",
+        "Q1",
+        "Design",
+        "Prototype",
+        "Review",
+        "Q2",
+        "Build",
+        "Delivery",
+        "Q3",
+        "Ship",
+    ] {
+        assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
+    }
+    assert_eq!(run_llmaid(&[], source).0, unicode);
+
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+
+    let (tight, stderr, code) = run_llmaid(&["--width", "18"], source);
+    assert_eq!(code, 0, "{stderr}");
+    for label in ["Release", "Foundation", "Prototype", "Delivery", "Ship"] {
+        assert!(
+            alnum_subsequence(&tight, label),
+            "truncated {label:?}:\n{tight}"
+        );
+    }
+
+    let (audit, stderr, code) = run_llmaid(&["--audit=json"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(audit.contains("\"diagram\":\"timeline\""), "{audit}");
+    assert!(
+        audit.contains("\"nodes\":8,\"edges\":5,\"ranks\":3"),
+        "{audit}"
+    );
+
+    let (stdout, stderr, code) = run_llmaid(&[], "timeline\n  : orphan event\n");
+    assert_eq!(code, 64);
+    assert_eq!(stdout, "");
+    assert!(
+        stderr.contains("line 2") && stderr.contains("period before event"),
+        "{stderr}"
+    );
+}
