@@ -46,12 +46,13 @@ their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–
 - **B11** Given a self-loop (`eval --> eval`) or cycle back edge, when
   rendered, then a tight loop or perimeter route returns to the target with
   its arrow and label preserved.
-- **B12** Given parallel edges (B3), when rendered, then both are drawn as
-  distinct paths, each carrying its own label.
+- **B12** Given parallel edges (B3), when rendered in any direction, then each
+  retains a distinct path, arrow, and collision-free label lane.
 - **B13** Given non-rect shapes, when rendered, then boxes are rect-framed with
   shape-hint glyphs (◇ corners, rounded caps, cylinder lid) — grid alignment
   is never risked for shape fidelity (termiflow's failure mode).
 - **B14** Given any rendered frame, then invariants hold: no truncated labels,
   all borders closed, every edge reaches both endpoints, no character
-  overwrites label text. Enforced via `render_with_checks` + `.txt` goldens
+  overwrites label text. Enforced per scene/path/label via
+  `render_scene_with_checks` + `.txt` goldens
   in `tests/golden.rs` (doubles as the fuzz oracle).

@@ -26,9 +26,9 @@ UPDATE_GOLDEN=1 cargo test        # regen tests/cases/*.{ir,txt} after intention
 Five-stage pipeline, one module per stage, data flows one way:
 
 ```
-main.rs → parse.rs → layout.rs → route.rs → render.rs
-          (IR)       (grid pos)  (edge paths) (canvas → text)
-                          style.rs (charsets: unicode/ascii)
+main.rs → parse.rs → layout.rs → route.rs → Scene → render.rs
+          (IR)       (flow grid)  (paths/text)       (canvas → text)
+                                        style.rs (charsets: unicode/ascii)
 ```
 
 - `parse.rs` — Mermaid flowchart subset → IR (`Graph`: nodes, shapes, edges,
@@ -36,9 +36,13 @@ main.rs → parse.rs → layout.rs → route.rs → render.rs
 - `layout.rs` — Sugiyama layered layout in **integer grid coordinates**:
   rank assignment (cycle-breaking via DFS feedback edges), barycenter crossing
   reduction, coordinate assignment. Cells sized via `unicode-width`.
-- `route.rs` — orthogonal edge paths, rounded elbows, labels placed on the
-  arrow with space reserved during layout. Back-edges use the perimeter channel.
-- `render.rs` — char canvas; box-drawing junctions resolved via bitmask lookup
+- `route.rs` — layout geometry → signed screen-space `Scene`; complete
+  orthogonal paths, arrows, and collision-free label positions. Back-edges use
+  the perimeter channel.
+- `scene.rs` — shared `Point` / `Rect` / path / text primitives; normalizes the
+  finished scene once and derives exact bounds.
+- `render.rs` — pure scene painter + char canvas; box-drawing junctions resolved
+  via bitmask lookup
   (`─` meets `│` ⇒ `┼`).
 - `style.rs` — glyph sets only; no behavior.
 

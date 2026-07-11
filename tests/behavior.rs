@@ -101,11 +101,10 @@ flowchart TB
     assert_eq!(g.subgraphs[0].members.len(), 2);
     assert_eq!(g.nodes[g.subgraphs[0].members[0]].id, "A");
     assert_eq!(g.nodes[g.subgraphs[0].members[1]].id, "B");
-    assert_eq!(g.node_sg[0], Some(0));
-    assert_eq!(g.node_sg[1], Some(0));
-    assert_eq!(g.node_sg[2], None); // C outside
     assert!(
-        !g.warnings.iter().any(|w| w.msg.contains("subgraph ignored")),
+        !g.warnings
+            .iter()
+            .any(|w| w.msg.contains("subgraph ignored")),
         "subgraph should not be ignored: {:?}",
         g.warnings
     );
@@ -118,7 +117,9 @@ flowchart TB
     );
     // Title sits on an interior row (│ … Pipeline …), not welded into ╭──╮.
     assert!(
-        stdout.lines().any(|l| l.contains('│') && l.contains("Pipeline")),
+        stdout
+            .lines()
+            .any(|l| l.contains('│') && l.contains("Pipeline")),
         "title should be on an interior frame row:\n{stdout}"
     );
     assert!(
@@ -145,8 +146,14 @@ flowchart TB
     assert_eq!(ncode, 0, "{nerr}");
     assert!(nout.contains("Outer") && nout.contains("Inner"), "\n{nout}");
     let lines: Vec<&str> = nout.lines().collect();
-    let outer_i = lines.iter().position(|l| l.contains("Outer")).expect("Outer");
-    let inner_i = lines.iter().position(|l| l.contains("Inner")).expect("Inner");
+    let outer_i = lines
+        .iter()
+        .position(|l| l.contains("Outer"))
+        .expect("Outer");
+    let inner_i = lines
+        .iter()
+        .position(|l| l.contains("Inner"))
+        .expect("Inner");
     assert!(
         outer_i < inner_i,
         "Outer title should appear above Inner:\n{nout}"
@@ -365,6 +372,50 @@ flowchart LR
 }
 
 #[test]
+fn b12_given_vertical_parallel_edges_then_each_label_has_its_own_lane() {
+    let src = "\
+flowchart TB
+  A -->|one| B
+  A -->|two| B
+  A -->|three| B
+";
+    let (stdout, stderr, code) = run_llmaid(&[], src);
+    assert_eq!(code, 0, "{stderr}");
+    for label in ["one", "two", "three"] {
+        assert_eq!(
+            stdout.matches(label).count(),
+            1,
+            "edge label `{label}` should appear exactly once:\n{stdout}"
+        );
+    }
+    assert_eq!(
+        stdout.chars().filter(|&c| c == '▼').count(),
+        3,
+        "each parallel edge should retain its arrowhead:\n{stdout}"
+    );
+}
+
+#[test]
+fn b12_given_vertical_fork_merge_then_edge_labels_do_not_overlap() {
+    let src = "\
+flowchart TB
+  A -->|left-edge| B
+  A -->|right-edge| C
+  B -->|merge-left| D
+  C -->|merge-right| D
+";
+    let (stdout, stderr, code) = run_llmaid(&[], src);
+    assert_eq!(code, 0, "{stderr}");
+    for label in ["left-edge", "right-edge", "merge-left", "merge-right"] {
+        assert_eq!(
+            stdout.matches(label).count(),
+            1,
+            "edge label `{label}` should appear exactly once:\n{stdout}"
+        );
+    }
+}
+
+#[test]
 fn b13_given_non_rect_shapes_then_rect_frame_with_shape_hints() {
     let src = "\
 flowchart LR
@@ -374,11 +425,10 @@ flowchart LR
     let (stdout, stderr, code) = run_llmaid(&[], src);
     assert_eq!(code, 0, "{stderr}");
     // All labels present (never truncated / lost to shape drawing).
-    for label in ["rect", "rounded", "stadium", "circle", "cylinder", "diamond", "hexagon"] {
-        assert!(
-            stdout.contains(label),
-            "missing label `{label}`:\n{stdout}"
-        );
+    for label in [
+        "rect", "rounded", "stadium", "circle", "cylinder", "diamond", "hexagon",
+    ] {
+        assert!(stdout.contains(label), "missing label `{label}`:\n{stdout}");
     }
     // D13 hints: diamond corners, stadium/circle caps, cylinder lid, hex facets.
     assert!(

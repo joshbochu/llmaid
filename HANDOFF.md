@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-09 — Phase 1 subgraphs landed.
+Last updated: 2026-07-10 — signed Scene/routing simplification landed.
 
 ## What this project is
 
@@ -24,13 +24,14 @@ without losing glance quality.
 
 **v1 contracts B1–B15 + Phase 0–1 are landed.**
 
-- Pipeline: parse → layout (width ladder, mono-chain straighten, clusters) → render
+- Pipeline: parse → flow layout → route into signed `Scene` → pure canvas render
+- `Scene` owns complete paths, arrows, label positions, normalization, and exact bounds
 - **Subgraphs:** titled frames around members (B15); interior title band +
   spacious pad; nested parent tracked
 - Edge labels: padded on-shaft (` scan `); TB/BT labels beside vertical runs
 - Directions: LR/RL/TB/BT with goldens
 - CLI: `--ascii`, `--width N` (default 100), `--strict`
-- Tests: behavior + IR/render goldens + B14 canvas invariants
+- Tests: behavior + IR/render goldens + per-scene B14 path/text/canvas invariants
 - Regenerate goldens: `UPDATE_GOLDEN=1 cargo test`
 
 ## Next steps (from ROADMAP)

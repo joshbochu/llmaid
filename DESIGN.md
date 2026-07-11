@@ -50,9 +50,10 @@ ignored, never an error). Expansion is tracked in `ROADMAP.md`; coverage in
 src/
   main.rs      CLI: args, stdin/file, error reporting
   parse.rs     Mermaid flowchart subset → IR (Graph: nodes, edges, direction)
-  layout.rs    IR → integer character-grid positions
-  route.rs     Orthogonal edge paths + label placement on the grid
-  render.rs    Grid canvas → styled box-drawing output
+  layout.rs    IR → integer flow-grid positions
+  route.rs     Layout → complete screen-space paths, arrows, and labels
+  scene.rs     Signed Point/Rect/Path/Text primitives + exact bounds
+  render.rs    Scene → grid canvas → styled box-drawing output
   style.rs     Charsets: unicode (default) / ascii
 ```
 
@@ -89,7 +90,10 @@ Orthogonal (H/V segments only), on a routing grid between node cells:
 
 ### Renderer
 
-A `Canvas` of `char` cells with draw ops (box, hline, vline, corner, text).
+A diagram engine emits a signed screen-space `Scene`, which is normalized once
+to `(0, 0)` and measured from its exact bounds. The renderer only paints scene
+primitives onto a `Canvas` of cells; it owns no routing policy.
+
 Box-drawing junction resolution (e.g. `─` meeting `│` becomes `┼`) via bitmask
 lookup, so crossings and tees always render as the correct glyph.
 

@@ -18,8 +18,6 @@ pub const EDGE_LABEL_PAD: usize = 2;
 pub const CLUSTER_PAD: usize = 2;
 /// Interior rows under the top border reserved for title (+ optional blank).
 pub const CLUSTER_TITLE_BAND: usize = 2;
-/// Extra padding per nesting level so child frames sit clearly inside parents.
-pub const CLUSTER_NEST_GAP: usize = 1;
 
 /// Fit mode for the B9 overflow ladder. Labels wrap only when `label_cols` is
 /// set (B10: no arbitrary wrap under a comfortable width budget).
@@ -80,23 +78,11 @@ impl Channel {
     }
 }
 
-/// Axis-aligned subgraph frame in flow-space (same coords as `BoxGeom`).
-#[derive(Debug)]
-pub struct ClusterGeom {
-    pub subgraph: usize,
-    pub f: usize,
-    pub c: usize,
-    pub flen: usize,
-    pub clen: usize,
-    pub title: String,
-}
-
 #[derive(Debug)]
 pub struct Placed {
     pub horizontal: bool, // LR/RL (flow = screen x)
     pub flipped: bool,    // RL/BT (flow axis mirrored on screen)
     pub boxes: Vec<BoxGeom>,
-    pub clusters: Vec<ClusterGeom>,
     /// Per edge: channel segments in flow order. Empty for self-loops/back edges.
     pub segs: Vec<Vec<Seg>>,
     pub channels: Vec<Channel>,
@@ -115,11 +101,11 @@ pub struct Placed {
 /// truncate, never fail).
 pub fn layout(g: &Graph, max_width: usize) -> Placed {
     let normal = layout_fit(g, FIT_NORMAL);
-    if approx_width(g, &normal) <= max_width {
+    if scene_width(g, &normal) <= max_width {
         return normal;
     }
     let compact = layout_fit(g, FIT_COMPACT);
-    if approx_width(g, &compact) <= max_width {
+    if scene_width(g, &compact) <= max_width {
         return compact;
     }
     // Wrap under pressure: target content width from budget and rank count.
@@ -138,33 +124,8 @@ pub fn layout(g: &Graph, max_width: usize) -> Placed {
     )
 }
 
-fn approx_width(g: &Graph, p: &Placed) -> usize {
-    let base = if p.horizontal {
-        p.flow_extent
-    } else {
-        p.cross_extent
-    };
-    let mut right = 0usize;
-    if !p.back_edges.is_empty() && !p.horizontal {
-        right = right.max(6 + p.back_edges.len() * 2);
-    }
-    if !p.self_loops.is_empty() {
-        right = right.max(6);
-    }
-    for &ei in p.back_edges.iter().chain(&p.self_loops) {
-        let label_w = g.edges[ei]
-            .label
-            .as_deref()
-            .map(UnicodeWidthStr::width)
-            .unwrap_or(0);
-        if label_w > 0 {
-            let is_horizontal_back = p.horizontal && p.back_edges.contains(&ei);
-            if !is_horizontal_back {
-                right = right.max(label_w + 8 + 2 * EDGE_LABEL_PAD + p.back_edges.len() * 2);
-            }
-        }
-    }
-    base + right
+fn scene_width(g: &Graph, placed: &Placed) -> usize {
+    crate::route::route(g, placed).bounds().w.max(0) as usize
 }
 
 fn layout_fit(g: &Graph, fit: Fit) -> Placed {
@@ -210,13 +171,13 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         let v = queue[qi];
         qi += 1;
         for ei in 0..g.edges.len() {
-            if let Some((s, t)) = ranked_edge(ei) {
-                if s == v {
-                    rank[t] = rank[t].max(rank[v] + 1);
-                    indeg[t] -= 1;
-                    if indeg[t] == 0 {
-                        queue.push(t);
-                    }
+            if let Some((s, t)) = ranked_edge(ei)
+                && s == v
+            {
+                rank[t] = rank[t].max(rank[v] + 1);
+                indeg[t] -= 1;
+                if indeg[t] == 0 {
+                    queue.push(t);
                 }
             }
         }
@@ -252,7 +213,7 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     // B12: grow the cross-axis so each forward edge can own a distinct port.
     // Single-line boxes only have one interior row; without this, parallel and
     // multi-out edges collapse onto the same path and overwrite labels.
-    for ni in 0..n {
+    for (ni, b) in boxes.iter_mut().enumerate() {
         let mut out_d = 0usize;
         let mut in_d = 0usize;
         for (ei, e) in g.edges.iter().enumerate() {
@@ -268,7 +229,7 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         }
         let need = out_d.max(in_d);
         if need > 0 {
-            boxes[ni].clen = boxes[ni].clen.max(need + 2);
+            b.clen = b.clen.max(need + 2);
         }
     }
 
@@ -279,17 +240,17 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     }
     // (edge, rank) -> position recorded later; collect dummies in edge order.
     let mut edge_spans: Vec<Option<(usize, usize)>> = vec![None; g.edges.len()];
-    for ei in 0..g.edges.len() {
+    for (ei, span) in edge_spans.iter_mut().enumerate() {
         if let Some((s, t)) = ranked_edge(ei) {
-            edge_spans[ei] = Some((rank[s], rank[t]));
-            for r in rank[s] + 1..rank[t] {
-                ranks[r].push(Slot::Dummy(ei));
+            *span = Some((rank[s], rank[t]));
+            for row in ranks.iter_mut().take(rank[t]).skip(rank[s] + 1) {
+                row.push(Slot::Dummy(ei));
             }
         }
     }
 
     // --- Crossing reduction: barycenter sweeps.
-    order_by_barycenter(g, &mut ranks, &rank, &reversed, &edge_spans);
+    order_by_barycenter(g, &mut ranks, &reversed, &edge_spans);
 
     // --- Cross sizes/gaps.
     let max_label = g
@@ -312,19 +273,9 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         let _ = max_label;
         2
     };
-    let edge_label_pad = if fit.compact {
-        1
-    } else {
-        EDGE_LABEL_PAD
-    };
+    let edge_label_pad = if fit.compact { 1 } else { EDGE_LABEL_PAD };
     // Vertical: a bit more air between ranks (TB chains inside groups).
-    let channel_min = if fit.compact {
-        3
-    } else if horizontal {
-        5
-    } else {
-        5
-    };
+    let channel_min = if fit.compact { 3 } else { 5 };
     let has_self_loop = |ni: usize| self_loops.iter().any(|&ei| g.edges[ei].from == ni);
 
     let slot_clen = |slot: &Slot, boxes: &[BoxGeom]| -> usize {
@@ -342,10 +293,11 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         for slot in rslots {
             row.push(cur);
             let mut adv = slot_clen(slot, &boxes) + base_gap;
-            if let Slot::Real(i) = slot {
-                if horizontal && has_self_loop(*i) {
-                    adv += 2; // room for the loop return below the box
-                }
+            if let Slot::Real(i) = slot
+                && horizontal
+                && has_self_loop(*i)
+            {
+                adv += 2; // room for the loop return below the box
             }
             cur += adv;
         }
@@ -360,21 +312,20 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
             (0..nranks).rev().collect()
         };
         for &r in &range {
-            let desired: Vec<Option<usize>> = ranks[r]
-                .iter()
-                .map(|slot| {
-                    neighbor_centers(
-                        g,
-                        slot,
-                        r,
-                        &ranks,
-                        &slot_cross,
-                        &boxes,
-                        &reversed,
-                        &edge_spans,
-                    )
-                })
-                .collect();
+            let desired: Vec<Option<usize>> = {
+                let context = NeighborContext {
+                    graph: g,
+                    ranks: &ranks,
+                    slot_cross: &slot_cross,
+                    boxes: &boxes,
+                    reversed: &reversed,
+                    edge_spans: &edge_spans,
+                };
+                ranks[r]
+                    .iter()
+                    .map(|slot| neighbor_centers(&context, slot, r))
+                    .collect()
+            };
             legalize(
                 &ranks[r],
                 &mut slot_cross[r],
@@ -446,8 +397,7 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     // per node so several edges on one side spread across interior rows.
     let mut out_port = port_map(g, &boxes, &reversed, &edge_spans, &pass_through, true);
     let mut in_port = port_map(g, &boxes, &reversed, &edge_spans, &pass_through, false);
-    // Snap single-attachment edges to a shared cross so mono-chains stay straight.
-    snap_mono_edge_ports(g, &boxes, &reversed, &mut out_port, &mut in_port);
+    align_mono_ports(g, &boxes, &reversed, &mut out_port, &mut in_port);
 
     for ei in 0..g.edges.len() {
         let Some((rs, rt)) = edge_spans[ei] else {
@@ -456,7 +406,7 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         if reversed[ei] {
             continue; // routed as a perimeter back edge
         }
-        for r in rs..rt {
+        for (r, edges_in_channel) in channel_edges.iter_mut().enumerate().take(rt).skip(rs) {
             let from_c = if r == rs {
                 out_port[ei]
             } else {
@@ -473,17 +423,50 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
                 to: (0, to_c),
                 track: None,
             });
-            channel_edges[r].push(ei);
+            edges_in_channel.push(ei);
         }
     }
 
-    // --- Channel widths: label zone + jog tracks.
+    // Assign the lowest reusable track to each bend. Disjoint cross-axis
+    // intervals share a track; overlapping intervals remain separated.
+    let mut channel_track_count = vec![0usize; nranks.saturating_sub(1)];
+    for r in 0..channel_track_count.len() {
+        let mut benders: Vec<usize> = channel_edges[r]
+            .iter()
+            .copied()
+            .filter(|&ei| {
+                let seg = segs[ei].iter().find(|seg| seg.channel == r).unwrap();
+                seg.from.1 != seg.to.1
+            })
+            .collect();
+        benders.sort_by_key(|&ei| {
+            let seg = segs[ei].iter().find(|seg| seg.channel == r).unwrap();
+            (seg.from.1.min(seg.to.1), seg.from.1.max(seg.to.1), ei)
+        });
+        let intervals: Vec<(usize, usize)> = benders
+            .iter()
+            .map(|&ei| {
+                let seg = segs[ei].iter().find(|seg| seg.channel == r).unwrap();
+                (seg.from.1, seg.to.1)
+            })
+            .collect();
+        let assigned = allocate_tracks(&intervals);
+        for (&ei, track) in benders.iter().zip(assigned) {
+            segs[ei]
+                .iter_mut()
+                .find(|seg| seg.channel == r)
+                .unwrap()
+                .track = Some(track);
+            channel_track_count[r] = channel_track_count[r].max(track + 1);
+        }
+    }
+
+    // --- Channel widths: label zone + reusable jog tracks.
     let mut channels = Vec::new();
     for r in 0..nranks.saturating_sub(1) {
         let mut label_zone = 0usize;
-        let mut tracks = 0usize;
+        let mut vertical_labels = 0usize;
         for &ei in &channel_edges[r] {
-            let seg = segs[ei].iter().find(|s| s.channel == r).unwrap();
             let labeled_here =
                 g.edges[ei].label.is_some() && edge_spans[ei].map(|(rs, _)| rs) == Some(r);
             if labeled_here {
@@ -494,14 +477,14 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
                         g.edges[ei].label.as_deref().unwrap().width() + 2 + 2 * edge_label_pad,
                     );
                 } else {
-                    // Vertical flow: label is a single horizontal band beside the
-                    // shaft — only a few rows of channel height.
-                    label_zone = label_zone.max(3);
+                    // Vertical flow: each label receives its own row beside the
+                    // shaft. Rows are separated by one blank routing row.
+                    vertical_labels += 1;
                 }
             }
-            if seg.from.1 != seg.to.1 {
-                tracks += 1;
-            }
+        }
+        if vertical_labels > 0 {
+            label_zone = label_zone.max(2 * vertical_labels - 1);
         }
         let slack = if fit.compact {
             2
@@ -510,31 +493,12 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         } else {
             2
         };
-        let width = channel_min.max(label_zone + 2 * tracks + slack);
+        let width = channel_min.max(label_zone + 2 * channel_track_count[r] + slack);
         channels.push(Channel {
             start: 0,
             width,
             label_zone,
         });
-    }
-
-    // Assign track indices deterministically (by source cross, then edge index).
-    for r in 0..channels.len() {
-        let mut benders: Vec<usize> = channel_edges[r]
-            .iter()
-            .copied()
-            .filter(|&ei| {
-                let s = segs[ei].iter().find(|s| s.channel == r).unwrap();
-                s.from.1 != s.to.1
-            })
-            .collect();
-        benders.sort_by_key(|&ei| {
-            let s = segs[ei].iter().find(|s| s.channel == r).unwrap();
-            (s.from.1, ei)
-        });
-        for (t, &ei) in benders.iter().enumerate() {
-            segs[ei].iter_mut().find(|s| s.channel == r).unwrap().track = Some(t);
-        }
     }
 
     // --- Flow positions: rank columns separated by channels.
@@ -593,37 +557,10 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         .filter(|&ei| reversed[ei] && g.edges[ei].from != g.edges[ei].to)
         .collect();
 
-    // Make room for cluster padding/title when members sit on the origin edge.
-    let (shift_f, shift_c) = cluster_origin_shift(g, &boxes, horizontal);
-    let mut boxes = boxes;
-    let mut segs = segs;
-    let mut channels = channels;
-    let mut pass_through = pass_through;
-    let mut rank_span = rank_span;
-    let mut flow_extent = flow_extent;
-    let mut cross_extent = cross_extent;
-    if shift_f > 0 || shift_c > 0 {
-        shift_placed(
-            &mut boxes,
-            &mut segs,
-            &mut channels,
-            &mut pass_through,
-            &mut rank_span,
-            &mut flow_extent,
-            &mut cross_extent,
-            shift_f,
-            shift_c,
-        );
-    }
-
-    let (clusters, flow_extent, cross_extent) =
-        place_clusters(g, &boxes, horizontal, flow_extent, cross_extent);
-
     Placed {
         horizontal,
         flipped,
         boxes,
-        clusters,
         segs,
         channels,
         pass_through,
@@ -635,203 +572,10 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     }
 }
 
-/// Direct members plus all nodes in descendant subgraphs.
-fn subgraph_members_deep(g: &Graph, sgi: usize) -> Vec<usize> {
-    let mut out = g.subgraphs[sgi].members.clone();
-    for (i, sg) in g.subgraphs.iter().enumerate() {
-        if sg.parent == Some(sgi) {
-            out.extend(subgraph_members_deep(g, i));
-        }
-    }
-    out.sort_unstable();
-    out.dedup();
-    out
-}
-
-fn subgraph_depth(g: &Graph, sgi: usize) -> usize {
-    let mut d = 0usize;
-    let mut p = g.subgraphs[sgi].parent;
-    while let Some(pi) = p {
-        d += 1;
-        p = g.subgraphs[pi].parent;
-    }
-    d
-}
-
-/// How far to shift flow/cross so every subgraph has room for pad + title band.
-fn cluster_origin_shift(g: &Graph, boxes: &[BoxGeom], horizontal: bool) -> (usize, usize) {
-    let mut shift_f = 0usize;
-    let mut shift_c = 0usize;
-    for si in 0..g.subgraphs.len() {
-        let members = subgraph_members_deep(g, si);
-        if members.is_empty() {
-            continue;
-        }
-        let min_f = members.iter().map(|&i| boxes[i].f).min().unwrap();
-        let min_c = members.iter().map(|&i| boxes[i].c).min().unwrap();
-        // Parents need extra top room so the title band does not sit on the
-        // child's top border (title is drawn at frame_top+1).
-        let nest = if g.subgraphs.iter().any(|s| s.parent == Some(si)) {
-            CLUSTER_TITLE_BAND + CLUSTER_NEST_GAP
-        } else {
-            0
-        };
-        // Top inset includes title band; other sides are pad + nest gap only.
-        let top = CLUSTER_PAD + CLUSTER_TITLE_BAND + nest;
-        let side = CLUSTER_PAD + if nest > 0 { CLUSTER_NEST_GAP } else { 0 };
-        if horizontal {
-            // Title band is on the cross axis (screen top = smaller c).
-            shift_c = shift_c.max(top.saturating_sub(min_c));
-            shift_f = shift_f.max(side.saturating_sub(min_f));
-        } else {
-            shift_f = shift_f.max(top.saturating_sub(min_f));
-            shift_c = shift_c.max(side.saturating_sub(min_c));
-        }
-    }
-    (shift_f, shift_c)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn shift_placed(
-    boxes: &mut [BoxGeom],
-    segs: &mut [Vec<Seg>],
-    channels: &mut [Channel],
-    pass_through: &mut [(usize, usize, usize)],
-    rank_span: &mut [(usize, usize)],
-    flow_extent: &mut usize,
-    cross_extent: &mut usize,
-    df: usize,
-    dc: usize,
-) {
-    for b in boxes.iter_mut() {
-        b.f += df;
-        b.c += dc;
-    }
-    for edge_segs in segs.iter_mut() {
-        for s in edge_segs.iter_mut() {
-            s.from.0 += df;
-            s.from.1 += dc;
-            s.to.0 += df;
-            s.to.1 += dc;
-        }
-    }
-    for ch in channels.iter_mut() {
-        ch.start += df;
-    }
-    for p in pass_through.iter_mut() {
-        p.2 += dc;
-    }
-    for rs in rank_span.iter_mut() {
-        rs.0 += df;
-    }
-    *flow_extent += df;
-    *cross_extent += dc;
-}
-
-/// Bounding-box clusters around subgraph members with pad + interior title band.
-fn place_clusters(
-    g: &Graph,
-    boxes: &[BoxGeom],
-    horizontal: bool,
-    mut flow_extent: usize,
-    mut cross_extent: usize,
-) -> (Vec<ClusterGeom>, usize, usize) {
-    let mut clusters = Vec::new();
-    for si in 0..g.subgraphs.len() {
-        let members = subgraph_members_deep(g, si);
-        if members.is_empty() {
-            continue;
-        }
-        let mut f0 = usize::MAX;
-        let mut f1 = 0usize;
-        let mut c0 = usize::MAX;
-        let mut c1 = 0usize;
-        for &ni in &members {
-            let b = &boxes[ni];
-            f0 = f0.min(b.f);
-            f1 = f1.max(b.f + b.flen);
-            c0 = c0.min(b.c);
-            c1 = c1.max(b.c + b.clen);
-        }
-        if f0 == usize::MAX {
-            continue;
-        }
-        let nest = if g.subgraphs.iter().any(|s| s.parent == Some(si)) {
-            CLUSTER_TITLE_BAND + CLUSTER_NEST_GAP
-        } else {
-            0
-        };
-        let side = CLUSTER_PAD + if nest > 0 { CLUSTER_NEST_GAP } else { 0 };
-        let top = CLUSTER_PAD + CLUSTER_TITLE_BAND + nest;
-        // Keep member content center fixed; grow the frame around it so title
-        // width never left-shifts the boxes (which broke exit-edge alignment).
-        let title = g.subgraphs[si].title.clone();
-        let tw = title.width() + 2; // ` title `
-        let need_span = tw + 4; // title + side borders + pad
-
-        let (f0, f1, c0, c1) = if horizontal {
-            // Title band on cross (top); center frame on content along flow.
-            let content_mid_f = (f0 + f1) / 2;
-            let content_mid_c = (c0 + c1) / 2;
-            let padded_flen = (f1 - f0) + 2 * side;
-            let padded_clen = (c1 - c0) + top + side;
-            let flen = padded_flen.max(need_span);
-            let clen = padded_clen;
-            let nf0 = content_mid_f.saturating_sub(flen / 2);
-            let nc0 = content_mid_c.saturating_sub(top); // more room above content
-            // Ensure members still sit inside with at least `side` on flow ends
-            // and top/side padding on cross.
-            let nf0 = nf0.min(f0.saturating_sub(side));
-            let nf1 = (nf0 + flen).max(f1 + side);
-            let nc0 = nc0.min(c0.saturating_sub(top));
-            let nc1 = (nc0 + clen).max(c1 + side);
-            (nf0, nf1, nc0, nc1)
-        } else {
-            // TB: title band on flow (top); center frame on content along cross.
-            let content_mid_f = (f0 + f1) / 2;
-            let content_mid_c = (c0 + c1) / 2;
-            let padded_flen = (f1 - f0) + top + side;
-            let padded_clen = (c1 - c0) + 2 * side;
-            let flen = padded_flen;
-            let clen = padded_clen.max(need_span);
-            let nf0 = content_mid_f.saturating_sub(top); // bias top for title band
-            let nc0 = content_mid_c.saturating_sub(clen / 2);
-            let nf0 = nf0.min(f0.saturating_sub(top));
-            let nf1 = (nf0 + flen).max(f1 + side);
-            let nc0 = nc0.min(c0.saturating_sub(side));
-            let nc1 = (nc0 + clen).max(c1 + side);
-            // Re-center horizontally if min/max clamp skewed the frame.
-            let content_mid_c = (c0 + c1) / 2;
-            let span = nc1 - nc0;
-            let nc0 = content_mid_c.saturating_sub(span / 2);
-            let nc1 = nc0 + span;
-            let nc0 = nc0.min(c0.saturating_sub(side));
-            let nc1 = nc1.max(c1 + side);
-            (nf0, nf1, nc0, nc1)
-        };
-        let f0 = f0;
-        let f1 = f1;
-        let c0 = c0;
-        let c1 = c1;
-        flow_extent = flow_extent.max(f1);
-        cross_extent = cross_extent.max(c1);
-        clusters.push(ClusterGeom {
-            subgraph: si,
-            f: f0,
-            c: c0,
-            flen: f1.saturating_sub(f0).max(1),
-            clen: c1.saturating_sub(c0).max(1),
-            title,
-        });
-    }
-    // Shallowest first (outer frames drawn under nested ones).
-    clusters.sort_by_key(|cl| subgraph_depth(g, cl.subgraph));
-    (clusters, flow_extent, cross_extent)
-}
-
-/// For forward edges that are each endpoint's only attachment, force a shared
-/// port cross (clamped into each box) so the shaft does not jog.
-fn snap_mono_edge_ports(
+/// Align an edge when it is each endpoint's only attachment. Coordinate
+/// assignment cannot always share an integer center between even/odd boxes,
+/// so clamp one common port into both interiors.
+fn align_mono_ports(
     g: &Graph,
     boxes: &[BoxGeom],
     reversed: &[bool],
@@ -848,32 +592,24 @@ fn snap_mono_edge_ports(
         in_deg[e.to] += 1;
     }
     for (ei, e) in g.edges.iter().enumerate() {
-        if e.from == e.to || reversed[ei] {
+        if e.from == e.to || reversed[ei] || out_deg[e.from] != 1 || in_deg[e.to] != 1 {
             continue;
         }
-        if out_deg[e.from] != 1 || in_deg[e.to] != 1 {
-            continue;
-        }
-        let mid = (out_port[ei] + in_port[ei]) / 2;
-        let clamp = |ni: usize, p: usize| {
-            let b = &boxes[ni];
+        let clamp = |node: usize, port: usize| {
+            let b = &boxes[node];
             let lo = b.c + 1;
             let hi = b.c + b.clen.saturating_sub(2);
             if lo > hi {
                 b.c + b.clen / 2
             } else {
-                p.clamp(lo, hi)
+                port.clamp(lo, hi)
             }
         };
-        out_port[ei] = clamp(e.from, mid);
-        in_port[ei] = clamp(e.to, mid);
-        // If clamps still disagree (non-overlapping boxes), prefer source port
-        // and re-clamp into the target so at least one side is exact.
+        let middle = (out_port[ei] + in_port[ei]) / 2;
+        out_port[ei] = clamp(e.from, middle);
+        in_port[ei] = clamp(e.to, out_port[ei]);
         if out_port[ei] != in_port[ei] {
-            in_port[ei] = clamp(e.to, out_port[ei]);
-            if out_port[ei] != in_port[ei] {
-                out_port[ei] = clamp(e.from, in_port[ei]);
-            }
+            out_port[ei] = clamp(e.from, in_port[ei]);
         }
     }
 }
@@ -1088,7 +824,6 @@ fn slot_neighbors(
 fn order_by_barycenter(
     g: &Graph,
     ranks: &mut [Vec<Slot>],
-    _rank: &[usize],
     reversed: &[bool],
     edge_spans: &[Option<(usize, usize)>],
 ) {
@@ -1100,77 +835,100 @@ fn order_by_barycenter(
             let (before, at) = ranks.split_at_mut(r);
             let prev = &before[r - 1];
             let row = &mut at[0];
-            let mut keyed: Vec<(f64, usize, Slot)> = row
+            let mut keyed: Vec<(usize, usize, usize, Slot)> = row
                 .iter()
                 .enumerate()
                 .map(|(i, slot)| {
                     let neigh = slot_neighbors(g, slot, r, reversed, edge_spans, true);
                     let positions: Vec<usize> =
                         neigh.iter().filter_map(|s| pos_of(prev, s)).collect();
-                    let bc = if positions.is_empty() {
-                        i as f64
+                    let (sum, count) = if positions.is_empty() {
+                        (i, 1)
                     } else {
-                        positions.iter().sum::<usize>() as f64 / positions.len() as f64
+                        (positions.iter().sum(), positions.len())
                     };
-                    (bc, i, *slot)
+                    (sum, count, i, *slot)
                 })
                 .collect();
-            keyed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.cmp(&b.1)));
-            *row = keyed.into_iter().map(|(_, _, s)| s).collect();
+            keyed.sort_by(compare_barycenters);
+            *row = keyed.into_iter().map(|(_, _, _, slot)| slot).collect();
         }
         for r in (0..nranks.saturating_sub(1)).rev() {
             let (at, after) = ranks.split_at_mut(r + 1);
             let next = &after[0];
             let row = &mut at[r];
-            let mut keyed: Vec<(f64, usize, Slot)> = row
+            let mut keyed: Vec<(usize, usize, usize, Slot)> = row
                 .iter()
                 .enumerate()
                 .map(|(i, slot)| {
                     let neigh = slot_neighbors(g, slot, r, reversed, edge_spans, false);
                     let positions: Vec<usize> =
                         neigh.iter().filter_map(|s| pos_of(next, s)).collect();
-                    let bc = if positions.is_empty() {
-                        i as f64
+                    let (sum, count) = if positions.is_empty() {
+                        (i, 1)
                     } else {
-                        positions.iter().sum::<usize>() as f64 / positions.len() as f64
+                        (positions.iter().sum(), positions.len())
                     };
-                    (bc, i, *slot)
+                    (sum, count, i, *slot)
                 })
                 .collect();
-            keyed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.cmp(&b.1)));
-            *row = keyed.into_iter().map(|(_, _, s)| s).collect();
+            keyed.sort_by(compare_barycenters);
+            *row = keyed.into_iter().map(|(_, _, _, slot)| slot).collect();
         }
     }
 }
 
-fn neighbor_centers(
-    g: &Graph,
-    slot: &Slot,
-    r: usize,
-    ranks: &[Vec<Slot>],
-    slot_cross: &[Vec<usize>],
-    boxes: &[BoxGeom],
-    reversed: &[bool],
-    edge_spans: &[Option<(usize, usize)>],
-) -> Option<usize> {
+fn compare_barycenters(
+    a: &(usize, usize, usize, Slot),
+    b: &(usize, usize, usize, Slot),
+) -> std::cmp::Ordering {
+    let left = a.0 as u128 * b.1 as u128;
+    let right = b.0 as u128 * a.1 as u128;
+    left.cmp(&right).then(a.2.cmp(&b.2))
+}
+
+struct NeighborContext<'a> {
+    graph: &'a Graph,
+    ranks: &'a [Vec<Slot>],
+    slot_cross: &'a [Vec<usize>],
+    boxes: &'a [BoxGeom],
+    reversed: &'a [bool],
+    edge_spans: &'a [Option<(usize, usize)>],
+}
+
+fn neighbor_centers(context: &NeighborContext<'_>, slot: &Slot, r: usize) -> Option<usize> {
     let center = |rr: usize, s: &Slot| -> Option<usize> {
-        let si = ranks[rr].iter().position(|x| x == s)?;
-        let c = slot_cross[rr][si];
+        let si = context.ranks[rr].iter().position(|x| x == s)?;
+        let c = context.slot_cross[rr][si];
         Some(match s {
-            Slot::Real(i) => c + boxes[*i].clen / 2,
+            Slot::Real(i) => c + context.boxes[*i].clen / 2,
             Slot::Dummy(_) => c,
         })
     };
     let mut centers = Vec::new();
     if r > 0 {
-        for nb in slot_neighbors(g, slot, r, reversed, edge_spans, true) {
+        for nb in slot_neighbors(
+            context.graph,
+            slot,
+            r,
+            context.reversed,
+            context.edge_spans,
+            true,
+        ) {
             if let Some(c) = center(r - 1, &nb) {
                 centers.push(c);
             }
         }
     }
-    if r + 1 < ranks.len() {
-        for nb in slot_neighbors(g, slot, r, reversed, edge_spans, false) {
+    if r + 1 < context.ranks.len() {
+        for nb in slot_neighbors(
+            context.graph,
+            slot,
+            r,
+            context.reversed,
+            context.edge_spans,
+            false,
+        ) {
             if let Some(c) = center(r + 1, &nb) {
                 centers.push(c);
             }
@@ -1201,10 +959,11 @@ fn legalize(
         }
     };
     let extra_after = |slot: &Slot| -> usize {
-        if let Slot::Real(i) = slot {
-            if horizontal && self_loops.iter().any(|&ei| g.edges[ei].from == *i) {
-                return 2;
-            }
+        if let Slot::Real(i) = slot
+            && horizontal
+            && self_loops.iter().any(|&ei| g.edges[ei].from == *i)
+        {
+            return 2;
         }
         0
     };
@@ -1286,4 +1045,37 @@ fn port_map(
         }
     }
     port
+}
+
+fn allocate_tracks(intervals: &[(usize, usize)]) -> Vec<usize> {
+    let mut track_ends: Vec<usize> = Vec::new();
+    let mut assigned = Vec::with_capacity(intervals.len());
+    for &(a, b) in intervals {
+        let start = a.min(b);
+        let end = a.max(b);
+        let track = track_ends
+            .iter()
+            .position(|&occupied_end| occupied_end.saturating_add(1) < start)
+            .unwrap_or(track_ends.len());
+        if track == track_ends.len() {
+            track_ends.push(end);
+        } else {
+            track_ends[track] = end;
+        }
+        assigned.push(track);
+    }
+    assigned
+}
+
+#[cfg(test)]
+mod tests {
+    use super::allocate_tracks;
+
+    #[test]
+    fn disjoint_bend_intervals_reuse_the_lowest_track() {
+        assert_eq!(
+            allocate_tracks(&[(0, 3), (2, 6), (5, 7), (8, 10)]),
+            vec![0, 1, 0, 1]
+        );
+    }
 }

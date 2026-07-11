@@ -128,11 +128,7 @@ fn b14_frame_invariants_hold_for_all_cases() {
         }
         // Labels fully present in finished text (B14 / no overwrite).
         for n in &graph.nodes {
-            let want: String = n
-                .label
-                .chars()
-                .filter(|c| c.is_alphanumeric())
-                .collect();
+            let want: String = n.label.chars().filter(|c| c.is_alphanumeric()).collect();
             if want.is_empty() {
                 continue;
             }

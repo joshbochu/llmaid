@@ -1,7 +1,9 @@
-//! Render placed flowchart geometry onto a character canvas.
+//! Rasterize screen-space `Scene` primitives onto a character canvas.
 
-use crate::layout::{BoxGeom, ClusterGeom, EDGE_LABEL_PAD, Placed};
+use crate::layout::Placed;
 use crate::parse::{EdgeKind, Graph, Shape};
+use crate::route;
+use crate::scene::{Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup};
 use crate::style::{E, N, S, Style, W};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -140,225 +142,165 @@ impl Canvas {
 }
 
 pub fn render(g: &Graph, placed: &Placed, style: Style) -> String {
-    paint(g, placed, style).finish(style)
+    render_scene(&route::route(g, placed), style)
 }
 
-/// Render and verify B14 frame invariants (closed borders, labels intact,
-/// edge endpoints marked). Returns the diagram plus any invariant failures.
-pub fn render_with_checks(
-    g: &Graph,
-    placed: &Placed,
-    style: Style,
-) -> (String, Vec<String>) {
-    let canvas = paint(g, placed, style);
-    let failures = check_invariants(g, placed, &canvas);
-    (canvas.finish(style), failures)
+/// Paint a complete screen-space scene. Diagram engines own all geometry;
+/// this function only rasterizes primitives onto the character canvas.
+pub fn render_scene(scene: &Scene, style: Style) -> String {
+    paint_scene(scene, style).finish(style)
 }
 
-fn paint(g: &Graph, placed: &Placed, style: Style) -> Canvas {
-    let (w, h) = if placed.horizontal {
-        (placed.flow_extent, placed.cross_extent)
-    } else {
-        (placed.cross_extent, placed.flow_extent)
-    };
-    let (right_extra, bottom_extra) = canvas_extra(g, placed);
-    let mut canvas = Canvas::new(w.max(1) + right_extra, h.max(1) + bottom_extra);
+fn paint_scene(scene: &Scene, style: Style) -> Canvas {
+    let mut scene = scene.clone();
+    let (w, h) = scene.normalize();
+    paint_normalized_scene(&scene, style, w, h)
+}
 
-    for (i, b) in placed.boxes.iter().enumerate() {
-        draw_box(&mut canvas, placed, b, g.nodes[i].shape, style);
+fn paint_normalized_scene(scene: &Scene, style: Style, w: usize, h: usize) -> Canvas {
+    let mut canvas = Canvas::new(w.max(1), h.max(1));
+
+    for b in &scene.boxes {
+        draw_scene_box(&mut canvas, b, style);
     }
-    for (ei, segs) in placed.segs.iter().enumerate() {
-        for (si, seg) in segs.iter().enumerate() {
-            let last = si + 1 == segs.len();
-            let arrow = last && g.edges[ei].arrow;
-            let kind = g.edges[ei].kind;
-            if seg.from.1 == seg.to.1 {
-                draw_flow_segment(&mut canvas, placed, seg.from, seg.to, kind, arrow, style);
-            } else {
-                let track = placed.channels[seg.channel].track_f(seg.track.unwrap_or(0));
-                draw_flow_segment(
-                    &mut canvas,
-                    placed,
-                    seg.from,
-                    (track, seg.from.1),
-                    kind,
-                    false,
-                    style,
-                );
-                draw_flow_segment(
-                    &mut canvas,
-                    placed,
-                    (track, seg.from.1),
-                    (track, seg.to.1),
-                    kind,
-                    false,
-                    style,
-                );
-                draw_flow_segment(
-                    &mut canvas,
-                    placed,
-                    (track, seg.to.1),
-                    seg.to,
-                    kind,
-                    arrow,
-                    style,
-                );
-                let a = placed.to_screen(track, seg.from.1);
-                let b = placed.to_screen(track, seg.to.1);
-                canvas.mark_rounded(a.0, a.1);
-                canvas.mark_rounded(b.0, b.1);
-            }
-        }
-        if let (Some(first), Some(label)) = (segs.first(), g.edges[ei].label.as_deref()) {
-            draw_edge_label(&mut canvas, placed, first.channel, first.from.1, label);
-        }
+    for edge in &scene.edges {
+        draw_scene_edge(&mut canvas, edge, style);
     }
-    for &ei in &placed.back_edges {
-        draw_back_edge(&mut canvas, placed, g, ei, style);
-    }
-    for &ei in &placed.self_loops {
-        draw_self_loop(&mut canvas, placed, g, ei, style);
-    }
-    // Cluster frames last, only on empty cells so exit edges punch clean gaps
-    // instead of merging into ┬┴ on the border.
-    for cl in &placed.clusters {
-        draw_cluster(&mut canvas, placed, cl, style);
+    for group in &scene.groups {
+        draw_scene_group(&mut canvas, group);
     }
 
     canvas
 }
 
-/// B14 frame invariants on the pre-trim canvas.
-fn check_invariants(g: &Graph, placed: &Placed, canvas: &Canvas) -> Vec<String> {
+/// Paint and verify a scene without consulting parser or layout internals.
+pub fn render_scene_with_checks(scene: &Scene, style: Style) -> (String, Vec<String>) {
+    let mut scene = scene.clone();
+    let (w, h) = scene.normalize();
+    let canvas = paint_normalized_scene(&scene, style, w, h);
+    let failures = check_scene_invariants(&scene, &canvas);
+    (canvas.finish(style), failures)
+}
+
+fn draw_scene_edge(canvas: &mut Canvas, edge: &RoutedEdge, style: Style) {
+    for pair in edge.points.windows(2) {
+        draw_screen_line(canvas, point(pair[0]), point(pair[1]), edge.kind);
+    }
+    for &corner in &edge.rounded {
+        let (x, y) = point(corner);
+        canvas.mark_rounded(x, y);
+    }
+    if let Some(label) = &edge.label {
+        canvas.put_text(label.at.x as usize, label.at.y as usize, &label.text);
+    }
+    if let Some(arrow) = &edge.arrow {
+        let at = point(arrow.at);
+        canvas.put_text_char(at.0, at.1, arrow_toward(at, point(arrow.toward), style));
+    }
+}
+
+fn point(p: Point) -> (usize, usize) {
+    (p.x as usize, p.y as usize)
+}
+
+fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
     let mut failures = Vec::new();
 
-    // No truncation glyphs anywhere.
     for y in 0..canvas.h {
         for x in 0..canvas.w {
-            if let Cell::Text(ch) = canvas.cells[canvas.idx(x, y)] {
-                if ch == '…' || ch == '⋯' {
-                    failures.push(format!("truncated glyph {ch:?} at ({x},{y})"));
-                }
+            if let Cell::Text(ch) = canvas.cells[canvas.idx(x, y)]
+                && matches!(ch, '…' | '⋯')
+            {
+                failures.push(format!("truncated glyph {ch:?} at ({x},{y})"));
             }
         }
     }
 
-    // Cluster frames closed (title may overwrite top edge cells — still ink).
-    for cl in &placed.clusters {
-        let (x, y, w, h) = placed.cluster_rect(cl);
-        if w < 2 || h < 2 {
+    for group in &scene.groups {
+        check_rect_corners(
+            canvas,
+            group.rect,
+            &format!("group {}", group.subgraph),
+            &mut failures,
+        );
+        check_text(
+            canvas,
+            &group.title,
+            &format!("group {} title", group.subgraph),
+            &mut failures,
+        );
+    }
+
+    for b in &scene.boxes {
+        check_rect_corners(canvas, b.rect, &format!("box {}", b.node), &mut failures);
+        let rect = b.rect;
+        let inner_w = rect.w.saturating_sub(2);
+        for (line_index, line) in b.lines.iter().enumerate() {
+            let text_w = line.width() as i32;
+            let text = crate::scene::SceneText::new(
+                Point::new(
+                    rect.x + 1 + (inner_w - text_w).max(0) / 2,
+                    rect.y + 1 + line_index as i32,
+                ),
+                line.clone(),
+            );
+            check_text(
+                canvas,
+                &text,
+                &format!("box {} label", b.node),
+                &mut failures,
+            );
+        }
+    }
+
+    for edge in &scene.edges {
+        if edge.points.len() < 2 {
+            failures.push(format!("edge {} has fewer than two path points", edge.edge));
             continue;
         }
-        for (cx, cy, name) in [
-            (x, y, "TL"),
-            (x + w - 1, y, "TR"),
-            (x, y + h - 1, "BL"),
-            (x + w - 1, y + h - 1, "BR"),
-        ] {
-            if !canvas.in_bounds(cx, cy)
-                || matches!(canvas.cells[canvas.idx(cx, cy)], Cell::Empty)
-            {
+        for pair in edge.points.windows(2) {
+            if pair[0].x != pair[1].x && pair[0].y != pair[1].y {
                 failures.push(format!(
-                    "cluster `{}` open {name} at ({cx},{cy})",
-                    cl.title
+                    "edge {} has diagonal segment {:?} -> {:?}",
+                    edge.edge, pair[0], pair[1]
                 ));
             }
         }
-    }
-
-    // Closed box borders + interior labels still Text (not overwritten by lines).
-    for (i, b) in placed.boxes.iter().enumerate() {
-        let (bx, by, bw, bh) = placed.box_rect(b);
-        let id = &g.nodes[i].id;
-        let corner = |x, y| canvas.in_bounds(x, y) && !matches!(canvas.cells[canvas.idx(x, y)], Cell::Empty);
-        for (cx, cy, name) in [
-            (bx, by, "TL"),
-            (bx + bw - 1, by, "TR"),
-            (bx, by + bh - 1, "BL"),
-            (bx + bw - 1, by + bh - 1, "BR"),
-        ] {
-            if !corner(cx, cy) {
-                failures.push(format!("box `{id}` open {name} corner at ({cx},{cy})"));
-            }
+        let start = point(edge.points[0]);
+        if !canvas.in_bounds(start.0, start.1)
+            || matches!(canvas.cells[canvas.idx(start.0, start.1)], Cell::Empty)
+        {
+            failures.push(format!("edge {} start is not painted", edge.edge));
         }
-        for xx in bx + 1..bx + bw - 1 {
-            if canvas.in_bounds(xx, by)
-                && matches!(canvas.cells[canvas.idx(xx, by)], Cell::Empty)
-            {
-                failures.push(format!("box `{id}` gap on top edge at ({xx},{by})"));
-            }
-            if canvas.in_bounds(xx, by + bh - 1)
-                && matches!(canvas.cells[canvas.idx(xx, by + bh - 1)], Cell::Empty)
-            {
-                failures.push(format!("box `{id}` gap on bottom edge at ({xx},{})", by + bh - 1));
-            }
+        if let Some(label) = &edge.label {
+            check_text(
+                canvas,
+                label,
+                &format!("edge {} label", edge.edge),
+                &mut failures,
+            );
         }
-        for yy in by + 1..by + bh - 1 {
-            if canvas.in_bounds(bx, yy)
-                && matches!(canvas.cells[canvas.idx(bx, yy)], Cell::Empty)
+        if let Some(arrow) = &edge.arrow {
+            let at = point(arrow.at);
+            if !canvas.in_bounds(at.0, at.1)
+                || !matches!(canvas.cells[canvas.idx(at.0, at.1)], Cell::Text(_))
             {
-                failures.push(format!("box `{id}` gap on left edge at ({bx},{yy})"));
+                failures.push(format!("edge {} arrow is not painted", edge.edge));
             }
-            if canvas.in_bounds(bx + bw - 1, yy)
-                && matches!(canvas.cells[canvas.idx(bx + bw - 1, yy)], Cell::Empty)
-            {
+            let distance =
+                (arrow.at.x - arrow.toward.x).abs() + (arrow.at.y - arrow.toward.y).abs();
+            if distance != 1 {
                 failures.push(format!(
-                    "box `{id}` gap on right edge at ({},{})",
-                    bx + bw - 1,
-                    yy
+                    "edge {} arrow is not adjacent to its target",
+                    edge.edge
                 ));
             }
-        }
-
-        // Label lines written during draw_box must remain Text cells.
-        let inner_w = bw.saturating_sub(2);
-        for (li, line) in b.lines.iter().enumerate() {
-            let text_w = line.width();
-            let mut x = bx + 1 + inner_w.saturating_sub(text_w) / 2;
-            let y = by + 1 + li;
-            for ch in line.chars() {
-                let cw = ch.width().unwrap_or(1).max(1);
-                if !canvas.in_bounds(x, y) {
-                    failures.push(format!(
-                        "box `{id}` label {ch:?} out of bounds at ({x},{y})"
-                    ));
-                } else {
-                    match canvas.cells[canvas.idx(x, y)] {
-                        Cell::Text(got) if got == ch => {}
-                        other => failures.push(format!(
-                            "box `{id}` label {ch:?} overwritten at ({x},{y}): {other:?}"
-                        )),
-                    }
-                }
-                x += cw;
-            }
-        }
-    }
-
-    // Forward edge segments: endpoints carry ink (line or arrow text).
-    for (ei, segs) in placed.segs.iter().enumerate() {
-        if segs.is_empty() {
-            continue;
-        }
-        let first = segs.first().unwrap();
-        let last = segs.last().unwrap();
-        for (pt, which) in [(first.from, "start"), (last.to, "end")] {
-            let (x, y) = placed.to_screen(pt.0, pt.1);
-            if !canvas.in_bounds(x, y) {
-                failures.push(format!("edge {ei} {which} out of bounds ({x},{y})"));
-                continue;
-            }
-            if matches!(canvas.cells[canvas.idx(x, y)], Cell::Empty) {
-                // Arrow may sit one cell before the target border.
-                let ok_near = neighbors(x, y).iter().any(|&(nx, ny)| {
-                    canvas.in_bounds(nx, ny)
-                        && !matches!(canvas.cells[canvas.idx(nx, ny)], Cell::Empty)
-                });
-                if !ok_near {
-                    failures.push(format!(
-                        "edge {ei} {which} does not reach endpoint near ({x},{y})"
-                    ));
-                }
+        } else if let Some(&end) = edge.points.last() {
+            let end = point(end);
+            if !canvas.in_bounds(end.0, end.1)
+                || matches!(canvas.cells[canvas.idx(end.0, end.1)], Cell::Empty)
+            {
+                failures.push(format!("edge {} end is not painted", edge.edge));
             }
         }
     }
@@ -366,125 +308,76 @@ fn check_invariants(g: &Graph, placed: &Placed, canvas: &Canvas) -> Vec<String> 
     failures
 }
 
-fn neighbors(x: usize, y: usize) -> [(usize, usize); 4] {
-    [
-        (x.wrapping_sub(1), y),
-        (x + 1, y),
-        (x, y.wrapping_sub(1)),
-        (x, y + 1),
-    ]
-}
-
-fn canvas_extra(g: &Graph, placed: &Placed) -> (usize, usize) {
-    let mut right = 0usize;
-    let mut bottom = 0usize;
-
-    if !placed.back_edges.is_empty() {
-        if placed.horizontal {
-            bottom = bottom.max(placed.back_edges.len() * 2 + 1);
-        } else {
-            right = right.max(6 + placed.back_edges.len() * 2);
-        }
+fn check_rect_corners(canvas: &Canvas, rect: Rect, name: &str, failures: &mut Vec<String>) {
+    if rect.w < 2 || rect.h < 2 {
+        failures.push(format!("{name} is smaller than 2x2"));
+        return;
     }
-    if !placed.self_loops.is_empty() {
-        right = right.max(6);
-        bottom = 2;
-    }
-
-    for &ei in placed.back_edges.iter().chain(&placed.self_loops) {
-        let label_w = g.edges[ei]
-            .label
-            .as_deref()
-            .map(UnicodeWidthStr::width)
-            .unwrap_or(0);
-        if label_w > 0 {
-            let is_horizontal_back = placed.horizontal && placed.back_edges.contains(&ei);
-            if !is_horizontal_back {
-                right = right.max(label_w + 8 + 2 * EDGE_LABEL_PAD + placed.back_edges.len() * 2);
-            }
-        }
-    }
-
-    // TB/BT forward labels sit to the right of the vertical shaft.
-    if !placed.horizontal {
-        for (ei, segs) in placed.segs.iter().enumerate() {
-            if segs.is_empty() {
-                continue;
-            }
-            if let Some(label) = g.edges[ei].label.as_deref() {
-                let w = label.width() + 2; // padded ` label `
-                right = right.max(w + 2);
-            }
-        }
-    }
-
-    (right, bottom)
-}
-
-trait ScreenMap {
-    fn to_screen(&self, f: usize, c: usize) -> (usize, usize);
-    fn box_rect(&self, b: &BoxGeom) -> (usize, usize, usize, usize);
-    fn cluster_rect(&self, cl: &ClusterGeom) -> (usize, usize, usize, usize);
-}
-
-impl ScreenMap for Placed {
-    fn to_screen(&self, f: usize, c: usize) -> (usize, usize) {
-        if self.horizontal {
-            let x = if self.flipped {
-                self.flow_extent - 1 - f
-            } else {
-                f
-            };
-            (x, c)
-        } else {
-            let y = if self.flipped {
-                self.flow_extent - 1 - f
-            } else {
-                f
-            };
-            (c, y)
-        }
-    }
-
-    fn box_rect(&self, b: &BoxGeom) -> (usize, usize, usize, usize) {
-        if self.horizontal {
-            let x = if self.flipped {
-                self.flow_extent - b.f - b.flen
-            } else {
-                b.f
-            };
-            (x, b.c, b.flen, b.clen)
-        } else {
-            let y = if self.flipped {
-                self.flow_extent - b.f - b.flen
-            } else {
-                b.f
-            };
-            (b.c, y, b.clen, b.flen)
-        }
-    }
-
-    fn cluster_rect(&self, cl: &ClusterGeom) -> (usize, usize, usize, usize) {
-        if self.horizontal {
-            let x = if self.flipped {
-                self.flow_extent - cl.f - cl.flen
-            } else {
-                cl.f
-            };
-            (x, cl.c, cl.flen, cl.clen)
-        } else {
-            let y = if self.flipped {
-                self.flow_extent - cl.f - cl.flen
-            } else {
-                cl.f
-            };
-            (cl.c, y, cl.clen, cl.flen)
+    let x = rect.x as usize;
+    let y = rect.y as usize;
+    let right = (rect.right() - 1) as usize;
+    let bottom = (rect.bottom() - 1) as usize;
+    for (cx, cy, corner) in [
+        (x, y, "TL"),
+        (right, y, "TR"),
+        (x, bottom, "BL"),
+        (right, bottom, "BR"),
+    ] {
+        if !canvas.in_bounds(cx, cy) || matches!(canvas.cells[canvas.idx(cx, cy)], Cell::Empty) {
+            failures.push(format!("{name} open {corner} corner at ({cx},{cy})"));
         }
     }
 }
 
-fn draw_cluster(canvas: &mut Canvas, placed: &Placed, cl: &ClusterGeom, style: Style) {
-    let (x, y, w, h) = placed.cluster_rect(cl);
+fn check_text(
+    canvas: &Canvas,
+    text: &crate::scene::SceneText,
+    name: &str,
+    failures: &mut Vec<String>,
+) {
+    let mut x = text.at.x as usize;
+    let y = text.at.y as usize;
+    for expected in text.text.chars() {
+        if !canvas.in_bounds(x, y) {
+            failures.push(format!("{name} {expected:?} is out of bounds at ({x},{y})"));
+        } else if !matches!(canvas.cells[canvas.idx(x, y)], Cell::Text(got) if got == expected) {
+            failures.push(format!("{name} {expected:?} overwritten at ({x},{y})"));
+        }
+        x += expected.width().unwrap_or(1).max(1);
+    }
+}
+
+/// Render and verify B14 frame invariants (closed borders, labels intact,
+/// edge endpoints marked). Returns the diagram plus any invariant failures.
+pub fn render_with_checks(g: &Graph, placed: &Placed, style: Style) -> (String, Vec<String>) {
+    render_scene_with_checks(&route::route(g, placed), style)
+}
+
+fn draw_scene_group(canvas: &mut Canvas, group: &SceneGroup) {
+    let Rect { x, y, w, h } = group.rect;
+    draw_group(
+        canvas,
+        x as usize,
+        y as usize,
+        w as usize,
+        h as usize,
+        group.title.at.x as usize,
+        group.title.at.y as usize,
+        &group.title.text,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_group(
+    canvas: &mut Canvas,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    title_x: usize,
+    title_y: usize,
+    title: &str,
+) {
     if w < 2 || h < 2 {
         return;
     }
@@ -521,29 +414,41 @@ fn draw_cluster(canvas: &mut Canvas, placed: &Placed, cl: &ClusterGeom, style: S
 
     // Title on the first *interior* row (not the border stroke), centered.
     // Only write into empty cells so we never clobber edges/boxes.
-    let title = format!(" {} ", cl.title);
     let tw = title.width();
     if tw > 0 && h >= 3 && tw <= w.saturating_sub(2) {
-        let tx = x + (w.saturating_sub(tw)) / 2;
         let mut ok = true;
         for dx in 0..tw {
-            if !canvas.in_bounds(tx + dx, y + 1)
-                || !matches!(canvas.cells[canvas.idx(tx + dx, y + 1)], Cell::Empty)
+            if !canvas.in_bounds(title_x + dx, title_y)
+                || !matches!(canvas.cells[canvas.idx(title_x + dx, title_y)], Cell::Empty)
             {
                 ok = false;
                 break;
             }
         }
         if ok {
-            canvas.put_text(tx, y + 1, &title);
+            canvas.put_text(title_x, title_y, title);
         }
     }
-
-    let _ = style;
 }
 
-fn draw_box(canvas: &mut Canvas, placed: &Placed, b: &BoxGeom, shape: Shape, style: Style) {
-    let (x, y, w, h) = placed.box_rect(b);
+fn draw_scene_box(canvas: &mut Canvas, b: &SceneBox, style: Style) {
+    let Rect { x, y, w, h } = b.rect;
+    draw_box_at(
+        canvas, x as usize, y as usize, w as usize, h as usize, &b.lines, b.shape, style,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_box_at(
+    canvas: &mut Canvas,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    lines: &[String],
+    shape: Shape,
+    style: Style,
+) {
     let kind = EdgeKind::Solid;
     // B13 / D13: always a rect frame; shape is conveyed by corner/cap/lid hints
     // so grid alignment never depends on true diamond walls.
@@ -574,7 +479,7 @@ fn draw_box(canvas: &mut Canvas, placed: &Placed, b: &BoxGeom, shape: Shape, sty
     apply_shape_hints(canvas, x, y, w, h, shape, style);
 
     let inner_w = w.saturating_sub(2);
-    for (i, line) in b.lines.iter().enumerate() {
+    for (i, line) in lines.iter().enumerate() {
         let text_w = line.width();
         let start = x + 1 + inner_w.saturating_sub(text_w) / 2;
         canvas.put_text(start, y + 1 + i, line);
@@ -597,13 +502,8 @@ fn apply_shape_hints(
     match shape {
         Shape::Rect | Shape::Rounded => {}
         Shape::Stadium | Shape::Circle => {
-            let (left, right) = if style.ascii {
-                ('(', ')')
-            } else {
-                ('(', ')')
-            };
-            canvas.put_text_char(x, mid_y, left);
-            canvas.put_text_char(x + w - 1, mid_y, right);
+            canvas.put_text_char(x, mid_y, '(');
+            canvas.put_text_char(x + w - 1, mid_y, ')');
         }
         Shape::Diamond => {
             let ch = if style.ascii { '*' } else { '◇' };
@@ -636,249 +536,6 @@ fn apply_shape_hints(
     }
 }
 
-fn draw_flow_segment(
-    canvas: &mut Canvas,
-    placed: &Placed,
-    from: (usize, usize),
-    to: (usize, usize),
-    kind: EdgeKind,
-    arrow: bool,
-    style: Style,
-) {
-    let end = if arrow { cell_before(to, from) } else { to };
-    draw_flow_line(canvas, placed, from, end, kind);
-    if arrow {
-        let arrow_at = cell_before(to, from);
-        let (x, y) = placed.to_screen(arrow_at.0, arrow_at.1);
-        let target = placed.to_screen(to.0, to.1);
-        canvas.put_text_char(x, y, arrow_toward((x, y), target, style));
-    }
-}
-
-fn draw_self_loop(
-    canvas: &mut Canvas,
-    placed: &Placed,
-    g: &Graph,
-    edge_index: usize,
-    style: Style,
-) {
-    let edge = &g.edges[edge_index];
-    let (x, y, w, h) = placed.box_rect(&placed.boxes[edge.from]);
-    let label_w = edge
-        .label
-        .as_deref()
-        .map(|l| UnicodeWidthStr::width(l) + 2) // spaces around label
-        .unwrap_or(0);
-    let source = (x + w - 1, y + h / 2);
-    let target = (x + w / 2, y + h - 1);
-    let loop_x = x + w + label_w + 3 + EDGE_LABEL_PAD;
-    let loop_y = y + h;
-    let points = [
-        source,
-        (loop_x, source.1),
-        (loop_x, loop_y),
-        (target.0, loop_y),
-        target,
-    ];
-
-    draw_screen_path(canvas, &points, edge.kind, edge.arrow, style);
-    if let Some(label) = edge.label.as_deref() {
-        let text = padded_edge_label(label);
-        let tw = text.width();
-        let label_x = source.0 + 2 + EDGE_LABEL_PAD;
-        if label_x + tw < loop_x {
-            canvas.put_text(label_x, source.1, &text);
-        }
-    }
-}
-
-fn draw_back_edge(
-    canvas: &mut Canvas,
-    placed: &Placed,
-    g: &Graph,
-    edge_index: usize,
-    style: Style,
-) {
-    if placed.horizontal {
-        draw_horizontal_back_edge(canvas, placed, g, edge_index, style);
-    } else {
-        draw_vertical_back_edge(canvas, placed, g, edge_index, style);
-    }
-}
-
-fn draw_vertical_back_edge(
-    canvas: &mut Canvas,
-    placed: &Placed,
-    g: &Graph,
-    edge_index: usize,
-    style: Style,
-) {
-    let edge = &g.edges[edge_index];
-    let (sx, sy, sw, sh) = placed.box_rect(&placed.boxes[edge.from]);
-    let (tx, ty, tw, th) = placed.box_rect(&placed.boxes[edge.to]);
-    let label_w = edge
-        .label
-        .as_deref()
-        .map(|l| UnicodeWidthStr::width(l) + 2) // spaces around label
-        .unwrap_or(0);
-    let source = (sx + sw - 1, sy + sh / 2);
-    let target = (tx + tw - 1, ty + th / 2);
-    let track = placed
-        .back_edges
-        .iter()
-        .position(|&ei| ei == edge_index)
-        .unwrap_or(0);
-    let min_perimeter = source.0.max(target.0) + label_w + 5 + EDGE_LABEL_PAD + track * 2;
-    let perimeter_x = min_perimeter.min(canvas.w.saturating_sub(2));
-    let points = [
-        source,
-        (perimeter_x, source.1),
-        (perimeter_x, target.1),
-        target,
-    ];
-
-    draw_screen_path(canvas, &points, edge.kind, edge.arrow, style);
-    if let Some(label) = edge.label.as_deref() {
-        let text = padded_edge_label(label);
-        let tw = text.width();
-        let label_x = target.0 + EDGE_LABEL_PAD + if edge.arrow { 2 } else { 1 };
-        if label_x + tw < perimeter_x {
-            canvas.put_text(label_x, target.1, &text);
-        }
-    }
-}
-
-fn draw_horizontal_back_edge(
-    canvas: &mut Canvas,
-    placed: &Placed,
-    g: &Graph,
-    edge_index: usize,
-    style: Style,
-) {
-    let edge = &g.edges[edge_index];
-    let (sx, sy, sw, sh) = placed.box_rect(&placed.boxes[edge.from]);
-    let (tx, ty, tw, th) = placed.box_rect(&placed.boxes[edge.to]);
-    let source = (sx + sw / 2, sy + sh - 1);
-    let target = (tx + tw / 2, ty + th - 1);
-    let track = placed
-        .back_edges
-        .iter()
-        .position(|&ei| ei == edge_index)
-        .unwrap_or(0);
-    let perimeter_y = canvas
-        .h
-        .saturating_sub(1 + 2 * (placed.back_edges.len().saturating_sub(1) - track));
-    let points = [
-        source,
-        (source.0, perimeter_y),
-        (target.0, perimeter_y),
-        target,
-    ];
-
-    draw_screen_path(canvas, &points, edge.kind, edge.arrow, style);
-    if let Some(label) = edge.label.as_deref() {
-        let text = padded_edge_label(label);
-        let text_w = text.width();
-        let left = source.0.min(target.0);
-        let right = source.0.max(target.0);
-        if right > left + text_w {
-            let label_x = left + (right - left - text_w) / 2;
-            canvas.put_text(label_x, perimeter_y, &text);
-        }
-    }
-}
-
-/// On-arrow labels get a space on each side (` scan `) so the word doesn't
-/// jam into the box-drawing strokes.
-fn padded_edge_label(label: &str) -> String {
-    format!(" {label} ")
-}
-
-fn draw_edge_label(
-    canvas: &mut Canvas,
-    placed: &Placed,
-    channel: usize,
-    cross: usize,
-    label: &str,
-) {
-    if label.is_empty() {
-        return;
-    }
-    let text = padded_edge_label(label);
-    let label_w = text.width();
-    let ch = &placed.channels[channel];
-    if placed.horizontal {
-        // Label sits on the horizontal shaft inside the channel label zone.
-        let f = ch.start + 1 + ch.label_zone.saturating_sub(label_w) / 2;
-        let (x, y) = if placed.flipped {
-            placed.to_screen(f + label_w.saturating_sub(1), cross)
-        } else {
-            placed.to_screen(f, cross)
-        };
-        canvas.put_text(x, y, &text);
-    } else {
-        // Vertical shaft: one horizontal band in the channel, text to the right
-        // of the line so multi-char labels stay readable (Phase 0.3).
-        let f = ch.start + ch.label_zone.max(1) / 2;
-        let (x, y) = placed.to_screen(f, cross);
-        canvas.put_text(x.saturating_add(1), y, &text);
-    }
-}
-
-fn draw_flow_line(
-    canvas: &mut Canvas,
-    placed: &Placed,
-    from: (usize, usize),
-    to: (usize, usize),
-    kind: EdgeKind,
-) {
-    if from == to {
-        return;
-    }
-    let mut cur = from;
-    while cur != to {
-        let Some(next) = step_toward(cur, to) else {
-            break;
-        };
-        draw_step(canvas, placed, cur, next, kind);
-        cur = next;
-    }
-}
-
-fn draw_screen_path(
-    canvas: &mut Canvas,
-    points: &[(usize, usize)],
-    kind: EdgeKind,
-    arrow: bool,
-    style: Style,
-) {
-    if points.len() < 2 {
-        return;
-    }
-
-    let mut stops = points.to_vec();
-    let target = *stops.last().unwrap();
-    let arrow_at = if arrow {
-        let from = stops[stops.len() - 2];
-        let at = cell_before(target, from);
-        *stops.last_mut().unwrap() = at;
-        Some(at)
-    } else {
-        None
-    };
-
-    for pair in stops.windows(2) {
-        draw_screen_line(canvas, pair[0], pair[1], kind);
-    }
-    for &point in stops.iter().skip(1).take(stops.len().saturating_sub(2)) {
-        canvas.mark_rounded(point.0, point.1);
-    }
-
-    if let Some(at) = arrow_at {
-        canvas.put_text_char(at.0, at.1, arrow_toward(at, target, style));
-    }
-}
-
 fn draw_screen_line(canvas: &mut Canvas, from: (usize, usize), to: (usize, usize), kind: EdgeKind) {
     if from == to {
         return;
@@ -905,44 +562,6 @@ fn step_toward(cur: (usize, usize), to: (usize, usize)) -> Option<(usize, usize)
     } else {
         None
     }
-}
-
-fn cell_before(to: (usize, usize), from: (usize, usize)) -> (usize, usize) {
-    if from.0 < to.0 {
-        (to.0.saturating_sub(1), to.1)
-    } else if from.0 > to.0 {
-        (to.0 + 1, to.1)
-    } else if from.1 < to.1 {
-        (to.0, to.1.saturating_sub(1))
-    } else if from.1 > to.1 {
-        (to.0, to.1 + 1)
-    } else {
-        to
-    }
-}
-
-fn draw_step(
-    canvas: &mut Canvas,
-    placed: &Placed,
-    a: (usize, usize),
-    b: (usize, usize),
-    kind: EdgeKind,
-) {
-    let (ax, ay) = placed.to_screen(a.0, a.1);
-    let (bx, by) = placed.to_screen(b.0, b.1);
-    let (abit, bbit) = if ax + 1 == bx {
-        (E, W)
-    } else if bx + 1 == ax {
-        (W, E)
-    } else if ay + 1 == by {
-        (S, N)
-    } else if by + 1 == ay {
-        (N, S)
-    } else {
-        return;
-    };
-    canvas.add_line_bits(ax, ay, abit, kind);
-    canvas.add_line_bits(bx, by, bbit, kind);
 }
 
 fn draw_screen_step(canvas: &mut Canvas, a: (usize, usize), b: (usize, usize), kind: EdgeKind) {

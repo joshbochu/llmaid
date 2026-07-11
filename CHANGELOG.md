@@ -6,6 +6,20 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Routing/renderer boundary: signed screen-space `Scene` primitives now own
+  complete paths, arrows, label positions, one-time normalization, and exact
+  bounds. `render.rs` is a pure painter (down from 974 to ~600 lines); the
+  duplicate render-time routers, canvas sizing, `ScreenMap`, and origin-shifted
+  output margins were deleted.
+- Vertical labelled edges reserve deterministic per-edge rows, fixing lost and
+  overwritten labels on TB/BT parallel edges and labelled fork/merge diagrams.
+- Channel bend tracks now reuse non-overlapping cross-axis intervals, tightening
+  fork/merge, subgraph fan-out, and shape-gallery output without collisions.
+- B14 scene invariants now verify each edge's exact label cells, orthogonal path,
+  painted endpoints, and arrow adjacency; regression coverage includes vertical
+  parallel edges and labelled fork/merge.
+- Layout barycenter ordering now compares exact integer ratios (no floats), and
+  clippy with warnings-as-errors passes across all targets.
 - Subgraph aesthetics: interior title band (not on the border stroke), larger
   pad (2), nested parent clearance so Outer/Inner titles do not collide.
 - Phase 1 subgraphs: parse `subgraph`/`end` with membership + optional title;
@@ -134,3 +148,9 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   rewrites). Other grilled parser rulings: `<br/>` honored as line break (B1),
   node redeclaration warns + last wins (B2), parallel edges kept with both
   labels (B3, rendered per D9 as distinct paths).
+
+- **D15 — Scene is the shared engine boundary.** Diagram-specific layout and
+  routing emit signed screen-space rectangles, paths, arrows, and text; one
+  normalization pass produces exact canvas bounds. The renderer only rasterizes
+  these primitives. This keeps future sequence/state/tree engines separate at
+  the semantic level while sharing terminal painting and invariants.

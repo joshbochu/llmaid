@@ -1,0 +1,269 @@
+use llmaid::layout;
+use llmaid::parse::{self, EdgeKind, Shape};
+use llmaid::render;
+use llmaid::route;
+use llmaid::scene::{Arrow, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, SceneText};
+use llmaid::style::Style;
+use std::fs;
+use std::path::PathBuf;
+
+#[test]
+fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
+    let scene = Scene {
+        boxes: vec![SceneBox {
+            node: 0,
+            rect: Rect::new(-4, -2, 5, 3),
+            lines: vec!["界".into()],
+            shape: Shape::Rect,
+        }],
+        groups: vec![SceneGroup {
+            subgraph: 0,
+            rect: Rect::new(-6, -4, 9, 7),
+            title: SceneText::new(Point::new(-3, -3), "group"),
+        }],
+        edges: vec![RoutedEdge {
+            edge: 0,
+            points: vec![Point::new(0, 0), Point::new(8, 0)],
+            rounded: vec![],
+            kind: EdgeKind::Solid,
+            label: Some(SceneText::new(Point::new(2, 1), "世界")),
+            arrow: Some(Arrow {
+                at: Point::new(8, 0),
+                toward: Point::new(9, 0),
+            }),
+        }],
+    };
+
+    assert_eq!(scene.bounds(), Rect::new(-6, -4, 16, 7));
+}
+
+#[test]
+fn scene_normalize_translates_every_primitive_once() {
+    let mut scene = Scene {
+        boxes: vec![SceneBox {
+            node: 0,
+            rect: Rect::new(-3, -2, 5, 3),
+            lines: vec!["node".into()],
+            shape: Shape::Rounded,
+        }],
+        groups: vec![],
+        edges: vec![RoutedEdge {
+            edge: 0,
+            points: vec![Point::new(1, -1), Point::new(7, -1)],
+            rounded: vec![Point::new(1, -1)],
+            kind: EdgeKind::Dotted,
+            label: Some(SceneText::new(Point::new(2, 1), "label")),
+            arrow: Some(Arrow {
+                at: Point::new(7, -1),
+                toward: Point::new(8, -1),
+            }),
+        }],
+    };
+
+    let size = scene.normalize();
+
+    assert_eq!(size, (12, 4));
+    assert_eq!(scene.boxes[0].rect, Rect::new(0, 0, 5, 3));
+    assert_eq!(scene.edges[0].points[0], Point::new(4, 1));
+    assert_eq!(scene.edges[0].rounded[0], Point::new(4, 1));
+    assert_eq!(scene.edges[0].label.as_ref().unwrap().at, Point::new(5, 3));
+    assert_eq!(
+        scene.edges[0].arrow.as_ref().unwrap().toward,
+        Point::new(11, 1)
+    );
+}
+
+#[test]
+fn forward_routing_produces_complete_screen_space_edges() {
+    let graph = parse::parse("flowchart LR\nA[source] -->|scan| B[tokens]\n").unwrap();
+    let placed = layout::layout(&graph, 100);
+
+    let scene = route::route(&graph, &placed);
+
+    assert_eq!(scene.boxes.len(), 2);
+    assert_eq!(scene.edges.len(), 1);
+    let edge = &scene.edges[0];
+    assert_eq!(edge.edge, 0);
+    assert!(edge.points.len() >= 2);
+    assert_eq!(edge.label.as_ref().map(|l| l.text.as_str()), Some(" scan "));
+    assert!(edge.arrow.is_some());
+    assert_eq!(scene.bounds().x, 0);
+    assert_eq!(scene.bounds().y, 0);
+}
+
+#[test]
+fn scene_painter_preserves_forward_geometry_and_removes_dead_origin_space() {
+    for source in [
+        "flowchart LR\nA[source] -->|scan| B[tokens]\nA --> C[errors]\n",
+        "flowchart TB\nA -->|left| B\nA -->|right| C\nB --> D\nC --> D\n",
+    ] {
+        let graph = parse::parse(source).unwrap();
+        let placed = layout::layout(&graph, 100);
+        let style = Style { ascii: false };
+        let expected = render::render(&graph, &placed, style);
+        let scene = route::route(&graph, &placed);
+
+        assert_eq!(
+            render::render_scene(&scene, style),
+            strip_common_indent(&expected),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn scene_routing_includes_back_edges_and_self_loops() {
+    let source = "\
+flowchart TB
+  scan[Scanner] --> parse[Parser] --> eval[Interpreter]
+  eval -->|next line| scan
+  eval -->|again| eval
+";
+    let graph = parse::parse(source).unwrap();
+    let placed = layout::layout(&graph, 100);
+    let style = Style { ascii: false };
+    let expected = render::render(&graph, &placed, style);
+
+    let scene = route::route(&graph, &placed);
+
+    assert_eq!(scene.edges.len(), graph.edges.len());
+    assert!(scene.edges.iter().all(|edge| edge.points.len() >= 2));
+    assert!(scene.edges.iter().all(|edge| edge.arrow.is_some()));
+    assert!(scene.edges.iter().any(|edge| {
+        edge.label
+            .as_ref()
+            .is_some_and(|label| label.text.contains("next line"))
+    }));
+    assert!(scene.edges.iter().any(|edge| {
+        edge.label
+            .as_ref()
+            .is_some_and(|label| label.text.contains("again"))
+    }));
+    assert_eq!(
+        render::render_scene(&scene, style),
+        strip_common_indent(&expected)
+    );
+}
+
+#[test]
+fn public_render_matches_scene_pipeline_for_all_existing_cases() {
+    let cases = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cases");
+    let mut inputs: Vec<PathBuf> = fs::read_dir(cases)
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.unwrap().path();
+            (path.extension().and_then(|ext| ext.to_str()) == Some("mmd")).then_some(path)
+        })
+        .collect();
+    inputs.sort();
+
+    let mut changed = Vec::new();
+    for path in inputs {
+        let source = fs::read_to_string(&path).unwrap();
+        let graph = parse::parse(&source).unwrap();
+        if graph.nodes.is_empty() {
+            continue;
+        }
+        let placed = layout::layout(&graph, 100);
+        let style = Style { ascii: false };
+        let current = render::render(&graph, &placed, style);
+        let scene = route::route(&graph, &placed);
+        let routed = render::render_scene(&scene, style);
+        if routed != strip_common_indent(&current) {
+            changed.push(path.file_stem().unwrap().to_string_lossy().into_owned());
+        }
+    }
+    assert!(
+        changed.is_empty(),
+        "scene/public render diverged: {changed:?}"
+    );
+}
+
+#[test]
+fn scene_invariants_detect_a_label_overwritten_by_another_edge() {
+    let scene = Scene {
+        boxes: vec![],
+        groups: vec![],
+        edges: vec![
+            RoutedEdge {
+                edge: 0,
+                points: vec![Point::new(0, 0), Point::new(6, 0)],
+                rounded: vec![],
+                kind: EdgeKind::Solid,
+                label: Some(SceneText::new(Point::new(2, 0), "one")),
+                arrow: None,
+            },
+            RoutedEdge {
+                edge: 1,
+                points: vec![Point::new(0, 1), Point::new(6, 1)],
+                rounded: vec![],
+                kind: EdgeKind::Solid,
+                label: Some(SceneText::new(Point::new(2, 0), "two")),
+                arrow: None,
+            },
+        ],
+    };
+
+    let (_, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+
+    assert!(
+        failures
+            .iter()
+            .any(|failure| failure.contains("edge 0 label") && failure.contains("overwritten")),
+        "{failures:#?}"
+    );
+}
+
+#[test]
+fn nested_group_scenes_keep_child_frames_inside_parent_padding() {
+    let source = "\
+flowchart LR
+  subgraph Outer
+    subgraph Inner
+      A --> B
+    end
+    B --> C
+  end
+  C --> D
+";
+    let graph = parse::parse(source).unwrap();
+    let placed = layout::layout(&graph, 100);
+    let scene = route::route(&graph, &placed);
+    let outer = scene
+        .groups
+        .iter()
+        .find(|group| graph.subgraphs[group.subgraph].title == "Outer")
+        .unwrap()
+        .rect;
+    let inner = scene
+        .groups
+        .iter()
+        .find(|group| graph.subgraphs[group.subgraph].title == "Inner")
+        .unwrap()
+        .rect;
+
+    assert!(inner.x - outer.x >= 2, "outer={outer:?}, inner={inner:?}");
+    assert!(inner.y - outer.y >= 2, "outer={outer:?}, inner={inner:?}");
+    assert!(
+        outer.right() - inner.right() >= 2,
+        "outer={outer:?}, inner={inner:?}"
+    );
+    assert!(
+        outer.bottom() - inner.bottom() >= 2,
+        "outer={outer:?}, inner={inner:?}"
+    );
+}
+
+fn strip_common_indent(text: &str) -> String {
+    let indent = text
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.bytes().take_while(|&b| b == b' ').count())
+        .min()
+        .unwrap_or(0);
+    text.lines()
+        .map(|line| line.get(indent.min(line.len())..).unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}

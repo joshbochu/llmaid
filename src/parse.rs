@@ -1,6 +1,6 @@
 //! Mermaid flowchart subset -> IR.
 //!
-//! Forgiving by design: unknown directives (classDef, style, subgraph, ...)
+//! Forgiving by design: unknown directives (classDef, style, ...)
 //! become warnings, not errors. Errors carry the line number and what was
 //! expected, so an agent can self-correct in one retry.
 
@@ -133,8 +133,6 @@ pub struct Graph {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
     pub subgraphs: Vec<Subgraph>,
-    /// Subgraph index for each node (`None` = top-level). Parallel to `nodes`.
-    pub node_sg: Vec<Option<usize>>,
     pub warnings: Vec<Warning>,
     index: HashMap<String, usize>,
     /// Parse-time stack of open subgraph indices (not part of the public IR).
@@ -175,7 +173,6 @@ impl Graph {
         let ix = self.nodes.len() - 1;
         self.index.insert(id.to_string(), ix);
         let sg = self.sg_stack.last().copied();
-        self.node_sg.push(sg);
         if let Some(sgi) = sg {
             self.subgraphs[sgi].members.push(ix);
         }
@@ -271,7 +268,8 @@ pub fn parse(src: &str) -> Result<Graph, ParseError> {
                     warned_no_header = true;
                     g.warnings.push(Warning {
                         line: line_no,
-                        msg: "missing `flowchart <DIR>` header; assuming `flowchart TB`".to_string(),
+                        msg: "missing `flowchart <DIR>` header; assuming `flowchart TB`"
+                            .to_string(),
                     });
                 }
                 let rest = stmt["subgraph".len()..].trim();
@@ -308,10 +306,7 @@ pub fn parse(src: &str) -> Result<Graph, ParseError> {
     if !g.sg_stack.is_empty() {
         g.warnings.push(Warning {
             line: src.lines().count().max(1),
-            msg: format!(
-                "{} unclosed subgraph(s) at end of input",
-                g.sg_stack.len()
-            ),
+            msg: format!("{} unclosed subgraph(s) at end of input", g.sg_stack.len()),
         });
         g.sg_stack.clear();
     }
@@ -327,16 +322,16 @@ fn parse_subgraph_header(rest: &str) -> (String, String) {
         return ("sg".into(), "sg".into());
     }
     // Quoted title only: subgraph "My Group"
-    if rest.starts_with('"') {
-        if let Some(end) = rest[1..].find('"') {
-            let title = rest[1..1 + end].to_string();
-            let id = title
-                .chars()
-                .map(|c| if c.is_alphanumeric() { c } else { '_' })
-                .collect::<String>();
-            let id = if id.is_empty() { "sg".into() } else { id };
-            return (id, title);
-        }
+    if let Some(quoted) = rest.strip_prefix('"')
+        && let Some(end) = quoted.find('"')
+    {
+        let title = quoted[..end].to_string();
+        let id = title
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect::<String>();
+        let id = if id.is_empty() { "sg".into() } else { id };
+        return (id, title);
     }
     let mut parts = rest.splitn(2, char::is_whitespace);
     let id = parts.next().unwrap_or("sg").to_string();
@@ -553,16 +548,6 @@ fn br_tag_end(ch: &[char], i: usize) -> Option<usize> {
 /// Stable, human-readable dump of the IR including warnings — the
 /// golden-snapshot format for parser tests.
 pub fn dump(g: &Graph) -> String {
-    dump_impl(g, true)
-}
-
-/// IR dump without the warnings section — the placeholder CLI stdout until
-/// rendering lands (M2). Warnings belong on stderr only (B6).
-pub fn dump_diagram(g: &Graph) -> String {
-    dump_impl(g, false)
-}
-
-fn dump_impl(g: &Graph, include_warnings: bool) -> String {
     let mut out = String::new();
     out.push_str(&format!("direction: {}\n", g.direction().name()));
     out.push_str("nodes:\n");
@@ -577,11 +562,12 @@ fn dump_impl(g: &Graph, include_warnings: bool) -> String {
     if !g.subgraphs.is_empty() {
         out.push_str("subgraphs:\n");
         for (i, sg) in g.subgraphs.iter().enumerate() {
-            let members: Vec<&str> = sg.members.iter().map(|&ni| g.nodes[ni].id.as_str()).collect();
-            let parent = sg
-                .parent
-                .map(|p| g.subgraphs[p].id.as_str())
-                .unwrap_or("-");
+            let members: Vec<&str> = sg
+                .members
+                .iter()
+                .map(|&ni| g.nodes[ni].id.as_str())
+                .collect();
+            let parent = sg.parent.map(|p| g.subgraphs[p].id.as_str()).unwrap_or("-");
             out.push_str(&format!(
                 "  {} id={} title=\"{}\" parent={} members=[{}]\n",
                 i,
@@ -607,7 +593,7 @@ fn dump_impl(g: &Graph, include_warnings: bool) -> String {
             g.nodes[e.to].id
         ));
     }
-    if include_warnings && !g.warnings.is_empty() {
+    if !g.warnings.is_empty() {
         out.push_str("warnings:\n");
         for w in &g.warnings {
             out.push_str(&format!("  line {}: {}\n", w.line, w.msg));

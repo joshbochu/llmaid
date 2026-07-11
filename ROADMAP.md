@@ -20,7 +20,7 @@ One binary agents can call for **most Mermaid they emit**, at a quality bar a
 human can trust at a glance (no truncation, labels on structure, closed frames,
 agent-fixable errors).
 
-Internal model: Mermaid → typed IR → layout engines → shared canvas/style.
+Internal model: Mermaid → type-specific IR/layout/router → shared signed Scene → canvas/style.
 Agents speak Mermaid; we own primitives behind the door.
 
 ---
@@ -185,7 +185,7 @@ Only where glance quality holds (don’t become a junk drawer).
 | Tree | 4.1 |
 | Time axis | 4.2 |
 | Specialty (git, charts) | 4.3, 5 |
-| Shared canvas / style / width / invariants | all |
+| Shared Scene / canvas / style / width / invariants | all |
 
 ---
 
