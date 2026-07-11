@@ -516,3 +516,39 @@ sequenceDiagram
     assert!(ascii.contains("|<--"), "ASCII return cue missing:\n{ascii}");
     assert!(ascii.contains("request") && ascii.contains("response"));
 }
+
+#[test]
+fn b18_given_notes_and_activation_then_placement_labels_and_styles_are_deterministic() {
+    let source = "\
+sequenceDiagram
+  participant Client
+  participant API
+  Note left of Client: Caller
+  Note right of API: Service
+  Note over Client,API: HTTPS request
+  Client->>API: request
+  activate API
+  API-->>Client: response
+  deactivate API
+";
+    let (unicode_a, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    let (unicode_b, _, _) = run_llmaid(&[], source);
+    assert_eq!(unicode_a, unicode_b);
+    for text in ["Caller", "Service", "HTTPS request", "request", "response"] {
+        assert!(unicode_a.contains(text), "missing {text:?}:\n{unicode_a}");
+    }
+
+    let (tight, stderr, code) = run_llmaid(&["--width", "12"], source);
+    assert_eq!(code, 0, "{stderr}");
+    for text in ["Caller", "Service", "HTTPS request", "request", "response"] {
+        assert!(tight.contains(text), "truncated {text:?}:\n{tight}");
+    }
+
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+    for text in ["Caller", "Service", "HTTPS request", "request", "response"] {
+        assert!(ascii.contains(text), "missing {text:?}:\n{ascii}");
+    }
+}

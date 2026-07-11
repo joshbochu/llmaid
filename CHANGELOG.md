@@ -49,6 +49,18 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- Sequence notes and activation (B18): ordered source events; `Note left of`,
+  `Note right of`, and `Note over` one/two participants; balanced and nested
+  explicit `activate` / `deactivate`; line-specific errors; deterministic
+  Unicode/ASCII output; and exact placement, bar-attachment, spacing, and
+  self-loop contracts. Consecutive notes share a compact event cadence while
+  activation caps retain a dedicated row above message labels.
+  `sequence-notes` and `sequence-activation` add IR/render goldens and
+  shared-scene invariant coverage.
+- Generic opaque foreground boxes at the shared `Scene` boundary. Notes and
+  activation bars paint over non-semantic lifelines while semantic messages
+  remain in front; bounds, normalization, border/label checks, and edge-box
+  collision checks include the new layer.
 - Core sequence diagrams (B17): top-level diagram dispatch, declared and
   implicit participants/actors, padded headers, dotted lifelines, ordered
   `->>` messages, `-->>` dashed returns, deterministic Unicode/ASCII output,
@@ -145,6 +157,14 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 - `DESIGN.md` (v1 design), `AGENTS.md` (agent guide), this changelog.
 
 ### Decisions
+
+- **D19 — Sequence source order is semantic; foreground layering is generic.**
+  Sequence messages, notes, and activation commands live in one ordered event
+  stream, so layout cannot reorder interactions by maintaining parallel lists.
+  Notes and activation bars emit opaque foreground boxes into `Scene`; the
+  renderer knows paint order but no sequence semantics. Rejected: separate
+  message/note/activation collections (order drift), paint-only activation
+  glyphs (no exact geometry), or encoding sequence events as flowchart nodes.
 
 - **D18 — Diagram-specific semantics, shared terminal geometry.** Top-level
   `diagram.rs` detects the Mermaid type and dispatches into independent IR and

@@ -1,0 +1,9 @@
+sequenceDiagram
+  participant Client
+  participant API
+  Client->>API: request
+  activate API
+  Note right of API: working
+  API->>API: query
+  API-->>Client: response
+  deactivate API

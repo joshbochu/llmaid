@@ -1,0 +1,11 @@
+type: sequence
+participants:
+  participant Client "Client"
+  participant API "API"
+events:
+  note left of Client "Caller"
+  note over Client "Local state"
+  message Client ->> API "request"
+  note over Client,API "HTTPS request"
+  note right of API "Service"
+  message API -->> Client "response"

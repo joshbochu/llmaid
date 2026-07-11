@@ -139,12 +139,13 @@ fn b14_frame_invariants_hold_for_all_cases() {
                 .participants
                 .iter()
                 .map(|participant| participant.label.as_str())
-                .chain(
-                    sequence
-                        .messages
-                        .iter()
-                        .map(|message| message.label.as_str()),
-                )
+                .chain(sequence.events.iter().filter_map(|event| match event {
+                    llmaid::sequence::SequenceEvent::Message(message) => {
+                        Some(message.label.as_str())
+                    }
+                    llmaid::sequence::SequenceEvent::Note(note) => Some(note.text.as_str()),
+                    llmaid::sequence::SequenceEvent::Activation(_) => None,
+                }))
                 .collect(),
         };
         for label in labels {

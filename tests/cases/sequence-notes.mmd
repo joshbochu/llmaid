@@ -1,0 +1,9 @@
+sequenceDiagram
+  participant Client
+  participant API
+  Note left of Client: Caller
+  Note over Client: Local state
+  Client->>API: request
+  Note over Client,API: HTTPS request
+  Note right of API: Service
+  API-->>Client: response

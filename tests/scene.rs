@@ -20,6 +20,7 @@ fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
             lines: vec!["界".into()],
             shape: Shape::Rect,
         }],
+        foreground_boxes: vec![],
         groups: vec![SceneGroup {
             subgraph: 0,
             rect: Rect::new(-6, -4, 9, 7),
@@ -58,6 +59,7 @@ fn scene_normalize_translates_every_primitive_once() {
             lines: vec!["node".into()],
             shape: Shape::Rounded,
         }],
+        foreground_boxes: vec![],
         groups: vec![],
         paths: vec![],
         edges: vec![RoutedEdge {
@@ -85,6 +87,34 @@ fn scene_normalize_translates_every_primitive_once() {
         scene.edges[0].arrow.as_ref().unwrap().toward,
         Point::new(11, 1)
     );
+}
+
+#[test]
+fn foreground_box_owns_bounds_normalization_and_paints_over_paths() {
+    let mut scene = Scene {
+        boxes: vec![],
+        foreground_boxes: vec![SceneBox {
+            node: 9,
+            rect: Rect::new(-2, -1, 9, 3),
+            lines: vec!["note".into()],
+            shape: Shape::Rect,
+        }],
+        groups: vec![],
+        paths: vec![llmaid::scene::ScenePath {
+            path: 0,
+            points: vec![Point::new(2, -2), Point::new(2, 3)],
+            rounded: vec![],
+            kind: EdgeKind::Dotted,
+        }],
+        edges: vec![],
+    };
+
+    assert_eq!(scene.bounds(), Rect::new(-2, -2, 9, 6));
+    assert_eq!(scene.normalize(), (9, 6));
+    assert_eq!(scene.foreground_boxes[0].rect, Rect::new(0, 1, 9, 3));
+    let (output, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+    assert!(failures.is_empty(), "{}\n{output}", failures.join("\n"));
+    assert!(output.contains("note"), "{output}");
 }
 
 #[test]
@@ -243,6 +273,7 @@ fn public_render_matches_scene_pipeline_for_all_existing_cases() {
 fn scene_invariants_detect_a_label_overwritten_by_another_edge() {
     let scene = Scene {
         boxes: vec![],
+        foreground_boxes: vec![],
         groups: vec![],
         paths: vec![],
         edges: vec![
@@ -284,6 +315,7 @@ fn scene_invariants_detect_an_edge_crossing_an_unrelated_box() {
             lines: vec![],
             shape: Shape::Rect,
         }],
+        foreground_boxes: vec![],
         groups: vec![],
         paths: vec![],
         edges: vec![RoutedEdge {

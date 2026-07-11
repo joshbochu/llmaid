@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D18.
+`CHANGELOG.md` D9–D19.
 
 ## Parsing
 
@@ -71,3 +71,12 @@ structural coverage lives beside its engine tests. Decisions behind these:
   directional arrowhead distinct from the filled call arrowhead. Labels are
   never truncated; Unicode and `--ascii` output are deterministic; malformed
   statements name the source line and expected message syntax.
+- **B18** Given a `sequenceDiagram` containing `Note left of`, `Note right
+  of`, `Note over` (one participant or a two-participant span), and balanced
+  explicit `activate` / `deactivate` statements, when rendered, then source
+  event order is preserved, note boxes occupy the named side or span without
+  colliding with messages, and activation bars cover the participant lifeline
+  for exactly their balanced event range. Labels are never truncated;
+  Unicode and `--ascii` output are deterministic; malformed notes, unknown
+  participants, and unmatched activation statements name the source line and
+  expectation.

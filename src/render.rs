@@ -106,6 +106,17 @@ impl Canvas {
         }
     }
 
+    fn clear_rect(&mut self, rect: Rect) {
+        for y in rect.y..rect.bottom() {
+            for x in rect.x..rect.right() {
+                if x >= 0 && y >= 0 && self.in_bounds(x as usize, y as usize) {
+                    let index = self.idx(x as usize, y as usize);
+                    self.cells[index] = Cell::Empty;
+                }
+            }
+        }
+    }
+
     fn finish(&self, style: Style) -> String {
         let mut rows = Vec::new();
         for y in 0..self.h {
@@ -167,6 +178,10 @@ fn paint_normalized_scene(scene: &Scene, style: Style, w: usize, h: usize) -> Ca
     }
     for path in &scene.paths {
         draw_scene_path(&mut canvas, path);
+    }
+    for b in &scene.foreground_boxes {
+        canvas.clear_rect(b.rect);
+        draw_scene_box(&mut canvas, b, style);
     }
     for edge in &scene.edges {
         draw_scene_edge(&mut canvas, edge, style);
@@ -275,6 +290,34 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
                 canvas,
                 &text,
                 &format!("box {} label", b.node),
+                &mut failures,
+            );
+        }
+    }
+
+    for b in &scene.foreground_boxes {
+        check_rect_corners(
+            canvas,
+            b.rect,
+            &format!("foreground box {}", b.node),
+            &mut failures,
+        );
+        let rect = b.rect;
+        let inner_w = rect.w.saturating_sub(2);
+        let text_y = rect.y + (rect.h - b.lines.len() as i32) / 2;
+        for (line_index, line) in b.lines.iter().enumerate() {
+            let text_w = line.width() as i32;
+            let text = crate::scene::SceneText::new(
+                Point::new(
+                    rect.x + 1 + (inner_w - text_w).max(0) / 2,
+                    text_y + line_index as i32,
+                ),
+                line.clone(),
+            );
+            check_text(
+                canvas,
+                &text,
+                &format!("foreground box {} label", b.node),
                 &mut failures,
             );
         }

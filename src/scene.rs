@@ -190,6 +190,8 @@ pub struct EdgeBoxIntersection {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Scene {
     pub boxes: Vec<SceneBox>,
+    /// Boxes painted after non-semantic paths and before semantic edges.
+    pub foreground_boxes: Vec<SceneBox>,
     pub groups: Vec<SceneGroup>,
     pub paths: Vec<ScenePath>,
     pub edges: Vec<RoutedEdge>,
@@ -199,6 +201,9 @@ impl Scene {
     pub fn bounds(&self) -> Rect {
         let mut bounds = Rect::default();
         for b in &self.boxes {
+            bounds = bounds.union(b.rect);
+        }
+        for b in &self.foreground_boxes {
             bounds = bounds.union(b.rect);
         }
         for group in &self.groups {
@@ -232,6 +237,9 @@ impl Scene {
         let dx = -before.x;
         let dy = -before.y;
         for b in &mut self.boxes {
+            b.rect = b.rect.translated(dx, dy);
+        }
+        for b in &mut self.foreground_boxes {
             b.rect = b.rect.translated(dx, dy);
         }
         for group in &mut self.groups {
@@ -277,11 +285,12 @@ impl Scene {
             let endpoint_nodes: Vec<usize> = self
                 .boxes
                 .iter()
+                .chain(&self.foreground_boxes)
                 .filter(|box_| box_.rect.contains(source) || box_.rect.contains(target))
                 .map(|box_| box_.node)
                 .collect();
             let cells = path_cells(&edge.points);
-            for box_ in &self.boxes {
+            for box_ in self.boxes.iter().chain(&self.foreground_boxes) {
                 if endpoint_nodes.contains(&box_.node) {
                     continue;
                 }

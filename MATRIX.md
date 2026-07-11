@@ -19,7 +19,7 @@ or competitor notes change. Roadmap phases: [`ROADMAP.md`](ROADMAP.md).
 
 | Tool | Role in comparison |
 |------|-------------------|
-| **llmaid** | This project (flowchart + core sequence subset) |
+| **llmaid** | This project (flowchart + sequence notes/activation subset) |
 | **termiflow** | Terminal Mermaid flowchart (`tw`) |
 | **termaid** | Terminal multi-type Mermaid (Python) |
 | **diagon** | Non-Mermaid ASCII generators |
@@ -92,8 +92,8 @@ Mermaid as the only primary agent language.
 | Lifelines | Y | N | Y | Y | N | Y |
 | Sync / async messages | P | N | Y | Y | N | Y |
 | Dashed return | Y | N | Y | Y | N | Y |
-| Notes | N | N | Y | P | N | Y |
-| Activate / deactivate | N | N | P | P | N | Y |
+| Notes | Y | N | Y | P | N | Y |
+| Activate / deactivate | Y | N | P | P | N | Y |
 | Loops / alt / opt | N | N | P | P | N | Y |
 
 **Roadmap:** Phase 2.
@@ -210,7 +210,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Edge labels & styles | `-->` `-.->` `==>` \|label\| | **Y** |
 | Node shapes | `[ ] ( ) { }` … | **Y** (hints) |
 | Groups / machines | `subgraph` | **Y** |
-| Sequence | `sequenceDiagram` | **P** (participants, lifelines, messages, returns) |
+| Sequence | `sequenceDiagram` | **P** (participants, lifelines, messages, returns, notes, activation) |
 | Tree | `mindmap` or flowchart TB | **N** |
 | Class / ER / state | respective types | **N** |
 | Table | Markdown table (not Mermaid) | park |
@@ -248,3 +248,4 @@ When you ship a feature:
 | 2026-07-09 | Phase 0: TB/BT labels, RL goldens, mono-chain straighten; flowchart direction cells strengthened. |
 | 2026-07-09 | Phase 1.1: real subgraphs (parse membership, bbox frames, titles). |
 | 2026-07-11 | Phase 2 core: participants/actors, implicit participants, lifelines, `->>` messages, and `-->>` returns. |
+| 2026-07-11 | Phase 2.3: left/right/over notes and balanced explicit activate/deactivate bars; B18 + focused goldens. |

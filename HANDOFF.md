@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-11 — core sequence vertical slice landed.
+Last updated: 2026-07-11 — sequence notes and activation landed.
 
 ## What this project is
 
@@ -17,21 +17,23 @@ without losing glance quality.
 2. `DESIGN.md` — v1 design thesis and architecture  
 3. `ROADMAP.md` — phased plan (what to build next)  
 4. `MATRIX.md` — capability × tool coverage checklist  
-5. `BEHAVIORS.md` — shipped contracts B1–B17
-6. `CHANGELOG.md` — decisions D1–D18
+5. `BEHAVIORS.md` — shipped contracts B1–B18
+6. `CHANGELOG.md` — decisions D1–D19
 
 ## Current state
 
-**Contracts B1–B17 + Phase 0–1 + the Phase 2 core slice are landed.**
+**Contracts B1–B18 + Phase 0–2 core are landed.**
 
 - Pipeline: parse → flow layout → route into signed `Scene` → pure canvas render
 - Diagram dispatch: flowcharts retain their established pipeline; the sequence
   engine owns its semantic IR/layout and joins at the shared `Scene` boundary
 - Core sequence diagrams: declared/implicit participants and actors, padded
-  headers, dotted lifelines, `->>` messages, and `-->>` returns
+  headers, dotted lifelines, ordered messages/notes/activation events, `->>`
+  messages, `-->>` returns, left/right/over notes, and balanced activation bars
 - Sequence visual grammar: calls end with a filled arrow at the destination
   lifeline (`────▶┊`); returns begin at the destination with a thin arrow
-  (`┊←────`); ASCII uses `-->|` and `|<--`
+  (`┊←────`); active messages attach to the nearest bar boundary; ASCII uses
+  `-->|` and `|<--`
 - `Scene` owns complete paths, arrows, label positions, normalization, and exact bounds
 - **Subgraphs:** titled frames around members (B15); interior title band +
   spacious pad; nested parent tracked
@@ -64,23 +66,20 @@ without losing glance quality.
 
 ## Next steps (from ROADMAP)
 
-1. **Phase 2.3** — sequence notes and activate/deactivate
-2. **Quality self-debug** — expose named geometry violations through
+1. **Quality self-debug** — expose named geometry violations through
    `--audit=json`, then add generated/metamorphic small-graph coverage
-3. Sequence control blocks (`loop` / `alt` / `opt`) after the core additions
-4. Design types → planning → charts → broader agent diagnostics → distribute
-5. Optional: nested subgraph polish / exit-edge routing through frames
+2. Sequence control blocks (`loop` / `alt` / `opt`) after the core additions
+3. Design types → planning → charts → broader agent diagnostics → distribute
+4. Optional: nested subgraph polish / exit-edge routing through frames
 
 Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 
-### Suggested Phase 2.3 pickup
+### Suggested next pickup
 
-Land another thin vertical slice: parse and render `Note left of`, `Note right
-of`, and `Note over` first, then add `activate` / `deactivate` bars. Start with
-the numbered behavior contract in `tests/behavior.rs`, add sequence structural
-tests plus `.mmd` / `.txt` goldens, and keep all new geometry in
-`sequence.rs` emitting shared `Scene` primitives. Do not fold sequence
-semantics into the flowchart `Graph`.
+Expose named hard geometry violations and exact witnesses through
+`--audit=json`, starting with the existing scene invariants and exact flowchart
+quality predicates. Lock the JSON schema with CLI behavior tests before adding
+generated/metamorphic small-graph coverage.
 
 ## Quality bar
 

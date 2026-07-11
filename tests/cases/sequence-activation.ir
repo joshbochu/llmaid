@@ -1,7 +1,11 @@
 type: sequence
 participants:
   participant Client "Client"
-  actor API "Application API"
+  participant API "API"
 events:
   message Client ->> API "request"
+  activate API
+  note right of API "working"
+  message API ->> API "query"
   message API -->> Client "response"
+  deactivate API

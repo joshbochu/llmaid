@@ -32,11 +32,11 @@ Agents speak Mermaid; we own primitives behind the door.
 | — | v1 flowchart baseline (B1–B14) | **done** |
 | 0 | Ship & tighten flowchart | **done** |
 | 1 | Flowchart completeness (subgraphs / graph-easy parity) | **done** (1.1 flat; nested parent field ready) |
-| 2 | Sequence diagrams | **in progress** (core slice landed) |
+| 2 | Sequence diagrams | **done** (core subset) |
 | 3 | Design-doc types (state / class / ER) | later |
 | 4 | Hierarchy & planning (mindmap / gantt / git) | later |
 | 5 | Charts & boards (selective) | later |
-| 6 | Agent self-debug loop | later |
+| 6 | Agent self-debug loop | **next** |
 | 7 | Distribution & product | later |
 
 ---
@@ -83,7 +83,7 @@ Closest to **graph-easy** parity inside Mermaid.
 
 ---
 
-## Phase 2 — Sequence diagrams · **in progress**
+## Phase 2 — Sequence diagrams · **done** (core subset)
 
 Highest-value second type (agents + **diagon seq**).
 
@@ -91,10 +91,11 @@ Highest-value second type (agents + **diagon seq**).
 |----|------|--------|
 | 2.1 | `sequenceDiagram` parse → IR | **done** — participants/actors, implicit participants, `->>` / `-->>` |
 | 2.2 | Layout: actors, lifelines, messages, `-->>` returns | **done** — first end-to-end shared-Scene slice |
-| 2.3 | Notes / activate (core subset) | Expand after goldens |
-| 2.4 | Goldens + invariants + agent errors | **done for core**; expand alongside 2.3 |
+| 2.3 | Notes / activate (core subset) | **done** — left/right/over notes + balanced explicit activation bars |
+| 2.4 | Goldens + invariants + agent errors | **done** — core, notes, activation, ordering, and malformed-input coverage |
 
-**Exit:** API/protocol diagrams are viewable and self-debuggable.
+**Exit met:** API/protocol diagrams are viewable and self-debuggable; B17/B18
+plus `sequence-core`, `sequence-notes`, and `sequence-activation` goldens.
 
 ---
 
@@ -209,7 +210,9 @@ human review remains the oracle for preferences not yet expressed as geometry.
 ## Suggested near-term sequence
 
 ```text
-2.3 sequence notes / activation
+6.2 machine-readable geometry audit
+→ 6.3 generated/metamorphic topology coverage
+→ sequence control blocks (loop/alt/opt)
 → 3.x state/class/ER
 → 4.x mindmap/gantt/git
 → 5.x charts (selective)

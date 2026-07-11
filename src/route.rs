@@ -145,6 +145,7 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
 
     let mut scene = Scene {
         boxes,
+        foreground_boxes: Vec::new(),
         groups,
         paths: Vec::new(),
         edges,
