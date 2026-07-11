@@ -40,7 +40,9 @@ without losing glance quality.
 - Design-doc visual grammar: class headers/members use compartments; UML
   aggregation/composition/inheritance/realization semantics use endpoint
   diamonds/arrows/triangles; ER attributes use aligned table rows/columns and
-  zero/one/many glyphs attach at relationship endpoints in Unicode and ASCII
+  zero/one/many glyphs attach at relationship endpoints in Unicode and ASCII.
+  Layout reserves one connector cell between boxes and adornments and between
+  paired cardinality marks, matching the accepted Phase 3.4 gallery review
 - Sequence visual grammar: calls end with a filled arrow at the destination
   lifeline (`────▶┊`); returns begin at the destination with a thin arrow
   (`┊←────`); active messages attach to the nearest bar boundary; ASCII uses

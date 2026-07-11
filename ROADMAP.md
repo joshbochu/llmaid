@@ -110,7 +110,7 @@ Boxed-graph family; reuse canvas + much of edge drawing.
 | 3.1 | `stateDiagram` / `stateDiagram-v2` (flat first, nested later) | **done** — aliases, markers, labels, directions |
 | 3.2 | `classDiagram` | **done** — members, relations, multiplicities |
 | 3.3 | `erDiagram` | **done** — attributes, keys, cardinalities |
-| 3.4 | Native terminal visual grammar | **done** — compartments, tables, UML/ER endpoint adornments |
+| 3.4 | Native terminal visual grammar | **done** — compartments, tables, spaced UML/ER endpoint adornments |
 
 **Exit met:** design conversations have a visual home in the terminal; B21–B23
 plus state/class/ER goldens, generated direction coverage, and exact endpoint /

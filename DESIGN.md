@@ -106,8 +106,11 @@ primitives onto a `Canvas` of cells; it owns no routing policy.
 
 Structured `SceneTable` content supplies class compartments and ER attribute
 grids. Paint-level endpoint decorations carry UML diamonds/arrows/triangles and
-ER min/max cardinalities at exact cells adjacent to their boxes. Type-specific
-engines choose the semantics; the renderer only orients and paints the glyphs.
+ER min/max cardinalities at exact cells. Design relationships reserve their
+paint footprint in layout: each adornment sits two cells from its box, leaving
+one visible connector cell, and paired ER marks retain a connector cell between
+them. Type-specific engines choose the semantics; the renderer only orients and
+paints the glyphs.
 
 Box-drawing junction resolution (e.g. `─` meeting `│` becomes `┼`) via bitmask
 lookup, so crossings and tees always render as the correct glyph.
