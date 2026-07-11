@@ -348,6 +348,12 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         }
     }
 
+    // Merges (in-degree ≥ 2) can lag one sweep behind: the loop ends on a
+    // reverse pass that moves siblings after placing the sink. Snap each merge
+    // to its parents' barycenter without re-pulling the siblings.
+    recenter_merges(g, &mut boxes, &reversed);
+    resolve_rank_overlaps(g, &ranks, &mut boxes, base_gap, horizontal, &self_loops);
+
     // Phase 0.4: straighten mono-rank chains so simple A→B columns share a
     // centerline (fewer needless elbows when each rank has one real node).
     straighten_mono_chains(g, &ranks, &mut boxes, &reversed);
@@ -615,14 +621,88 @@ fn align_mono_ports(
     }
 }
 
+/// Place each multi-parent node on the average cross-center of its parents.
+fn recenter_merges(g: &Graph, boxes: &mut [BoxGeom], reversed: &[bool]) {
+    let mut parents: Vec<Vec<usize>> = vec![Vec::new(); g.nodes.len()];
+    for (ei, e) in g.edges.iter().enumerate() {
+        if e.from == e.to || reversed[ei] {
+            continue;
+        }
+        parents[e.to].push(e.from);
+    }
+    for (ni, pars) in parents.iter().enumerate() {
+        if pars.len() < 2 {
+            continue;
+        }
+        let sum: usize = pars
+            .iter()
+            .map(|&p| boxes[p].c + boxes[p].clen / 2)
+            .sum();
+        let mid = sum / pars.len();
+        boxes[ni].c = mid.saturating_sub(boxes[ni].clen / 2);
+    }
+}
+
+/// After independent box moves (merge snap, straighten), push siblings apart
+/// within each rank so they do not overlap, preserving relative order.
+fn resolve_rank_overlaps(
+    g: &Graph,
+    ranks: &[Vec<Slot>],
+    boxes: &mut [BoxGeom],
+    gap: usize,
+    horizontal: bool,
+    self_loops: &[usize],
+) {
+    for rslots in ranks {
+        let mut reals: Vec<usize> = rslots
+            .iter()
+            .filter_map(|s| match s {
+                Slot::Real(i) => Some(*i),
+                Slot::Dummy(_) => None,
+            })
+            .collect();
+        if reals.len() < 2 {
+            continue;
+        }
+        reals.sort_by_key(|&i| (boxes[i].c, i));
+        let mut min_start = 0usize;
+        for (idx, &ni) in reals.iter().enumerate() {
+            let next = reals.get(idx + 1).map(|&j| Slot::Real(j));
+            let extra = if horizontal && self_loops.iter().any(|&ei| g.edges[ei].from == ni) {
+                2
+            } else {
+                0
+            };
+            boxes[ni].c = boxes[ni].c.max(min_start);
+            min_start = boxes[ni].c
+                + boxes[ni].clen
+                + slot_gap(g, &Slot::Real(ni), next.as_ref(), gap)
+                + extra;
+        }
+    }
+}
+
 /// When consecutive ranks each hold a single real node connected by a forward
-/// edge, share a centerline so the edge can run straight.
+/// **mono** edge (sole out of source, sole in of target), share a centerline
+/// so the edge can run straight. Skip merges/forks — pulling them onto a
+/// one-parent centerline undoes merge barycenters and can route other edges
+/// through boxes.
 fn straighten_mono_chains(
     g: &Graph,
     ranks: &[Vec<Slot>],
     boxes: &mut [BoxGeom],
     reversed: &[bool],
 ) {
+    let mut out_deg = vec![0usize; g.nodes.len()];
+    let mut in_deg = vec![0usize; g.nodes.len()];
+    for (ei, e) in g.edges.iter().enumerate() {
+        if e.from == e.to || reversed[ei] {
+            continue;
+        }
+        out_deg[e.from] += 1;
+        in_deg[e.to] += 1;
+    }
+
     for r in 0..ranks.len().saturating_sub(1) {
         let reals = |rr: usize| -> Vec<usize> {
             ranks[rr]
@@ -639,6 +719,10 @@ fn straighten_mono_chains(
             continue;
         }
         let (ai, bi) = (a[0], b[0]);
+        // Sole forward edge between consecutive single-node ranks.
+        if out_deg[ai] != 1 || in_deg[bi] != 1 {
+            continue;
+        }
         let connected = g.edges.iter().enumerate().any(|(ei, e)| {
             !reversed[ei]
                 && e.from != e.to
@@ -651,9 +735,18 @@ fn straighten_mono_chains(
         }
         let ca = boxes[ai].c + boxes[ai].clen / 2;
         let cb = boxes[bi].c + boxes[bi].clen / 2;
-        let mid = (ca + cb) / 2;
-        boxes[ai].c = mid.saturating_sub(boxes[ai].clen / 2);
-        boxes[bi].c = mid.saturating_sub(boxes[bi].clen / 2);
+        if in_deg[ai] > 1 {
+            // Source is a merge: keep its barycenter; snap the child only.
+            boxes[bi].c = ca.saturating_sub(boxes[bi].clen / 2);
+        } else if out_deg[bi] > 1 {
+            // Target is a fork: keep its position; snap the parent only.
+            boxes[ai].c = cb.saturating_sub(boxes[ai].clen / 2);
+        } else {
+            // Pure mono chain: share a mid centerline.
+            let mid = (ca + cb) / 2;
+            boxes[ai].c = mid.saturating_sub(boxes[ai].clen / 2);
+            boxes[bi].c = mid.saturating_sub(boxes[bi].clen / 2);
+        }
     }
 }
 

@@ -5,6 +5,15 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 
 ## [Unreleased]
 
+### Fixed
+- Merge nodes (in-degree ≥ 2) re-center on their parents' barycenter after
+  alignment sweeps. The alternating legalize loop ends on a reverse pass, so
+  sinks could lag one cell when siblings moved afterward (`fanout` D sat on B's
+  row). Mono-chain straighten no longer drags merges/forks off that barycenter;
+  mono children of a merge still snap to the merge centerline.
+- Goldens updated where output is clearly better: `fanout` (symmetric elbows),
+  `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
+
 ### Added
 - Routing/renderer boundary: signed screen-space `Scene` primitives now own
   complete paths, arrows, label positions, one-time normalization, and exact
