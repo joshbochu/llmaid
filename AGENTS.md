@@ -4,7 +4,7 @@ Mermaid in, clean deterministic terminal diagrams out. A single fast Rust
 binary that coding agents use to compose diagrams into their output (agents
 create/self-debug; humans look at the visuals).
 
-Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B16),
+Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B17),
 `ROADMAP.md` for phased work, `MATRIX.md` for capability coverage vs other
 tools. Log decisions in `CHANGELOG.md`. Mid-stream? `HANDOFF.md`.
 
@@ -31,14 +31,16 @@ UPDATE_GOLDEN=1 cargo test        # regen tests/cases/*.{ir,txt} after intention
 
 ## Architecture
 
-Five-stage pipeline, one module per stage, data flows one way:
+Flowcharts retain the five-stage pipeline; diagram dispatch and other engines
+join only at the shared `Scene` boundary:
 
 ```
-main.rs → parse.rs → layout.rs → route.rs → Scene → render.rs
-          (IR)       (flow grid)  (paths/text)       (canvas → text)
-                                        style.rs (charsets: unicode/ascii)
+main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ─┐
+                     └→ sequence.rs (IR + lifelines) ────┴→ Scene → render.rs
+                                                         style.rs (glyphs)
 ```
 
+- `diagram.rs` — top-level Mermaid type detection and engine dispatch.
 - `parse.rs` — Mermaid flowchart subset → IR (`Graph`: nodes, shapes, edges,
   labels, direction). Forgiving: unknown directives warn, `--strict` upgrades.
 - `layout.rs` — Sugiyama layered layout in **integer grid coordinates**:
@@ -47,6 +49,7 @@ main.rs → parse.rs → layout.rs → route.rs → Scene → render.rs
 - `route.rs` — layout geometry → signed screen-space `Scene`; complete
   orthogonal paths, arrows, and collision-free label positions. Back-edges use
   the perimeter channel.
+- `sequence.rs` — sequence semantic IR + integer lifeline/message layout.
 - `scene.rs` — shared `Point` / `Rect` / path / text primitives; normalizes the
   finished scene once and derives exact bounds.
 - `render.rs` — pure scene painter + char canvas; box-drawing junctions resolved

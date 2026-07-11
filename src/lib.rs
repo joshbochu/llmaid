@@ -1,8 +1,10 @@
 pub mod audit;
+pub mod diagram;
 pub mod layout;
 pub mod metrics;
 pub mod parse;
 pub mod render;
 pub mod route;
 pub mod scene;
+pub mod sequence;
 pub mod style;

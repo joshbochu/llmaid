@@ -9,6 +9,7 @@
 //! Regenerate snapshots with: UPDATE_GOLDEN=1 cargo test
 //! Only commit regenerated snapshots when you can say why the new output is better.
 
+use llmaid::diagram::{self, Diagram};
 use llmaid::layout;
 use llmaid::parse;
 use llmaid::render;
@@ -41,11 +42,11 @@ fn golden_parse_snapshots() {
     let mut failures = Vec::new();
     for name in case_names() {
         let src = fs::read_to_string(dir.join(format!("{name}.mmd"))).unwrap();
-        let graph = match parse::parse(&src) {
-            Ok(g) => g,
+        let diagram = match diagram::parse(&src) {
+            Ok(diagram) => diagram,
             Err(e) => panic!("case `{name}` failed to parse: {e}"),
         };
-        let got = parse::dump(&graph);
+        let got = diagram::dump(&diagram);
         let ir_path = dir.join(format!("{name}.ir"));
 
         if update {
@@ -72,16 +73,16 @@ fn golden_render_snapshots() {
     let mut failures = Vec::new();
     for name in case_names() {
         let src = fs::read_to_string(dir.join(format!("{name}.mmd"))).unwrap();
-        let graph = match parse::parse(&src) {
-            Ok(g) => g,
+        let diagram = match diagram::parse(&src) {
+            Ok(diagram) => diagram,
             Err(e) => panic!("case `{name}` failed to parse: {e}"),
         };
-        if graph.nodes.is_empty() {
+        if diagram.is_empty() {
             continue;
         }
 
-        let placed = layout::layout(&graph, 100);
-        let (got, inv) = render::render_with_checks(&graph, &placed, style);
+        let scene = diagram::scene(&diagram, 100);
+        let (got, inv) = render::render_scene_with_checks(&scene, style);
         if !inv.is_empty() {
             failures.push(format!(
                 "case `{name}` invariant failures:\n  - {}",
@@ -113,35 +114,43 @@ fn b14_frame_invariants_hold_for_all_cases() {
     let mut failures = Vec::new();
     for name in case_names() {
         let src = fs::read_to_string(dir.join(format!("{name}.mmd"))).unwrap();
-        let graph = parse::parse(&src).unwrap_or_else(|e| panic!("{name}: {e}"));
-        if graph.nodes.is_empty() {
+        let parsed = diagram::parse(&src).unwrap_or_else(|e| panic!("{name}: {e}"));
+        if parsed.is_empty() {
             continue;
         }
-        let placed = layout::layout(&graph, 100);
-        let (diagram, inv) = render::render_with_checks(&graph, &placed, style);
+        let scene = diagram::scene(&parsed, 100);
+        let (rendered, inv) = render::render_scene_with_checks(&scene, style);
         assert!(
-            !diagram.contains('…') && !diagram.contains("..."),
+            !rendered.contains('…') && !rendered.contains("..."),
             "case `{name}` truncated"
         );
         if !inv.is_empty() {
             failures.push(format!("`{name}`: {}", inv.join("; ")));
         }
         // Labels fully present in finished text (B14 / no overwrite).
-        for n in &graph.nodes {
-            let want: String = n.label.chars().filter(|c| c.is_alphanumeric()).collect();
-            if want.is_empty() {
-                continue;
-            }
-            if !alnum_subsequence(&diagram, &want) {
-                failures.push(format!("`{name}`: node label missing: {}", n.label));
-            }
-        }
-        for e in &graph.edges {
-            if let Some(label) = &e.label {
-                let want: String = label.chars().filter(|c| c.is_alphanumeric()).collect();
-                if !want.is_empty() && !alnum_subsequence(&diagram, &want) {
-                    failures.push(format!("`{name}`: edge label missing: {label}"));
-                }
+        let labels: Vec<&str> = match &parsed {
+            Diagram::Flowchart(graph) => graph
+                .nodes
+                .iter()
+                .map(|node| node.label.as_str())
+                .chain(graph.edges.iter().filter_map(|edge| edge.label.as_deref()))
+                .collect(),
+            Diagram::Sequence(sequence) => sequence
+                .participants
+                .iter()
+                .map(|participant| participant.label.as_str())
+                .chain(
+                    sequence
+                        .messages
+                        .iter()
+                        .map(|message| message.label.as_str()),
+                )
+                .collect(),
+        };
+        for label in labels {
+            let want: String = label.chars().filter(|c| c.is_alphanumeric()).collect();
+            if !want.is_empty() && !alnum_subsequence(&rendered, &want) {
+                failures.push(format!("`{name}`: label missing: {label}"));
             }
         }
     }

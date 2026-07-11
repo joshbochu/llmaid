@@ -19,7 +19,7 @@ or competitor notes change. Roadmap phases: [`ROADMAP.md`](ROADMAP.md).
 
 | Tool | Role in comparison |
 |------|-------------------|
-| **llmaid** | This project (as of roadmap write-up; flowchart v1) |
+| **llmaid** | This project (flowchart + core sequence subset) |
 | **termiflow** | Terminal Mermaid flowchart (`tw`) |
 | **termaid** | Terminal multi-type Mermaid (Python) |
 | **diagon** | Non-Mermaid ASCII generators |
@@ -36,7 +36,7 @@ not a formal audit. llmaid cells should stay honest.
 | Capability | llmaid | termiflow | termaid | diagon | graph-easy | mermaid.js |
 |------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
 | Mermaid flowchart/graph | Y | Y | Y | N | N | Y |
-| Mermaid sequence | N | N | Y | N | N | Y |
+| Mermaid sequence | P | N | Y | N | N | Y |
 | Mermaid state | N | N | Y | N | N | Y |
 | Mermaid class | N | N | Y | N | N | Y |
 | Mermaid ER | N | N | Y | N | N | Y |
@@ -88,10 +88,10 @@ Mermaid as the only primary agent language.
 
 | Capability | llmaid | termiflow | termaid | diagon | graph-easy | mermaid.js |
 |------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
-| Participants / actors | N | N | Y | Y | N | Y |
-| Lifelines | N | N | Y | Y | N | Y |
-| Sync / async messages | N | N | Y | Y | N | Y |
-| Dashed return | N | N | Y | Y | N | Y |
+| Participants / actors | Y | N | Y | Y | N | Y |
+| Lifelines | Y | N | Y | Y | N | Y |
+| Sync / async messages | P | N | Y | Y | N | Y |
+| Dashed return | Y | N | Y | Y | N | Y |
 | Notes | N | N | Y | P | N | Y |
 | Activate / deactivate | N | N | P | P | N | Y |
 | Loops / alt / opt | N | N | P | P | N | Y |
@@ -191,7 +191,7 @@ What layout *kind* each tool implements — independent of syntax.
 |---------------------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
 | Layered digraph (Sugiyama-like) | Y | Y | Y | Y (dag) | Y | Y |
 | Clustered / compound graph | Y | ? | P | N | Y | Y |
-| Sequence / swimlane time | N | N | Y | Y (seq) | N | Y |
+| Sequence / swimlane time | P | N | Y | Y (seq) | N | Y |
 | Tree hierarchy | N | N | Y | Y (tree) | P | Y |
 | Math typography | N | N | N | Y | N | N |
 | Table grid | N | N | N | Y | N | P |
@@ -210,7 +210,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Edge labels & styles | `-->` `-.->` `==>` \|label\| | **Y** |
 | Node shapes | `[ ] ( ) { }` … | **Y** (hints) |
 | Groups / machines | `subgraph` | **Y** |
-| Sequence | `sequenceDiagram` | **N** |
+| Sequence | `sequenceDiagram` | **P** (participants, lifelines, messages, returns) |
 | Tree | `mindmap` or flowchart TB | **N** |
 | Class / ER / state | respective types | **N** |
 | Table | Markdown table (not Mermaid) | park |
@@ -223,7 +223,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Goal | Leader today | llmaid |
 |------|--------------|--------|
 | Terminal flowchart **quality** (thesis) | **llmaid** | Leading |
-| Terminal Mermaid **breadth** | **termaid** | Narrow (flowchart only) |
+| Terminal Mermaid **breadth** | **termaid** | Narrow (flowchart + core sequence) |
 | Non-Mermaid ASCII kit | **diagon** | — |
 | General graph language + clusters | **graph-easy** | Missing subgraphs |
 | Full language reference | **mermaid.js** | Slice only |
@@ -247,3 +247,4 @@ When you ship a feature:
 | 2026-07-09 | Initial matrix from design + local tool probes (tw, termaid demos, diagon modes, graph-easy). |
 | 2026-07-09 | Phase 0: TB/BT labels, RL goldens, mono-chain straighten; flowchart direction cells strengthened. |
 | 2026-07-09 | Phase 1.1: real subgraphs (parse membership, bbox frames, titles). |
+| 2026-07-11 | Phase 2 core: participants/actors, implicit participants, lifelines, `->>` messages, and `-->>` returns. |

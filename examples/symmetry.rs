@@ -9,8 +9,8 @@
 //! for every quality column; `hard` must always be zero. Superscript `²`
 //! denotes doubled-cell coordinates, not a squared value.
 
+use llmaid::diagram::{self, Diagram};
 use llmaid::metrics::{self, format_header, format_row};
-use llmaid::parse;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -50,12 +50,16 @@ fn main() {
             eprintln!("{name}: {e}");
             process::exit(1);
         });
-        let graph = match parse::parse(&src) {
-            Ok(g) => g,
+        let diagram = match diagram::parse(&src) {
+            Ok(diagram) => diagram,
             Err(e) => {
                 eprintln!("{name}: parse error: {e}");
                 continue;
             }
+        };
+        let Diagram::Flowchart(graph) = diagram else {
+            println!("{name:<20} (non-flow engine; scene invariants only)");
+            continue;
         };
         if graph.nodes.is_empty() {
             println!("{name:<20} (empty)");

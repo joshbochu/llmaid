@@ -1,6 +1,6 @@
 //! Glyph sets and box-drawing junction resolution. No layout logic here.
 
-use crate::parse::EdgeKind;
+use crate::scene::{ArrowHead, EdgeKind};
 
 /// Direction bits for line cells. A cell's glyph is resolved from the union
 /// of bits drawn into it, so crossings and tees always come out right
@@ -74,16 +74,32 @@ impl Style {
         }
     }
 
-    pub fn arrow_right(self) -> char {
-        if self.ascii { '>' } else { '▶' }
+    pub fn arrow_right(self, head: ArrowHead) -> char {
+        if self.ascii || head == ArrowHead::Filled {
+            if self.ascii { '>' } else { '▶' }
+        } else {
+            '→'
+        }
     }
-    pub fn arrow_left(self) -> char {
-        if self.ascii { '<' } else { '◀' }
+    pub fn arrow_left(self, head: ArrowHead) -> char {
+        if self.ascii || head == ArrowHead::Filled {
+            if self.ascii { '<' } else { '◀' }
+        } else {
+            '←'
+        }
     }
-    pub fn arrow_up(self) -> char {
-        if self.ascii { '^' } else { '▲' }
+    pub fn arrow_up(self, head: ArrowHead) -> char {
+        if self.ascii || head == ArrowHead::Filled {
+            if self.ascii { '^' } else { '▲' }
+        } else {
+            '↑'
+        }
     }
-    pub fn arrow_down(self) -> char {
-        if self.ascii { 'v' } else { '▼' }
+    pub fn arrow_down(self, head: ArrowHead) -> char {
+        if self.ascii || head == ArrowHead::Filled {
+            if self.ascii { 'v' } else { '▼' }
+        } else {
+            '↓'
+        }
     }
 }

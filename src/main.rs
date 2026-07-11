@@ -1,10 +1,10 @@
 use std::io::Read;
 use std::process::ExitCode;
 
-use llmaid::{layout, parse, render, style::Style};
+use llmaid::{diagram, render, style::Style};
 
 const USAGE: &str = "\
-llmaid — Mermaid flowcharts rendered for the terminal
+llmaid — Mermaid diagrams rendered for the terminal
 
 Usage: llmaid [OPTIONS] [FILE]
        cat diagram.mmd | llmaid
@@ -101,8 +101,8 @@ fn main() -> ExitCode {
         }
     };
 
-    let graph = match parse::parse(&src) {
-        Ok(g) => g,
+    let diagram = match diagram::parse(&src) {
+        Ok(diagram) => diagram,
         Err(e) => {
             eprintln!("llmaid: {e}");
             return ExitCode::from(64);
@@ -110,16 +110,16 @@ fn main() -> ExitCode {
     };
 
     // B6: stdout carries only the diagram; all diagnostics go to stderr.
-    for w in &graph.warnings {
+    for w in diagram.warnings() {
         eprintln!("llmaid: warning: line {}: {}", w.line, w.msg);
     }
-    if opts.strict && !graph.warnings.is_empty() {
+    if opts.strict && !diagram.warnings().is_empty() {
         eprintln!("llmaid: failing due to warnings (--strict)");
         return ExitCode::from(64);
     }
 
     // B7: an empty graph is trivia, not an error — pipelines keep flowing.
-    if graph.nodes.is_empty() {
+    if diagram.is_empty() {
         eprintln!("llmaid: warning: nothing to render (input has no nodes)");
         return ExitCode::SUCCESS;
     }
@@ -128,8 +128,8 @@ fn main() -> ExitCode {
     // B9: overflow ladder lives in layout (compact → wrap → over-width).
     let width = opts.width.unwrap_or(100);
 
-    let placed = layout::layout(&graph, width);
-    let diagram = render::render(&graph, &placed, Style { ascii: opts.ascii });
-    print!("{diagram}");
+    let scene = diagram::scene(&diagram, width);
+    let output = render::render_scene(&scene, Style { ascii: opts.ascii });
+    print!("{output}");
     ExitCode::SUCCESS
 }

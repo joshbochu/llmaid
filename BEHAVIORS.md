@@ -2,8 +2,9 @@
 
 Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
-CLI behaviors in `tests/behavior.rs` now; layout/render behaviors land with
-their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–D16.
+CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
+structural coverage lives beside its engine tests. Decisions behind these:
+`CHANGELOG.md` D9–D18.
 
 ## Parsing
 
@@ -60,3 +61,13 @@ their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–
 - **B16** Given any routed edge, then its interior never intersects or rides
   the border of a non-endpoint node. Enforced from exact `Scene` geometry for
   every golden; nested and long-edge merges are explicit regression cases.
+
+## Sequence diagrams
+
+- **B17** Given a core `sequenceDiagram` containing declared or implicit
+  participants/actors plus `->>` messages and `-->>` returns, when rendered,
+  then participant order is stable and the output contains padded headers,
+  dotted lifelines, ordered labeled arrows, and returns encoded with a thin
+  directional arrowhead distinct from the filled call arrowhead. Labels are
+  never truncated; Unicode and `--ascii` output are deterministic; malformed
+  statements name the source line and expected message syntax.

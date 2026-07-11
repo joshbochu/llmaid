@@ -2,7 +2,9 @@
 
 use crate::layout::{BoxGeom, CLUSTER_PAD, CLUSTER_TITLE_BAND, EDGE_LABEL_PAD, Placed};
 use crate::parse::{Edge, Graph};
-use crate::scene::{Arrow, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, SceneText};
+use crate::scene::{
+    Arrow, ArrowHead, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, SceneText,
+};
 use unicode_width::UnicodeWidthStr;
 
 pub fn route(g: &Graph, placed: &Placed) -> Scene {
@@ -67,7 +69,11 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
                 let from = points[points.len() - 2];
                 let at = cell_before(target, from);
                 *points.last_mut().unwrap() = at;
-                Some(Arrow { at, toward: target })
+                Some(Arrow {
+                    at,
+                    toward: target,
+                    head: ArrowHead::Filled,
+                })
             } else {
                 None
             };
@@ -140,6 +146,7 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
     let mut scene = Scene {
         boxes,
         groups,
+        paths: Vec::new(),
         edges,
     };
     scene.normalize();
@@ -383,7 +390,11 @@ fn routed_screen_path(
         let from = points[points.len() - 2];
         let at = cell_before(target, from);
         *points.last_mut().unwrap() = at;
-        Some(Arrow { at, toward: target })
+        Some(Arrow {
+            at,
+            toward: target,
+            head: ArrowHead::Filled,
+        })
     } else {
         None
     };

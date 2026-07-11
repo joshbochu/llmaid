@@ -6,6 +6,8 @@
 
 use std::collections::HashMap;
 
+pub use crate::scene::{EdgeKind, Shape};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dir {
     LR,
@@ -33,38 +35,6 @@ impl Dir {
             Dir::BT => "BT",
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Shape {
-    Rect,     // [x]
-    Rounded,  // (x)
-    Stadium,  // ([x])
-    Circle,   // ((x))
-    Cylinder, // [(x)]
-    Diamond,  // {x}
-    Hexagon,  // {{x}}
-}
-
-impl Shape {
-    pub fn name(self) -> &'static str {
-        match self {
-            Shape::Rect => "rect",
-            Shape::Rounded => "rounded",
-            Shape::Stadium => "stadium",
-            Shape::Circle => "circle",
-            Shape::Cylinder => "cylinder",
-            Shape::Diamond => "diamond",
-            Shape::Hexagon => "hexagon",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EdgeKind {
-    Solid,  // --> / ---
-    Dotted, // -.-> / -.-
-    Thick,  // ==> / ===
 }
 
 #[derive(Debug)]

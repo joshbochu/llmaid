@@ -39,19 +39,22 @@ Mermaid `flowchart` / `graph`, directions `LR` `RL` `TB` `BT`:
 - Node declaration and reference, `&` fan-out (`A --> B & C`)
 - Unicode default, `--ascii` fallback (`+-|>`), `--width N` fit
 
-Subgraphs are supported (Phase 1). Still out of core flowchart polish:
-sequence diagrams, trees/mindmaps, styling directives (`classDef`, `style` —
-ignored, never an error). Expansion is tracked in `ROADMAP.md`; coverage in
-`MATRIX.md`.
+Subgraphs are supported (Phase 1). A core sequence slice is also supported:
+participants/actors (including implicit participants), lifelines, `->>`
+messages, and `-->>` returns. Notes, activation, control blocks,
+trees/mindmaps, and styling directives remain expansion work tracked in
+`ROADMAP.md`; coverage lives in `MATRIX.md`.
 
 ## Architecture
 
 ```
 src/
+  diagram.rs   top-level diagram type detection and engine dispatch
   main.rs      CLI: args, stdin/file, error reporting
   parse.rs     Mermaid flowchart subset → IR (Graph: nodes, edges, direction)
   layout.rs    IR → integer flow-grid positions
   route.rs     Layout → complete screen-space paths, arrows, and labels
+  sequence.rs  sequence IR/parser + lifeline/message layout → Scene
   scene.rs     Signed Point/Rect/Path/Text primitives + exact bounds
   render.rs    Scene → grid canvas → styled box-drawing output
   style.rs     Charsets: unicode (default) / ascii
@@ -130,7 +133,7 @@ diagram; all diagnostics go to stderr.
 
 ## Testing
 
-- **Behavior contracts**: `BEHAVIORS.md` (B1–B16) indexes the promised
+- **Behavior contracts**: `BEHAVIORS.md` (B1–B17) indexes the promised
   behaviors; each has a given/when/then test in `tests/behavior.rs`
   (CLI contracts exercise the real binary).
 - **Golden snapshots**: `tests/cases/*.mmd` → `tests/cases/*.txt`, byte-compared.

@@ -3,8 +3,41 @@
 //! Coordinates are signed so layout and routing may extend left or above the
 //! origin. `Scene::normalize` performs the only translation to canvas space.
 
-use crate::parse::{EdgeKind, Shape};
 use unicode_width::UnicodeWidthStr;
+
+/// Terminal box appearance shared by diagram engines and the painter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shape {
+    Rect,
+    Rounded,
+    Stadium,
+    Circle,
+    Cylinder,
+    Diamond,
+    Hexagon,
+}
+
+impl Shape {
+    pub fn name(self) -> &'static str {
+        match self {
+            Shape::Rect => "rect",
+            Shape::Rounded => "rounded",
+            Shape::Stadium => "stadium",
+            Shape::Circle => "circle",
+            Shape::Cylinder => "cylinder",
+            Shape::Diamond => "diamond",
+            Shape::Hexagon => "hexagon",
+        }
+    }
+}
+
+/// Terminal line appearance shared by diagram engines and the painter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdgeKind {
+    Solid,
+    Dotted,
+    Thick,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Point {
@@ -115,10 +148,17 @@ pub struct SceneGroup {
     pub title: SceneText,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArrowHead {
+    Filled,
+    Open,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Arrow {
     pub at: Point,
     pub toward: Point,
+    pub head: ArrowHead,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -129,6 +169,15 @@ pub struct RoutedEdge {
     pub kind: EdgeKind,
     pub label: Option<SceneText>,
     pub arrow: Option<Arrow>,
+}
+
+/// A non-semantic path such as a sequence-diagram lifeline.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScenePath {
+    pub path: usize,
+    pub points: Vec<Point>,
+    pub rounded: Vec<Point>,
+    pub kind: EdgeKind,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -142,6 +191,7 @@ pub struct EdgeBoxIntersection {
 pub struct Scene {
     pub boxes: Vec<SceneBox>,
     pub groups: Vec<SceneGroup>,
+    pub paths: Vec<ScenePath>,
     pub edges: Vec<RoutedEdge>,
 }
 
@@ -154,6 +204,11 @@ impl Scene {
         for group in &self.groups {
             bounds = bounds.union(group.rect);
             bounds = bounds.union(group.title.bounds());
+        }
+        for path in &self.paths {
+            for &point in path.points.iter().chain(&path.rounded) {
+                bounds = bounds.union(Rect::containing(point));
+            }
         }
         for edge in &self.edges {
             for &point in edge.points.iter().chain(&edge.rounded) {
@@ -182,6 +237,11 @@ impl Scene {
         for group in &mut self.groups {
             group.rect = group.rect.translated(dx, dy);
             group.title.translate(dx, dy);
+        }
+        for path in &mut self.paths {
+            for point in path.points.iter_mut().chain(&mut path.rounded) {
+                *point = point.translated(dx, dy);
+            }
         }
         for edge in &mut self.edges {
             for point in edge.points.iter_mut().chain(&mut edge.rounded) {

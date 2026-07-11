@@ -6,6 +6,10 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Fixed
+- Sequence calls and returns no longer rely on subtly different dot density or
+  unusual dash glyphs: calls use a solid shaft plus filled arrowhead (`────▶`),
+  while returns use a solid shaft plus thin directional arrow (`←────`). ASCII
+  uses the familiar `---->` / `<----`; dotted lifelines remain separate.
 - Fifth-round gallery review: equal-width flipped vertical chains choose their
   shared width parity from the terminal/top label. This makes `top` exactly
   centered with equal visible padding while both BT boxes remain identical;
@@ -45,6 +49,14 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- Core sequence diagrams (B17): top-level diagram dispatch, declared and
+  implicit participants/actors, padded headers, dotted lifelines, ordered
+  `->>` messages, `-->>` dashed returns, deterministic Unicode/ASCII output,
+  line-specific parser errors, and shared-scene invariant coverage. The
+  `sequence-core` IR/render golden establishes the first non-flowchart type.
+- Generic shared-scene paths plus scene-owned box/line paint styles. The Scene
+  layer no longer imports flowchart parser types; flowchart and sequence
+  engines now meet only at the geometry boundary.
 - Documented the quality guarantee boundary and enforcement loop: the integer
   grid supplies exact coordinates, reusable topology constraints supply the
   aesthetic rules, goldens prevent known regressions, and human review finds
@@ -133,6 +145,14 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 - `DESIGN.md` (v1 design), `AGENTS.md` (agent guide), this changelog.
 
 ### Decisions
+
+- **D18 — Diagram-specific semantics, shared terminal geometry.** Top-level
+  `diagram.rs` detects the Mermaid type and dispatches into independent IR and
+  layout engines. Paint-level box and line styles live with `Scene`, and
+  non-semantic paths (such as lifelines) are generic scene primitives. The
+  established flowchart parser/layout API remains compatible. Rejected: force
+  sequence concepts into `Graph`, or encode lifelines as fake flowchart edges;
+  both would couple unrelated layout rules and weaken the D15 boundary.
 
 - **D1 — Input language: Mermaid flowchart subset.** Agents emit Mermaid
   fluently from training data (zero prompt budget); declarative DSL keeps

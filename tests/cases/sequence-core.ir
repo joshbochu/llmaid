@@ -1,0 +1,7 @@
+type: sequence
+participants:
+  participant Client "Client"
+  actor API "Application API"
+messages:
+  Client ->> API "request"
+  API -->> Client "response"

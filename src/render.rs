@@ -1,9 +1,11 @@
 //! Rasterize screen-space `Scene` primitives onto a character canvas.
 
 use crate::layout::Placed;
-use crate::parse::{EdgeKind, Graph, Shape};
+use crate::parse::Graph;
 use crate::route;
-use crate::scene::{Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup};
+use crate::scene::{
+    EdgeKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, ScenePath, Shape,
+};
 use crate::style::{E, N, S, Style, W};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -163,6 +165,9 @@ fn paint_normalized_scene(scene: &Scene, style: Style, w: usize, h: usize) -> Ca
     for b in &scene.boxes {
         draw_scene_box(&mut canvas, b, style);
     }
+    for path in &scene.paths {
+        draw_scene_path(&mut canvas, path);
+    }
     for edge in &scene.edges {
         draw_scene_edge(&mut canvas, edge, style);
     }
@@ -171,6 +176,16 @@ fn paint_normalized_scene(scene: &Scene, style: Style, w: usize, h: usize) -> Ca
     }
 
     canvas
+}
+
+fn draw_scene_path(canvas: &mut Canvas, path: &ScenePath) {
+    for pair in path.points.windows(2) {
+        draw_screen_line(canvas, point(pair[0]), point(pair[1]), path.kind);
+    }
+    for &corner in &path.rounded {
+        let (x, y) = point(corner);
+        canvas.mark_rounded(x, y);
+    }
 }
 
 /// Paint and verify a scene without consulting parser or layout internals.
@@ -195,7 +210,11 @@ fn draw_scene_edge(canvas: &mut Canvas, edge: &RoutedEdge, style: Style) {
     }
     if let Some(arrow) = &edge.arrow {
         let at = point(arrow.at);
-        canvas.put_text_char(at.0, at.1, arrow_toward(at, point(arrow.toward), style));
+        canvas.put_text_char(
+            at.0,
+            at.1,
+            arrow_toward(at, point(arrow.toward), arrow.head, style),
+        );
     }
 }
 
@@ -261,6 +280,16 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
         }
     }
 
+    for path in &scene.paths {
+        check_path(
+            canvas,
+            path.path,
+            &path.points,
+            &format!("path {}", path.path),
+            &mut failures,
+        );
+    }
+
     for edge in &scene.edges {
         if edge.points.len() < 2 {
             failures.push(format!("edge {} has fewer than two path points", edge.edge));
@@ -314,6 +343,38 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
     }
 
     failures
+}
+
+fn check_path(
+    canvas: &Canvas,
+    id: usize,
+    points: &[Point],
+    name: &str,
+    failures: &mut Vec<String>,
+) {
+    if points.len() < 2 {
+        failures.push(format!("{name} has fewer than two path points"));
+        return;
+    }
+    for pair in points.windows(2) {
+        if pair[0].x != pair[1].x && pair[0].y != pair[1].y {
+            failures.push(format!(
+                "path {id} has diagonal segment {:?} -> {:?}",
+                pair[0], pair[1]
+            ));
+        }
+    }
+    for endpoint in [points[0], *points.last().unwrap()] {
+        let endpoint = point(endpoint);
+        if !canvas.in_bounds(endpoint.0, endpoint.1)
+            || matches!(
+                canvas.cells[canvas.idx(endpoint.0, endpoint.1)],
+                Cell::Empty
+            )
+        {
+            failures.push(format!("{name} endpoint is not painted"));
+        }
+    }
 }
 
 fn check_rect_corners(canvas: &Canvas, rect: Rect, name: &str, failures: &mut Vec<String>) {
@@ -590,14 +651,19 @@ fn draw_screen_step(canvas: &mut Canvas, a: (usize, usize), b: (usize, usize), k
     canvas.add_line_bits(b.0, b.1, bbit, kind);
 }
 
-fn arrow_toward(from: (usize, usize), to: (usize, usize), style: Style) -> char {
+fn arrow_toward(
+    from: (usize, usize),
+    to: (usize, usize),
+    head: crate::scene::ArrowHead,
+    style: Style,
+) -> char {
     if to.0 > from.0 {
-        style.arrow_right()
+        style.arrow_right(head)
     } else if to.0 < from.0 {
-        style.arrow_left()
+        style.arrow_left(head)
     } else if to.1 > from.1 {
-        style.arrow_down()
+        style.arrow_down(head)
     } else {
-        style.arrow_up()
+        style.arrow_up(head)
     }
 }

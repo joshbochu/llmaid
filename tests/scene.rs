@@ -1,8 +1,11 @@
+use llmaid::diagram::{self, Diagram};
 use llmaid::layout;
 use llmaid::parse::{self, EdgeKind, Shape};
 use llmaid::render;
 use llmaid::route;
-use llmaid::scene::{Arrow, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, SceneText};
+use llmaid::scene::{
+    Arrow, ArrowHead, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, SceneText,
+};
 use llmaid::style::Style;
 use std::fs;
 use std::path::PathBuf;
@@ -22,6 +25,7 @@ fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
             rect: Rect::new(-6, -4, 9, 7),
             title: SceneText::new(Point::new(-3, -3), "group"),
         }],
+        paths: vec![],
         edges: vec![RoutedEdge {
             edge: 0,
             points: vec![Point::new(0, 0), Point::new(8, 0)],
@@ -31,6 +35,7 @@ fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
             arrow: Some(Arrow {
                 at: Point::new(8, 0),
                 toward: Point::new(9, 0),
+                head: ArrowHead::Filled,
             }),
         }],
     };
@@ -54,6 +59,7 @@ fn scene_normalize_translates_every_primitive_once() {
             shape: Shape::Rounded,
         }],
         groups: vec![],
+        paths: vec![],
         edges: vec![RoutedEdge {
             edge: 0,
             points: vec![Point::new(1, -1), Point::new(7, -1)],
@@ -63,6 +69,7 @@ fn scene_normalize_translates_every_primitive_once() {
             arrow: Some(Arrow {
                 at: Point::new(7, -1),
                 toward: Point::new(8, -1),
+                head: ArrowHead::Filled,
             }),
         }],
     };
@@ -211,7 +218,9 @@ fn public_render_matches_scene_pipeline_for_all_existing_cases() {
     let mut changed = Vec::new();
     for path in inputs {
         let source = fs::read_to_string(&path).unwrap();
-        let graph = parse::parse(&source).unwrap();
+        let Diagram::Flowchart(graph) = diagram::parse(&source).unwrap() else {
+            continue;
+        };
         if graph.nodes.is_empty() {
             continue;
         }
@@ -235,6 +244,7 @@ fn scene_invariants_detect_a_label_overwritten_by_another_edge() {
     let scene = Scene {
         boxes: vec![],
         groups: vec![],
+        paths: vec![],
         edges: vec![
             RoutedEdge {
                 edge: 0,
@@ -275,6 +285,7 @@ fn scene_invariants_detect_an_edge_crossing_an_unrelated_box() {
             shape: Shape::Rect,
         }],
         groups: vec![],
+        paths: vec![],
         edges: vec![RoutedEdge {
             edge: 0,
             points: vec![Point::new(0, 1), Point::new(8, 1)],

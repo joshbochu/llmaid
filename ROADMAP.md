@@ -32,7 +32,7 @@ Agents speak Mermaid; we own primitives behind the door.
 | — | v1 flowchart baseline (B1–B14) | **done** |
 | 0 | Ship & tighten flowchart | **done** |
 | 1 | Flowchart completeness (subgraphs / graph-easy parity) | **done** (1.1 flat; nested parent field ready) |
-| 2 | Sequence diagrams | **next** |
+| 2 | Sequence diagrams | **in progress** (core slice landed) |
 | 3 | Design-doc types (state / class / ER) | later |
 | 4 | Hierarchy & planning (mindmap / gantt / git) | later |
 | 5 | Charts & boards (selective) | later |
@@ -83,16 +83,16 @@ Closest to **graph-easy** parity inside Mermaid.
 
 ---
 
-## Phase 2 — Sequence diagrams
+## Phase 2 — Sequence diagrams · **in progress**
 
 Highest-value second type (agents + **diagon seq**).
 
 | ID | Item | Notes |
 |----|------|--------|
-| 2.1 | `sequenceDiagram` parse → IR | Core messages first |
-| 2.2 | Layout: actors, lifelines, messages, dashed returns | Shared canvas |
+| 2.1 | `sequenceDiagram` parse → IR | **done** — participants/actors, implicit participants, `->>` / `-->>` |
+| 2.2 | Layout: actors, lifelines, messages, `-->>` returns | **done** — first end-to-end shared-Scene slice |
 | 2.3 | Notes / activate (core subset) | Expand after goldens |
-| 2.4 | Goldens + invariants + agent errors | Same bar as flowcharts |
+| 2.4 | Goldens + invariants + agent errors | **done for core**; expand alongside 2.3 |
 
 **Exit:** API/protocol diagrams are viewable and self-debuggable.
 
@@ -209,7 +209,7 @@ human review remains the oracle for preferences not yet expressed as geometry.
 ## Suggested near-term sequence
 
 ```text
-2.x sequence
+2.3 sequence notes / activation
 → 3.x state/class/ER
 → 4.x mindmap/gantt/git
 → 5.x charts (selective)
