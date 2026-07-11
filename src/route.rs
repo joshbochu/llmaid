@@ -31,6 +31,7 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
                 b.lines.clone()
             },
             shape: g.nodes[node].shape,
+            table: None,
         })
         .collect();
 
@@ -149,6 +150,8 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
         groups,
         paths: Vec::new(),
         edges,
+        endpoint_decorations: Vec::new(),
+        texts: Vec::new(),
     };
     scene.normalize();
     scene

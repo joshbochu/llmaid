@@ -104,6 +104,11 @@ A diagram engine emits a signed screen-space `Scene`, which is normalized once
 to `(0, 0)` and measured from its exact bounds. The renderer only paints scene
 primitives onto a `Canvas` of cells; it owns no routing policy.
 
+Structured `SceneTable` content supplies class compartments and ER attribute
+grids. Paint-level endpoint decorations carry UML diamonds/arrows/triangles and
+ER min/max cardinalities at exact cells adjacent to their boxes. Type-specific
+engines choose the semantics; the renderer only orients and paints the glyphs.
+
 Box-drawing junction resolution (e.g. `─` meeting `│` becomes `┼`) via bitmask
 lookup, so crossings and tees always render as the correct glyph.
 

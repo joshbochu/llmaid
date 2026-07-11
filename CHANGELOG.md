@@ -53,6 +53,15 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- Phase 3.4 terminal visual fidelity: class headers and members now use closed
+  compartments; aggregation/composition/inheritance/dependency/realization use
+  endpoint diamonds, arrows, and triangles; multiplicities sit beside their
+  endpoints. ER entities render aligned type/name/key/comment tables with row
+  dividers, while zero/one/many glyphs attach to relationship endpoints. Raw
+  UML/ER operators no longer substitute for visual notation. The primitives
+  are shared, deterministic, ASCII-safe, invariant-checked, and covered by
+  exact adjacency/table geometry contracts plus `class-relations` and
+  `er-cardinalities` goldens.
 - Phase 3 design-document diagrams (B21–B23): flat `stateDiagram` /
   `stateDiagram-v2`, core `classDiagram`, and core `erDiagram` now dispatch to
   independent semantic parsers and lower through a shared typed-box adapter.
@@ -187,6 +196,14 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 
 ### Decisions
 
+- **D24 — Relationship notation is endpoint geometry, not edge-label text.**
+  Class/ER engines lower semantic adornments and structured table content into
+  generic `Scene` primitives. The renderer orients glyphs for LR/RL/TB/BT and
+  ASCII, while labels contain only human relationship text. Structured boxes
+  preserve columns by taking B9's allowed over-width fallback rather than
+  word-wrapping a table into corrupt geometry. Rejected: raw Mermaid operators
+  centered on edges and delegating design-doc rendering to a lossy subprocess.
+
 - **D23 — Invariant checks gate normal CLI output.** The runtime uses the same
   checked scene painter as tests. If internal geometry violates a contract,
   stdout stays empty, exact failures go to stderr, and exit 70 distinguishes an
@@ -196,8 +213,8 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 - **D22 — Design-doc types share geometry, not semantic IR.** State, class,
   and ER own separate ordered parsers and semantic models, then lower structured
   nodes and relations through a small typed-box adapter into the established
-  integer layout/router. Relation operators/cardinalities remain visible in
-  edge labels until generic endpoint adornments exist. Rejected: fake Mermaid
+  integer layout/router. Relation operators/cardinalities lower into generic
+  endpoint decorations (D24). Rejected: fake Mermaid
   flowchart source (lossy diagnostics) and one union IR coupling unrelated
   language rules.
 

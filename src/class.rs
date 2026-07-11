@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use crate::boxed::{BoxDiagram, BoxNode, NodeId};
+use crate::boxed::{BoxDiagram, BoxNode, EdgeEnd, NodeId, annotate_endpoint, decorate_endpoint};
 use crate::parse::{Dir, ParseError, Warning};
-use crate::scene::{EdgeKind, Scene, Shape};
+use crate::scene::{EdgeKind, EndpointDecorationKind, Scene, SceneTable, Shape};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Class {
@@ -359,52 +359,87 @@ pub fn dump(diagram: &ClassDiagram) -> String {
     out
 }
 
-/// Lowers class semantics into the shared boxed-diagram geometry. Until the
-/// renderer has endpoint-specific UML adornments, the canonical relation
-/// operator and both multiplicities are carried in the edge label. No
-/// relation semantics are silently lost in terminal output.
+/// Lower class semantics into structured compartments and endpoint-aware UML
+/// relationships while retaining the shared integer boxed geometry.
 pub fn scene(diagram: &ClassDiagram, width: usize) -> Scene {
     let mut boxed = BoxDiagram::new(diagram.direction.unwrap_or(Dir::TB));
-    let nodes: Vec<NodeId> = diagram
+    let tables: Vec<SceneTable> = diagram
         .classes
         .iter()
         .map(|class| {
-            let mut label = class.id.clone();
-            for member in &class.members {
-                label.push('\n');
-                label.push_str(member);
-            }
-            boxed.add_node(BoxNode::new(&class.id, label, Shape::Rounded))
+            SceneTable::new(
+                class.id.clone(),
+                class
+                    .members
+                    .iter()
+                    .map(|member| vec![member.clone()])
+                    .collect(),
+            )
+        })
+        .collect();
+    let nodes: Vec<NodeId> = diagram
+        .classes
+        .iter()
+        .zip(&tables)
+        .map(|(class, table)| {
+            boxed.add_node(BoxNode::new(
+                &class.id,
+                table.layout_label(),
+                Shape::Rounded,
+            ))
         })
         .collect();
 
     for relation in &diagram.relations {
-        let mut semantics = String::new();
-        if let Some(multiplicity) = &relation.from_multiplicity {
-            semantics.push_str(&format!("{multiplicity} "));
-        }
-        semantics.push_str(relation.kind.operator());
-        if let Some(multiplicity) = &relation.to_multiplicity {
-            semantics.push_str(&format!(" {multiplicity}"));
-        }
-        if let Some(label) = &relation.label {
-            semantics.push_str(&format!(" : {label}"));
-        }
-
         let mut edge = boxed.add_edge(nodes[relation.from], nodes[relation.to]);
-        edge.label(semantics);
+        edge.without_arrow();
+        if let Some(label) = &relation.label {
+            edge.label(label.clone());
+        }
         match relation.kind {
             RelationKind::Dependency | RelationKind::Realization => {
                 edge.kind(EdgeKind::Dotted);
             }
-            RelationKind::Inheritance
-            | RelationKind::Composition
-            | RelationKind::Aggregation
-            | RelationKind::Link => {
-                edge.without_arrow();
-            }
-            RelationKind::Association => {}
+            _ => {}
         }
     }
-    boxed.scene(width)
+
+    // Structured compartments cannot be meaningfully word-wrapped as plain
+    // labels. Preserve their columns and allow B9's final over-width fallback.
+    let mut scene = boxed.scene(width.max(10_000));
+    for (box_, table) in scene.boxes.iter_mut().zip(tables) {
+        box_.lines.clear();
+        box_.table = Some(table);
+    }
+    for (edge_index, relation) in diagram.relations.iter().enumerate() {
+        let decoration = match relation.kind {
+            RelationKind::Inheritance => {
+                Some((EdgeEnd::Source, EndpointDecorationKind::OpenTriangle))
+            }
+            RelationKind::Composition => {
+                Some((EdgeEnd::Source, EndpointDecorationKind::FilledDiamond))
+            }
+            RelationKind::Aggregation => {
+                Some((EdgeEnd::Source, EndpointDecorationKind::OpenDiamond))
+            }
+            RelationKind::Association | RelationKind::Dependency => {
+                Some((EdgeEnd::Target, EndpointDecorationKind::OpenArrow))
+            }
+            RelationKind::Realization => {
+                Some((EdgeEnd::Target, EndpointDecorationKind::OpenTriangle))
+            }
+            RelationKind::Link => None,
+        };
+        if let Some((end, kind)) = decoration {
+            decorate_endpoint(&mut scene, edge_index, end, kind);
+        }
+        if let Some(multiplicity) = &relation.from_multiplicity {
+            annotate_endpoint(&mut scene, edge_index, EdgeEnd::Source, multiplicity);
+        }
+        if let Some(multiplicity) = &relation.to_multiplicity {
+            annotate_endpoint(&mut scene, edge_index, EdgeEnd::Target, multiplicity);
+        }
+    }
+    scene.normalize();
+    scene
 }

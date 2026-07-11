@@ -1,0 +1,6 @@
+classDiagram
+  direction LR
+  Base <|-- Service : inherits
+  Service *-- Worker : owns
+  Worker ..> Port : calls
+  Port ..|> Contract : implements

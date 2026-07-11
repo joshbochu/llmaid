@@ -4,7 +4,8 @@ use crate::layout::Placed;
 use crate::parse::Graph;
 use crate::route;
 use crate::scene::{
-    EdgeKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, ScenePath, Shape,
+    CardinalityMaximum, CardinalityMinimum, EdgeKind, EndpointDecoration, EndpointDecorationKind,
+    Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, ScenePath, SceneText, Shape,
 };
 use crate::style::{E, N, S, Style, W};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -186,6 +187,12 @@ fn paint_normalized_scene(scene: &Scene, style: Style, w: usize, h: usize) -> Ca
     for edge in &scene.edges {
         draw_scene_edge(&mut canvas, edge, style);
     }
+    for decoration in &scene.endpoint_decorations {
+        draw_endpoint_decoration(&mut canvas, decoration, style);
+    }
+    for text in &scene.texts {
+        canvas.put_text(text.at.x as usize, text.at.y as usize, &text.text);
+    }
     for group in &scene.groups {
         draw_scene_group(&mut canvas, group);
     }
@@ -286,24 +293,35 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
 
     for b in &scene.boxes {
         check_rect_corners(canvas, b.rect, &format!("box {}", b.node), &mut failures);
-        let rect = b.rect;
-        let inner_w = rect.w.saturating_sub(2);
-        let text_y = rect.y + (rect.h - b.lines.len() as i32) / 2;
-        for (line_index, line) in b.lines.iter().enumerate() {
-            let text_w = line.width() as i32;
-            let text = crate::scene::SceneText::new(
-                Point::new(
-                    rect.x + 1 + (inner_w - text_w).max(0) / 2,
-                    text_y + line_index as i32,
-                ),
-                line.clone(),
-            );
-            check_text(
-                canvas,
-                &text,
-                &format!("box {} label", b.node),
-                &mut failures,
-            );
+        if b.table.is_some() {
+            for text in table_texts(b) {
+                check_text(
+                    canvas,
+                    &text,
+                    &format!("box {} table", b.node),
+                    &mut failures,
+                );
+            }
+        } else {
+            let rect = b.rect;
+            let inner_w = rect.w.saturating_sub(2);
+            let text_y = rect.y + (rect.h - b.lines.len() as i32) / 2;
+            for (line_index, line) in b.lines.iter().enumerate() {
+                let text_w = line.width() as i32;
+                let text = crate::scene::SceneText::new(
+                    Point::new(
+                        rect.x + 1 + (inner_w - text_w).max(0) / 2,
+                        text_y + line_index as i32,
+                    ),
+                    line.clone(),
+                );
+                check_text(
+                    canvas,
+                    &text,
+                    &format!("box {} label", b.node),
+                    &mut failures,
+                );
+            }
         }
     }
 
@@ -395,6 +413,22 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
                 failures.push(format!("edge {} end is not painted", edge.edge));
             }
         }
+    }
+
+    for decoration in &scene.endpoint_decorations {
+        for at in decoration_cells(decoration) {
+            let (x, y) = point(at);
+            if !canvas.in_bounds(x, y) || !matches!(canvas.cells[canvas.idx(x, y)], Cell::Text(_)) {
+                failures.push(format!(
+                    "edge {} endpoint decoration is not painted at ({x},{y})",
+                    decoration.edge
+                ));
+            }
+        }
+    }
+
+    for (index, text) in scene.texts.iter().enumerate() {
+        check_text(canvas, text, &format!("scene text {index}"), &mut failures);
     }
 
     failures
@@ -558,9 +592,198 @@ fn draw_group(
 
 fn draw_scene_box(canvas: &mut Canvas, b: &SceneBox, style: Style) {
     let Rect { x, y, w, h } = b.rect;
+    let lines: &[String] = if b.table.is_some() { &[] } else { &b.lines };
     draw_box_at(
-        canvas, x as usize, y as usize, w as usize, h as usize, &b.lines, b.shape, style,
+        canvas, x as usize, y as usize, w as usize, h as usize, lines, b.shape, style,
     );
+    if b.table.is_some() {
+        draw_scene_table(canvas, b);
+    }
+}
+
+fn draw_scene_table(canvas: &mut Canvas, b: &SceneBox) {
+    let Some(table) = &b.table else {
+        return;
+    };
+    if !table.rows.is_empty() {
+        let divider_y = b.rect.y + 2;
+        draw_screen_line(
+            canvas,
+            (b.rect.x as usize, divider_y as usize),
+            ((b.rect.right() - 1) as usize, divider_y as usize),
+            EdgeKind::Solid,
+        );
+
+        let widths = table.column_widths();
+        let grid_x = table_grid_x(b);
+        let mut x = grid_x;
+        for width in widths.iter().take(widths.len().saturating_sub(1)) {
+            x += *width as i32;
+            draw_screen_line(
+                canvas,
+                (x as usize, divider_y as usize),
+                (x as usize, (b.rect.bottom() - 1) as usize),
+                EdgeKind::Solid,
+            );
+            x += 1;
+        }
+        if table.row_dividers {
+            for row in 1..table.rows.len() {
+                let y = b.rect.y + 2 + (2 * row) as i32;
+                draw_screen_line(
+                    canvas,
+                    (b.rect.x as usize, y as usize),
+                    ((b.rect.right() - 1) as usize, y as usize),
+                    EdgeKind::Solid,
+                );
+            }
+        }
+    }
+    for text in table_texts(b) {
+        canvas.put_text(text.at.x as usize, text.at.y as usize, &text.text);
+    }
+}
+
+fn table_grid_x(b: &SceneBox) -> i32 {
+    let table = b.table.as_ref().expect("table box");
+    let inner_width = b.rect.w.saturating_sub(2);
+    b.rect.x + 1 + (inner_width - table.grid_width() as i32).max(0) / 2
+}
+
+fn table_texts(b: &SceneBox) -> Vec<SceneText> {
+    let Some(table) = &b.table else {
+        return Vec::new();
+    };
+    let inner_width = b.rect.w.saturating_sub(2);
+    let title_width = table.title.width() as i32;
+    let mut texts = vec![SceneText::new(
+        Point::new(
+            b.rect.x + 1 + (inner_width - title_width).max(0) / 2,
+            b.rect.y + 1,
+        ),
+        table.title.clone(),
+    )];
+    if table.rows.is_empty() {
+        return texts;
+    }
+
+    let widths = table.column_widths();
+    let grid_x = table_grid_x(b);
+    for (row_index, row) in table.rows.iter().enumerate() {
+        let mut x = grid_x;
+        let row_y = b.rect.y
+            + 3
+            + if table.row_dividers {
+                (2 * row_index) as i32
+            } else {
+                row_index as i32
+            };
+        for (column, width) in widths.iter().enumerate() {
+            if let Some(cell) = row.get(column)
+                && !cell.is_empty()
+            {
+                texts.push(SceneText::new(Point::new(x + 1, row_y), cell.clone()));
+            }
+            x += *width as i32 + 1;
+        }
+    }
+    texts
+}
+
+fn draw_endpoint_decoration(canvas: &mut Canvas, decoration: &EndpointDecoration, style: Style) {
+    match decoration.kind {
+        EndpointDecorationKind::Cardinality { minimum, maximum } => {
+            let minimum_glyph = match minimum {
+                CardinalityMinimum::Zero => {
+                    if style.ascii {
+                        'o'
+                    } else {
+                        '○'
+                    }
+                }
+                CardinalityMinimum::One => cardinality_bar(decoration, style),
+            };
+            let maximum_glyph = cardinality_maximum_glyph(decoration, maximum, style);
+            let cells = decoration_cells(decoration);
+            if decoration.at.x == decoration.toward.x {
+                let minimum_at = point(cells[0]);
+                let maximum_at = point(cells[1]);
+                canvas.put_text_char(minimum_at.0, minimum_at.1, minimum_glyph);
+                canvas.put_text_char(maximum_at.0, maximum_at.1, maximum_glyph);
+            } else {
+                let maximum_at = point(cells[0]);
+                let minimum_at = point(cells[1]);
+                canvas.put_text_char(maximum_at.0, maximum_at.1, maximum_glyph);
+                canvas.put_text_char(minimum_at.0, minimum_at.1, minimum_glyph);
+            }
+        }
+        kind => {
+            let ch = match kind {
+                EndpointDecorationKind::OpenArrow => arrow_toward(
+                    point(decoration.at),
+                    point(decoration.toward),
+                    crate::scene::ArrowHead::Open,
+                    style,
+                ),
+                EndpointDecorationKind::OpenTriangle => {
+                    triangle_toward(decoration.at, decoration.toward, style)
+                }
+                EndpointDecorationKind::OpenDiamond => {
+                    if style.ascii {
+                        'o'
+                    } else {
+                        '◇'
+                    }
+                }
+                EndpointDecorationKind::FilledDiamond => {
+                    if style.ascii {
+                        '*'
+                    } else {
+                        '◆'
+                    }
+                }
+                EndpointDecorationKind::Cardinality { .. } => unreachable!(),
+            };
+            let at = point(decoration.at);
+            canvas.put_text_char(at.0, at.1, ch);
+        }
+    }
+}
+
+fn decoration_cells(decoration: &EndpointDecoration) -> Vec<Point> {
+    decoration.paint_cells()
+}
+
+fn cardinality_bar(_decoration: &EndpointDecoration, style: Style) -> char {
+    if style.ascii { '|' } else { '│' }
+}
+
+fn cardinality_maximum_glyph(
+    decoration: &EndpointDecoration,
+    maximum: CardinalityMaximum,
+    style: Style,
+) -> char {
+    match maximum {
+        CardinalityMaximum::One => cardinality_bar(decoration, style),
+        CardinalityMaximum::Many if decoration.toward.x > decoration.at.x => '<',
+        CardinalityMaximum::Many if decoration.toward.x < decoration.at.x => '>',
+        CardinalityMaximum::Many => '<',
+    }
+}
+
+fn triangle_toward(from: Point, to: Point, style: Style) -> char {
+    if style.ascii {
+        return arrow_toward(point(from), point(to), crate::scene::ArrowHead::Open, style);
+    }
+    if to.x > from.x {
+        '▷'
+    } else if to.x < from.x {
+        '◁'
+    } else if to.y > from.y {
+        '▽'
+    } else {
+        '△'
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

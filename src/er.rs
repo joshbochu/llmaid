@@ -2,9 +2,12 @@
 
 use std::collections::HashMap;
 
-use crate::boxed::{BoxDiagram, BoxNode, NodeId};
+use crate::boxed::{BoxDiagram, BoxNode, EdgeEnd, NodeId, decorate_endpoint};
 use crate::parse::{Dir, ParseError, Warning};
-use crate::scene::{EdgeKind, Scene, Shape};
+use crate::scene::{
+    CardinalityMaximum, CardinalityMinimum, EdgeKind, EndpointDecorationKind, Scene, SceneTable,
+    Shape,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttributeKey {
@@ -483,48 +486,89 @@ pub fn dump(diagram: &ErDiagram) -> String {
     out
 }
 
-/// Lowers ER semantics through shared deterministic boxed geometry. Exact
-/// cardinalities and identifying style remain visible in the edge label.
+/// Lower ER semantics into attribute tables and endpoint cardinality glyphs.
 pub fn scene(diagram: &ErDiagram, width: usize) -> Scene {
     let mut boxed = BoxDiagram::new(diagram.direction.unwrap_or(Dir::TB));
-    let nodes: Vec<NodeId> = diagram
+    let tables: Vec<SceneTable> = diagram
         .entities
         .iter()
         .map(|entity| {
-            let mut label = entity.label.clone();
-            for attribute in &entity.attributes {
-                label.push('\n');
-                label.push_str(&attribute.data_type);
-                label.push(' ');
-                label.push_str(&attribute.name);
-                for key in &attribute.keys {
-                    label.push(' ');
-                    label.push_str(key.token());
-                }
-                if let Some(comment) = &attribute.comment {
-                    label.push(' ');
-                    label.push('"');
-                    label.push_str(comment);
-                    label.push('"');
-                }
-            }
-            boxed.add_node(BoxNode::new(&entity.id, label, Shape::Rounded))
+            SceneTable::new(
+                entity.label.clone(),
+                entity
+                    .attributes
+                    .iter()
+                    .map(|attribute| {
+                        vec![
+                            attribute.data_type.clone(),
+                            attribute.name.clone(),
+                            attribute
+                                .keys
+                                .iter()
+                                .map(|key| key.token())
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                            attribute.comment.clone().unwrap_or_default(),
+                        ]
+                    })
+                    .collect(),
+            )
+            .with_row_dividers()
+        })
+        .collect();
+    let nodes: Vec<NodeId> = diagram
+        .entities
+        .iter()
+        .zip(&tables)
+        .map(|(entity, table)| {
+            boxed.add_node(BoxNode::new(
+                &entity.id,
+                table.layout_label(),
+                Shape::Rounded,
+            ))
         })
         .collect();
     for relationship in &diagram.relationships {
-        let semantics = format!(
-            "{}{}{} : {}",
-            relationship.left_cardinality,
-            relationship.kind.connector(),
-            relationship.right_cardinality,
-            relationship.label
-        );
         let mut edge = boxed.add_edge(nodes[relationship.from], nodes[relationship.to]);
-        edge.label(semantics);
+        edge.label(relationship.label.clone());
         edge.without_arrow();
         if relationship.kind == RelationshipKind::NonIdentifying {
             edge.kind(EdgeKind::Dotted);
         }
     }
-    boxed.scene(width)
+
+    // Attribute columns remain intact under narrow budgets; the documented B9
+    // fallback permits over-width output rather than corrupting table structure.
+    let mut scene = boxed.scene(width.max(10_000));
+    for (box_, table) in scene.boxes.iter_mut().zip(tables) {
+        box_.lines.clear();
+        box_.table = Some(table);
+    }
+    for (edge_index, relationship) in diagram.relationships.iter().enumerate() {
+        decorate_endpoint(
+            &mut scene,
+            edge_index,
+            EdgeEnd::Source,
+            cardinality_decoration(&relationship.left_cardinality),
+        );
+        decorate_endpoint(
+            &mut scene,
+            edge_index,
+            EdgeEnd::Target,
+            cardinality_decoration(&relationship.right_cardinality),
+        );
+    }
+    scene.normalize();
+    scene
+}
+
+fn cardinality_decoration(token: &str) -> EndpointDecorationKind {
+    let (minimum, maximum) = match token {
+        "||" => (CardinalityMinimum::One, CardinalityMaximum::One),
+        "|o" | "o|" => (CardinalityMinimum::Zero, CardinalityMaximum::One),
+        "}o" | "o{" => (CardinalityMinimum::Zero, CardinalityMaximum::Many),
+        "}|" | "|{" => (CardinalityMinimum::One, CardinalityMaximum::Many),
+        _ => unreachable!("parser validates ER cardinalities"),
+    };
+    EndpointDecorationKind::Cardinality { minimum, maximum }
 }

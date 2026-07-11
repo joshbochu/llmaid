@@ -118,6 +118,8 @@ Mermaid as the only primary agent language.
 | State machines | P | N | Y | N | P | Y |
 | Class diagrams | P | N | Y | N | P | Y |
 | ER diagrams | P | N | Y | N | P | Y |
+| Class compartments + UML endpoints | Y | N | P | N | P | Y |
+| ER attribute tables + endpoint cardinality | Y | N | P | N | P | Y |
 
 **Roadmap:** Phase 3. (graph-easy can fake some via shapes; not first-class.)
 

@@ -830,6 +830,7 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
             rect: Rect::new(centers[index] - widths[index] / 2, 0, widths[index], 3),
             lines: vec![participant.label.clone()],
             shape: Shape::Rect,
+            table: None,
         })
         .collect();
     let mut next_box_id = sequence.participants.len();
@@ -878,6 +879,7 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
             rect: Rect::new(x, y, width, 3),
             lines: vec![note.text.clone()],
             shape: Shape::Rect,
+            table: None,
         });
         next_box_id += 1;
     }
@@ -912,6 +914,7 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
                         rect,
                         lines: Vec::new(),
                         shape: Shape::Rect,
+                        table: None,
                     },
                 ));
                 next_box_id += 1;
@@ -1108,6 +1111,8 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
         groups,
         paths,
         edges,
+        endpoint_decorations: Vec::new(),
+        texts: Vec::new(),
     }
 }
 

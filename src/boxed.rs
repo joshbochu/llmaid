@@ -7,7 +7,16 @@
 use crate::layout;
 use crate::parse::{Dir, Edge, Graph, Node};
 use crate::route;
-use crate::scene::{EdgeKind, Scene, Shape};
+use crate::scene::{
+    EdgeKind, EndpointDecoration, EndpointDecorationKind, Point, Scene, SceneText, Shape,
+};
+use unicode_width::UnicodeWidthStr;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdgeEnd {
+    Source,
+    Target,
+}
 
 /// Stable declaration-order handle returned by [`BoxDiagram::add_node`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -158,4 +167,74 @@ impl BoxDiagram {
             .collect();
         graph
     }
+}
+
+/// Attach a paint-level relationship glyph one cell outside an edge endpoint.
+pub fn decorate_endpoint(
+    scene: &mut Scene,
+    edge_index: usize,
+    end: EdgeEnd,
+    kind: EndpointDecorationKind,
+) {
+    let Some((at, toward)) = endpoint_anchor(scene, edge_index, end) else {
+        return;
+    };
+    scene.endpoint_decorations.push(EndpointDecoration {
+        edge: edge_index,
+        at,
+        toward,
+        kind,
+    });
+}
+
+/// Place endpoint metadata (such as a UML multiplicity) beside, rather than
+/// inside, the centered relationship label.
+pub fn annotate_endpoint(scene: &mut Scene, edge_index: usize, end: EdgeEnd, text: &str) {
+    let Some((at, toward)) = endpoint_anchor(scene, edge_index, end) else {
+        return;
+    };
+    let text_width = text.width() as i32;
+    let position = if at.x != toward.x {
+        let away = (at.x - toward.x).signum();
+        let x = if away > 0 {
+            at.x + 1
+        } else {
+            at.x - text_width - 1
+        };
+        Point::new(x, at.y - 1)
+    } else {
+        Point::new(at.x + 2, at.y)
+    };
+    scene.texts.push(SceneText::new(position, text));
+}
+
+fn endpoint_anchor(scene: &Scene, edge_index: usize, end: EdgeEnd) -> Option<(Point, Point)> {
+    let edge = scene.edges.iter().find(|edge| edge.edge == edge_index)?;
+    match end {
+        EdgeEnd::Source => {
+            let toward = *edge.points.first()?;
+            let next = *edge.points.get(1)?;
+            Some((step_toward(toward, next), toward))
+        }
+        EdgeEnd::Target => {
+            let toward = edge
+                .arrow
+                .as_ref()
+                .map(|arrow| arrow.toward)
+                .or_else(|| edge.points.last().copied())?;
+            let previous = if edge.arrow.is_some() {
+                *edge.points.last()?
+            } else {
+                *edge.points.get(edge.points.len().checked_sub(2)?)?
+            };
+            Some((step_toward(toward, previous), toward))
+        }
+    }
+}
+
+fn step_toward(from: Point, to: Point) -> Point {
+    Point::new(
+        from.x + (to.x - from.x).signum(),
+        from.y + (to.y - from.y).signum(),
+    )
 }

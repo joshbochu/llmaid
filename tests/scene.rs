@@ -19,6 +19,7 @@ fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
             rect: Rect::new(-4, -2, 5, 3),
             lines: vec!["界".into()],
             shape: Shape::Rect,
+            table: None,
         }],
         foreground_boxes: vec![],
         groups: vec![SceneGroup {
@@ -39,6 +40,8 @@ fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
                 head: ArrowHead::Filled,
             }),
         }],
+        endpoint_decorations: vec![],
+        texts: vec![],
     };
 
     assert_eq!(scene.bounds(), Rect::new(-6, -4, 16, 7));
@@ -58,6 +61,7 @@ fn scene_normalize_translates_every_primitive_once() {
             rect: Rect::new(-3, -2, 5, 3),
             lines: vec!["node".into()],
             shape: Shape::Rounded,
+            table: None,
         }],
         foreground_boxes: vec![],
         groups: vec![],
@@ -74,6 +78,8 @@ fn scene_normalize_translates_every_primitive_once() {
                 head: ArrowHead::Filled,
             }),
         }],
+        endpoint_decorations: vec![],
+        texts: vec![],
     };
 
     let size = scene.normalize();
@@ -98,6 +104,7 @@ fn foreground_box_owns_bounds_normalization_and_paints_over_paths() {
             rect: Rect::new(-2, -1, 9, 3),
             lines: vec!["note".into()],
             shape: Shape::Rect,
+            table: None,
         }],
         groups: vec![],
         paths: vec![llmaid::scene::ScenePath {
@@ -107,6 +114,8 @@ fn foreground_box_owns_bounds_normalization_and_paints_over_paths() {
             kind: EdgeKind::Dotted,
         }],
         edges: vec![],
+        endpoint_decorations: vec![],
+        texts: vec![],
     };
 
     assert_eq!(scene.bounds(), Rect::new(-2, -2, 9, 6));
@@ -294,6 +303,8 @@ fn scene_invariants_detect_a_label_overwritten_by_another_edge() {
                 arrow: None,
             },
         ],
+        endpoint_decorations: vec![],
+        texts: vec![],
     };
 
     let (_, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
@@ -314,6 +325,7 @@ fn scene_invariants_detect_an_edge_crossing_an_unrelated_box() {
             rect: Rect::new(2, 0, 5, 3),
             lines: vec![],
             shape: Shape::Rect,
+            table: None,
         }],
         foreground_boxes: vec![],
         groups: vec![],
@@ -326,6 +338,8 @@ fn scene_invariants_detect_an_edge_crossing_an_unrelated_box() {
             label: None,
             arrow: None,
         }],
+        endpoint_decorations: vec![],
+        texts: vec![],
     };
 
     let (_, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });

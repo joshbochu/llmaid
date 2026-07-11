@@ -139,6 +139,74 @@ pub struct SceneBox {
     pub rect: Rect,
     pub lines: Vec<String>,
     pub shape: Shape,
+    pub table: Option<SceneTable>,
+}
+
+/// Structured box content used by class and ER diagrams. The title spans the
+/// full box; rows use stable, padded columns beneath a horizontal divider.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SceneTable {
+    pub title: String,
+    pub rows: Vec<Vec<String>>,
+    pub row_dividers: bool,
+}
+
+impl SceneTable {
+    pub fn new(title: impl Into<String>, rows: Vec<Vec<String>>) -> Self {
+        Self {
+            title: title.into(),
+            rows,
+            row_dividers: false,
+        }
+    }
+
+    pub fn with_row_dividers(mut self) -> Self {
+        self.row_dividers = true;
+        self
+    }
+
+    pub fn layout_label(&self) -> String {
+        if self.rows.is_empty() {
+            return self.title.clone();
+        }
+        let width = self.title.width().max(self.grid_width()).max(1);
+        let placeholder = " ".repeat(width);
+        let dividers = if self.row_dividers {
+            self.rows.len().saturating_sub(1)
+        } else {
+            0
+        };
+        let mut lines = Vec::with_capacity(self.rows.len() + dividers + 2);
+        lines.push(self.title.clone());
+        lines.push(String::new());
+        for row in 0..self.rows.len() {
+            lines.push(placeholder.clone());
+            if self.row_dividers && row + 1 < self.rows.len() {
+                lines.push(String::new());
+            }
+        }
+        lines.join("\n")
+    }
+
+    pub(crate) fn column_widths(&self) -> Vec<usize> {
+        let columns = self.rows.iter().map(Vec::len).max().unwrap_or(0);
+        (0..columns)
+            .map(|column| {
+                self.rows
+                    .iter()
+                    .filter_map(|row| row.get(column))
+                    .map(|cell| cell.width())
+                    .max()
+                    .unwrap_or(0)
+                    + 2
+            })
+            .collect()
+    }
+
+    pub(crate) fn grid_width(&self) -> usize {
+        let widths = self.column_widths();
+        widths.iter().sum::<usize>() + widths.len().saturating_sub(1)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -159,6 +227,63 @@ pub struct Arrow {
     pub at: Point,
     pub toward: Point,
     pub head: ArrowHead,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CardinalityMinimum {
+    Zero,
+    One,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CardinalityMaximum {
+    One,
+    Many,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EndpointDecorationKind {
+    OpenArrow,
+    OpenTriangle,
+    OpenDiamond,
+    FilledDiamond,
+    Cardinality {
+        minimum: CardinalityMinimum,
+        maximum: CardinalityMaximum,
+    },
+}
+
+/// Paint-level relationship adornment anchored one cell outside a box. `toward`
+/// points from the anchor back toward that endpoint's box border.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EndpointDecoration {
+    pub edge: usize,
+    pub at: Point,
+    pub toward: Point,
+    pub kind: EndpointDecorationKind,
+}
+
+impl EndpointDecoration {
+    fn away(&self) -> Point {
+        Point::new(
+            self.at.x + (self.at.x - self.toward.x).signum(),
+            self.at.y + (self.at.y - self.toward.y).signum(),
+        )
+    }
+
+    pub(crate) fn paint_cells(&self) -> Vec<Point> {
+        if !matches!(self.kind, EndpointDecorationKind::Cardinality { .. }) {
+            return vec![self.at];
+        }
+        if self.at.x == self.toward.x {
+            vec![
+                Point::new(self.at.x + 2, self.at.y),
+                Point::new(self.at.x + 3, self.at.y),
+            ]
+        } else {
+            vec![self.at, self.away()]
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -195,6 +320,8 @@ pub struct Scene {
     pub groups: Vec<SceneGroup>,
     pub paths: Vec<ScenePath>,
     pub edges: Vec<RoutedEdge>,
+    pub endpoint_decorations: Vec<EndpointDecoration>,
+    pub texts: Vec<SceneText>,
 }
 
 impl Scene {
@@ -226,6 +353,14 @@ impl Scene {
                 bounds = bounds.union(Rect::containing(arrow.at));
                 bounds = bounds.union(Rect::containing(arrow.toward));
             }
+        }
+        for decoration in &self.endpoint_decorations {
+            for cell in decoration.paint_cells() {
+                bounds = bounds.union(Rect::containing(cell));
+            }
+        }
+        for text in &self.texts {
+            bounds = bounds.union(text.bounds());
         }
         bounds
     }
@@ -262,6 +397,13 @@ impl Scene {
                 arrow.at = arrow.at.translated(dx, dy);
                 arrow.toward = arrow.toward.translated(dx, dy);
             }
+        }
+        for decoration in &mut self.endpoint_decorations {
+            decoration.at = decoration.at.translated(dx, dy);
+            decoration.toward = decoration.toward.translated(dx, dy);
+        }
+        for text in &mut self.texts {
+            text.translate(dx, dy);
         }
         let after = self.bounds();
         (after.w.max(0) as usize, after.h.max(0) as usize)

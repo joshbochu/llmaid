@@ -33,7 +33,7 @@ Agents speak Mermaid; we own primitives behind the door.
 | 0 | Ship & tighten flowchart | **done** |
 | 1 | Flowchart completeness (subgraphs / graph-easy parity) | **done** (1.1 flat; nested parent field ready) |
 | 2 | Sequence diagrams | **done** (core + controls) |
-| 3 | Design-doc types (state / class / ER) | **done** (flat/core subsets) |
+| 3 | Design-doc types (state / class / ER) | **done** (core + visual fidelity) |
 | 4 | Hierarchy & planning (mindmap / gantt / git) | later |
 | 5 | Charts & boards (selective) | later |
 | 6 | Agent self-debug loop | **in progress** (6.2–6.3 and 6.5 done) |
@@ -101,7 +101,7 @@ plus `sequence-core`, `sequence-notes`, `sequence-activation`, and
 
 ---
 
-## Phase 3 — Design-doc types · **done** (core)
+## Phase 3 — Design-doc types · **done** (core + visual fidelity)
 
 Boxed-graph family; reuse canvas + much of edge drawing.
 
@@ -110,9 +110,11 @@ Boxed-graph family; reuse canvas + much of edge drawing.
 | 3.1 | `stateDiagram` / `stateDiagram-v2` (flat first, nested later) | **done** — aliases, markers, labels, directions |
 | 3.2 | `classDiagram` | **done** — members, relations, multiplicities |
 | 3.3 | `erDiagram` | **done** — attributes, keys, cardinalities |
+| 3.4 | Native terminal visual grammar | **done** — compartments, tables, UML/ER endpoint adornments |
 
 **Exit met:** design conversations have a visual home in the terminal; B21–B23
-plus state/class/ER goldens and generated direction coverage.
+plus state/class/ER goldens, generated direction coverage, and exact endpoint /
+structured-box quality contracts.
 
 ---
 

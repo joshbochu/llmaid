@@ -1,0 +1,13 @@
+type: er
+direction: LR
+entities:
+  0: A [A]
+  1: B [B]
+  2: C [C]
+  3: D [D]
+  4: E [E]
+relationships:
+  A ||--|| B : "exactly one"
+  B |o--o| C : "optional"
+  C }o--o{ D : "many"
+  D }|--|{ E : "at least one"

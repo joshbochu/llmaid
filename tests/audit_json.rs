@@ -104,18 +104,21 @@ fn violation_has_a_stable_name_and_exact_normalized_witness() {
                 rect: Rect::new(-2, 0, 3, 3),
                 lines: vec!["A".into()],
                 shape: Shape::Rect,
+                table: None,
             },
             SceneBox {
                 node: 1,
                 rect: Rect::new(8, 0, 3, 3),
                 lines: vec!["B".into()],
                 shape: Shape::Rect,
+                table: None,
             },
             SceneBox {
                 node: 2,
                 rect: Rect::new(3, 0, 3, 3),
                 lines: vec!["C".into()],
                 shape: Shape::Rect,
+                table: None,
             },
         ],
         edges: vec![RoutedEdge {

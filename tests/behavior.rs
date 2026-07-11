@@ -671,11 +671,17 @@ classDiagram
         "Customer",
         "+String name",
         "+buy(ticket) bool",
-        "1 o-- 0..* : owns",
-        "..|> : persists as",
+        "0..*",
+        "owns",
+        "persists as",
     ] {
         assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
     }
+    assert!(unicode.contains('◇') && unicode.contains('▷'), "{unicode}");
+    assert!(
+        !unicode.contains("o--") && !unicode.contains("..|>"),
+        "{unicode}"
+    );
     let (repeat, _, code) = run_llmaid(&[], source);
     assert_eq!(code, 0);
     assert_eq!(unicode, repeat);
@@ -707,13 +713,20 @@ erDiagram
     assert_eq!(code, 0, "{stderr}");
     for label in [
         "Customer Account",
-        "string customer_id PK UK",
-        "string region_id FK",
-        "||--o{ : places",
-        "}o..|| : generates",
+        "customer_id",
+        "PK UK",
+        "public identifier",
+        "region_id",
+        "places",
+        "generates",
     ] {
         assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
     }
+    assert!(unicode.contains('○') && unicode.contains('<'), "{unicode}");
+    assert!(
+        !unicode.contains("||--o{") && !unicode.contains("}o..||"),
+        "{unicode}"
+    );
     let (repeat, _, code) = run_llmaid(&[], source);
     assert_eq!(code, 0);
     assert_eq!(unicode, repeat);
@@ -740,6 +753,7 @@ fn b24_given_runtime_invariant_failure_then_checked_render_returns_actionable_di
             rect: Rect::new(2, 0, 5, 3),
             lines: vec![],
             shape: Shape::Rect,
+            table: None,
         }],
         edges: vec![RoutedEdge {
             edge: 0,

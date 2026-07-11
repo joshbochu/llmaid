@@ -102,15 +102,18 @@ structural coverage lives beside its engine tests. Decisions behind these:
   states and malformed statements name the source line and expectation.
 - **B22** Given a `classDiagram` containing classes, visibility-bearing
   members/methods, primary UML relation operators, multiplicities, labels, and
-  a direction, when rendered, then all visible semantics remain in the class
-  boxes or relation labels. Unicode and `--ascii` output are deterministic and
+  a direction, when rendered, then names and members occupy separated class
+  compartments, UML diamonds/arrows/triangles sit at their semantic endpoints,
+  and multiplicities sit beside those endpoints instead of being embedded in
+  raw operator text. Unicode and `--ascii` output are deterministic and
   malformed declarations/relations name the source line and expectation.
 - **B23** Given an `erDiagram` containing aliased entities, typed attributes,
   PK/FK/UK markers, comments, zero/one/many cardinalities, identifying or
-  non-identifying relations, labels, and a direction, when rendered, then all
-  visible semantics are preserved. Unicode and `--ascii` output are
-  deterministic and malformed attributes/relationships name the source line
-  and expectation.
+  non-identifying relations, labels, and a direction, when rendered, then
+  attributes occupy aligned table rows and columns while min/max cardinality
+  glyphs sit at their relationship endpoints; raw Mermaid relation tokens are
+  not used as substitute labels. Unicode and `--ascii` output are deterministic
+  and malformed attributes/relationships name the source line and expectation.
 
 ## Runtime self-checks
 

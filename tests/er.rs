@@ -162,17 +162,17 @@ fn scene_is_deterministic_ascii_capable_and_invariant_clean() {
     assert!(first.edges.iter().all(|edge| edge.arrow.is_none()));
     let (unicode, failures) = render::render_scene_with_checks(&first, Style { ascii: false });
     assert!(failures.is_empty(), "{}\n{unicode}", failures.join("\n"));
-    for visible in [
-        "Customer",
-        "string id PK",
-        "||--o{ : places",
-        "}o..|| : generates",
-    ] {
+    for visible in ["Customer", "string", "id", "PK", "places", "generates"] {
         assert!(unicode.contains(visible), "missing {visible:?}:\n{unicode}");
     }
+    assert!(unicode.contains('○') && unicode.contains('<'), "{unicode}");
+    assert!(
+        !unicode.contains("||--o{") && !unicode.contains("}o..||"),
+        "{unicode}"
+    );
     let ascii = render::render_scene(&first, Style { ascii: true });
     assert!(ascii.is_ascii(), "{ascii}");
-    assert!(ascii.contains("||--o{"), "{ascii}");
+    assert!(ascii.contains("o<"), "{ascii}");
 }
 
 #[test]
@@ -191,4 +191,52 @@ fn entity_alias_quotes_must_be_balanced() {
     let error = er::parse("erDiagram\nA[\"unclosed]\n").unwrap_err();
     assert_eq!(error.line, 2);
     assert!(error.msg.contains("closing `\"`"), "{error}");
+}
+
+#[test]
+fn visual_fidelity_uses_attribute_table_and_endpoint_cardinalities() {
+    let diagram = er::parse(
+        "erDiagram\ndirection LR\nCUSTOMER[Customer Account] {\nstring customer_id PK, UK \"public identifier\"\nstring region_id FK\n}\nCUSTOMER ||--o{ ORDER : places\nORDER }o..|| RECEIPT : generates\n",
+    )
+    .unwrap();
+    let scene = er::scene(&diagram, 140);
+    let (unicode, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+    assert!(failures.is_empty(), "{}\n{unicode}", failures.join("\n"));
+    assert!(unicode.contains('├') && unicode.contains('┤'), "{unicode}");
+    assert!(
+        unicode.contains("string") && unicode.contains("customer_id"),
+        "{unicode}"
+    );
+    assert!(
+        unicode.contains("PK UK") && unicode.contains("public identifier"),
+        "{unicode}"
+    );
+    assert!(
+        unicode.contains('○') && (unicode.contains('<') || unicode.contains('>')),
+        "{unicode}"
+    );
+    assert!(
+        unicode.contains("places") && unicode.contains("generates"),
+        "{unicode}"
+    );
+    assert!(
+        !unicode.contains("||--o{") && !unicode.contains("}o..||"),
+        "{unicode}"
+    );
+
+    let ascii = render::render_scene(&scene, Style { ascii: true });
+    assert!(ascii.is_ascii(), "{ascii}");
+    for width in [1, 50, 100] {
+        let narrow = er::scene(&diagram, width);
+        let (narrow_output, narrow_failures) =
+            render::render_scene_with_checks(&narrow, Style { ascii: false });
+        assert!(
+            narrow_failures.is_empty(),
+            "width {width}: {narrow_failures:#?}"
+        );
+        assert_eq!(
+            narrow_output, unicode,
+            "structured ER changed at width {width}"
+        );
+    }
 }

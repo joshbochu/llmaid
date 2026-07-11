@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-11 — Phase 3 design-doc types and runtime checks landed.
+Last updated: 2026-07-11 — Phase 3.4 design-doc visual fidelity landed.
 
 ## What this project is
 
@@ -37,6 +37,10 @@ without losing glance quality.
   cardinalities, and identifying/non-identifying relations
 - Typed boxed adapter: state/class/ER retain independent semantic IR and join
   the established integer layered geometry only when lowering to `Scene`
+- Design-doc visual grammar: class headers/members use compartments; UML
+  aggregation/composition/inheritance/realization semantics use endpoint
+  diamonds/arrows/triangles; ER attributes use aligned table rows/columns and
+  zero/one/many glyphs attach at relationship endpoints in Unicode and ASCII
 - Sequence visual grammar: calls end with a filled arrow at the destination
   lifeline (`────▶┊`); returns begin at the destination with a thin arrow
   (`┊←────`); active messages attach to the nearest bar boundary; ASCII uses
@@ -85,8 +89,8 @@ without losing glance quality.
 1. **Phase 4.1** — `mindmap` / tree hierarchy
 2. Planning timelines and `gitGraph`, then selective charts
 3. Remaining agent diagnostics (JSON parser errors / optional JSON IR input)
-4. Shared visual-quality slice: native state pseudo-markers and endpoint
-   adornments for UML/ER relations; optional nested state/subgraph polish
+4. Optional visual polish: native state pseudo-markers and nested
+   state/subgraph handling
 
 Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 

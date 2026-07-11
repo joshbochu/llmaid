@@ -1,0 +1,13 @@
+type: class
+direction: LR
+classes:
+  0: Base
+  1: Service
+  2: Worker
+  3: Port
+  4: Contract
+relations:
+  Base <|-- Service : inherits
+  Service *-- Worker : owns
+  Worker ..> Port : calls
+  Port ..|> Contract : implements

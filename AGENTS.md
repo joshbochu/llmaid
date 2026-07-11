@@ -54,8 +54,9 @@ main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ────�
 - `sequence.rs` — sequence semantic IR + integer lifeline/message layout.
 - `state.rs` / `class.rs` / `er.rs` — independent design-doc semantic IR;
   lower structured boxes/relations through `boxed.rs` into shared geometry.
-- `scene.rs` — shared `Point` / `Rect` / path / text primitives; normalizes the
-  finished scene once and derives exact bounds.
+- `scene.rs` — shared `Point` / `Rect` / path / text primitives plus structured
+  tables and endpoint decorations; normalizes the finished scene once and
+  derives exact bounds.
 - `render.rs` — pure scene painter + char canvas; box-drawing junctions resolved
   via bitmask lookup
   (`─` meets `│` ⇒ `┼`).

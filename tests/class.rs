@@ -152,8 +152,9 @@ fn scene_is_invariant_clean_deterministic_and_preserves_visible_semantics() {
         "Customer",
         "+name String",
         "+buy(ticket)",
-        "1 o-- 0..* : owns",
-        "..|> : persists as",
+        "0..*",
+        "owns",
+        "persists as",
     ] {
         assert!(unicode.contains(visible), "missing {visible:?}:\n{unicode}");
     }
@@ -182,15 +183,60 @@ fn relation_labels_may_contain_relation_operators() {
 }
 
 #[test]
-fn only_target_directed_class_relations_use_generic_arrowheads() {
+fn class_relations_use_semantic_endpoint_decorations_not_generic_arrowheads() {
     let diagram = class::parse(
         "classDiagram\nA <|-- B\nB *-- C\nC o-- D\nD --> E\nE -- F\nF ..> G\nG ..|> H\n",
     )
     .unwrap();
-    let arrows: Vec<_> = class::scene(&diagram, 120)
-        .edges
-        .iter()
-        .map(|edge| edge.arrow.is_some())
-        .collect();
-    assert_eq!(arrows, [false, false, false, true, false, true, true]);
+    let scene = class::scene(&diagram, 120);
+    assert!(scene.edges.iter().all(|edge| edge.arrow.is_none()));
+    assert_eq!(scene.endpoint_decorations.len(), 6);
+}
+
+#[test]
+fn visual_fidelity_uses_compartments_and_endpoint_adornments() {
+    let diagram = class::parse(
+        "classDiagram\ndirection LR\nclass Customer {\n+String name\n}\nCustomer \"1\" o-- \"0..*\" Ticket : owns\nTicket ..|> Record : persists as\n",
+    )
+    .unwrap();
+    let scene = class::scene(&diagram, 120);
+    let (unicode, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+    assert!(failures.is_empty(), "{}\n{unicode}", failures.join("\n"));
+    assert!(unicode.contains('├') && unicode.contains('┤'), "{unicode}");
+    assert!(
+        unicode.contains('◇'),
+        "aggregation diamond missing:\n{unicode}"
+    );
+    assert!(
+        unicode.contains('▷'),
+        "realization triangle missing:\n{unicode}"
+    );
+    assert!(
+        unicode.contains("owns") && unicode.contains("persists as"),
+        "{unicode}"
+    );
+    assert!(
+        unicode.contains('1') && unicode.contains("0..*"),
+        "{unicode}"
+    );
+    assert!(
+        !unicode.contains("o--") && !unicode.contains("..|>"),
+        "{unicode}"
+    );
+
+    let ascii = render::render_scene(&scene, Style { ascii: true });
+    assert!(ascii.is_ascii(), "{ascii}");
+    for width in [1, 50, 100] {
+        let narrow = class::scene(&diagram, width);
+        let (narrow_output, narrow_failures) =
+            render::render_scene_with_checks(&narrow, Style { ascii: false });
+        assert!(
+            narrow_failures.is_empty(),
+            "width {width}: {narrow_failures:#?}"
+        );
+        assert_eq!(
+            narrow_output, unicode,
+            "structured class changed at width {width}"
+        );
+    }
 }

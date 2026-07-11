@@ -1,6 +1,7 @@
 use llmaid::audit;
+use llmaid::scene::{CardinalityMaximum, CardinalityMinimum, EndpointDecorationKind};
 use llmaid::style::Style;
-use llmaid::{layout, parse, render, route};
+use llmaid::{class, er, layout, parse, render, route};
 use unicode_width::UnicodeWidthStr;
 
 fn audit_source(source: &str) -> audit::GeometryAudit {
@@ -324,4 +325,60 @@ fn opposite_directions_have_equal_normalized_quality() {
 
         assert_eq!(a.comparable_signature(), b.comparable_signature());
     }
+}
+
+#[test]
+fn class_adornments_are_exactly_adjacent_to_their_semantic_endpoint() {
+    let diagram = class::parse(
+        "classDiagram\ndirection LR\nclass Whole {\n+id\n}\nWhole \"1\" *-- \"0..*\" Part : contains\n",
+    )
+    .unwrap();
+    let scene = class::scene(&diagram, 100);
+    let decoration = &scene.endpoint_decorations[0];
+    assert_eq!(decoration.kind, EndpointDecorationKind::FilledDiamond);
+    assert_eq!(
+        (decoration.at.x - decoration.toward.x).abs()
+            + (decoration.at.y - decoration.toward.y).abs(),
+        1
+    );
+    assert!(scene.boxes[0].rect.contains(decoration.toward));
+    assert!(!scene.boxes[0].rect.contains(decoration.at));
+    assert_eq!(scene.texts.len(), 2);
+    assert_eq!(scene.boxes[0].table.as_ref().unwrap().rows.len(), 1);
+    assert_eq!(scene.boxes[0].rect.h, 5);
+}
+
+#[test]
+fn er_cardinalities_are_exactly_adjacent_and_tables_keep_one_row_per_attribute() {
+    let diagram = er::parse(
+        "erDiagram\ndirection LR\nA {\nstring id PK\nstring parent_id FK\n}\nA ||--o{ B : owns\n",
+    )
+    .unwrap();
+    let scene = er::scene(&diagram, 100);
+    assert_eq!(scene.endpoint_decorations.len(), 2);
+    assert_eq!(
+        scene.endpoint_decorations[0].kind,
+        EndpointDecorationKind::Cardinality {
+            minimum: CardinalityMinimum::One,
+            maximum: CardinalityMaximum::One,
+        }
+    );
+    assert_eq!(
+        scene.endpoint_decorations[1].kind,
+        EndpointDecorationKind::Cardinality {
+            minimum: CardinalityMinimum::Zero,
+            maximum: CardinalityMaximum::Many,
+        }
+    );
+    for (decoration, box_) in scene.endpoint_decorations.iter().zip(&scene.boxes) {
+        assert_eq!(
+            (decoration.at.x - decoration.toward.x).abs()
+                + (decoration.at.y - decoration.toward.y).abs(),
+            1
+        );
+        assert!(box_.rect.contains(decoration.toward));
+        assert!(!box_.rect.contains(decoration.at));
+    }
+    assert_eq!(scene.boxes[0].table.as_ref().unwrap().rows.len(), 2);
+    assert_eq!(scene.boxes[0].rect.h, 7);
 }
