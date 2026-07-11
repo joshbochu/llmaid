@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod layout;
 pub mod metrics;
 pub mod parse;

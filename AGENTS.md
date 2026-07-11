@@ -4,7 +4,7 @@ Mermaid in, clean deterministic terminal diagrams out. A single fast Rust
 binary that coding agents use to compose diagrams into their output (agents
 create/self-debug; humans look at the visuals).
 
-Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B14),
+Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B16),
 `ROADMAP.md` for phased work, `MATRIX.md` for capability coverage vs other
 tools. Log decisions in `CHANGELOG.md`. Mid-stream? `HANDOFF.md`.
 
@@ -18,9 +18,14 @@ cargo build --release            # optimized binary at target/release/llmaid
 
 ./scripts/show-gallery.sh        # eyeball all golden cases (live render)
 ./scripts/show-gallery.sh --txt  # same, from committed *.txt (fast)
+./scripts/review-gallery.py --serve # browser bulk review; autosaves annotations
+./scripts/review-gallery.py      # terminal slideshow (glyph-fidelity check)
+./scripts/review-gallery.py --live  # terminal slideshow from current renderer
+./scripts/review-gallery.py --html target/llmaid-review.html
 ./scripts/contact-sheet.py       # packed contact sheet (terminal shelves)
 ./scripts/contact-sheet.py --html -o /tmp/llmaid-gallery.html
-cargo run -q --example symmetry  # grid/symmetry metrics table (all goldens)
+python3 -m unittest scripts/test_review_gallery.py
+cargo run -q --example symmetry  # exact geometry-quality audit (all goldens)
 UPDATE_GOLDEN=1 cargo test        # regen tests/cases/*.{ir,txt} after intentional changes
 ```
 
@@ -73,8 +78,14 @@ main.rs → parse.rs → layout.rs → route.rs → Scene → render.rs
   (`tests/cases/*.mmd` + `*.txt`, byte-compared). Update snapshots only when
   you can articulate why the new output is *better*, and note it in the commit.
   Rendered-frame invariant checks (borders closed, edges reach endpoints,
-  no text overwritten) must pass for all cases.
+  no text overwritten, edges avoid non-endpoint boxes) must pass for all cases.
+- Quality changes: add an exact topology-specific contract in `tests/quality.rs`.
+  Use doubled cell centers (`2 * origin + extent - 1`); do not introduce a
+  global scalar "beauty" score.
 - Output style: rounded corners `╭╮╰╯`, thin lines, `▶` arrowheads, 1-space
   box padding, trailing whitespace stripped, no color in v1.
 - When output quality is in question, render the reference diagrams in
   `tests/cases/` and eyeball them — aesthetics are a spec here, not a nice-to-have.
+  Use `review-gallery.py --serve` for bulk browser annotations, then confirm
+  suspicious cases in the terminal slideshow. Its local `.llmaid-review.json`
+  records `pass` / `needs-work` plus notes without changing committed goldens.

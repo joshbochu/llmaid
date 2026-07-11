@@ -1,0 +1,12 @@
+direction: TB
+nodes:
+  D rect "Final"
+  M rect "Merge"
+  A rect "Left"
+  B rect "RightSide"
+  C rect "Other"
+edges:
+  A --> M
+  B --> M
+  M --> D
+  C --> D

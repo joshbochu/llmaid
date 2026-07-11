@@ -6,6 +6,7 @@ use llmaid::scene::{Arrow, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup,
 use llmaid::style::Style;
 use std::fs;
 use std::path::PathBuf;
+use unicode_width::UnicodeWidthStr;
 
 #[test]
 fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
@@ -35,6 +36,12 @@ fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
     };
 
     assert_eq!(scene.bounds(), Rect::new(-6, -4, 16, 7));
+}
+
+#[test]
+fn doubled_rect_centers_preserve_odd_and_even_cell_parity() {
+    assert_eq!(Rect::new(3, 5, 5, 3).center2(), Point::new(10, 12));
+    assert_eq!(Rect::new(3, 5, 4, 2).center2(), Point::new(9, 11));
 }
 
 #[test]
@@ -92,6 +99,31 @@ fn forward_routing_produces_complete_screen_space_edges() {
 }
 
 #[test]
+fn horizontal_bend_labels_sit_on_their_branch_segment() {
+    for source in [
+        include_str!("cases/diamond.mmd"),
+        include_str!("cases/edge-labels.mmd"),
+    ] {
+        let graph = parse::parse(source).unwrap();
+        let placed = layout::layout(&graph, 100);
+        let scene = route::route(&graph, &placed);
+
+        for edge in scene.edges.iter().filter(|edge| edge.label.is_some()) {
+            let label = edge.label.as_ref().unwrap();
+            let label_left = label.at.x;
+            let label_right = label_left + label.text.width() as i32 - 1;
+            let supported = edge.points.windows(2).any(|points| {
+                points[0].y == label.at.y
+                    && points[1].y == label.at.y
+                    && label_left >= points[0].x.min(points[1].x)
+                    && label_right <= points[0].x.max(points[1].x)
+            });
+            assert!(supported, "edge {} label floats off its path", edge.edge);
+        }
+    }
+}
+
+#[test]
 fn scene_painter_preserves_forward_geometry_and_removes_dead_origin_space() {
     for source in [
         "flowchart LR\nA[source] -->|scan| B[tokens]\nA --> C[errors]\n",
@@ -142,6 +174,25 @@ flowchart TB
     assert_eq!(
         render::render_scene(&scene, style),
         strip_common_indent(&expected)
+    );
+}
+
+#[test]
+fn self_loop_has_a_readable_return_leg_below_the_box() {
+    let graph = parse::parse("flowchart TB\nA[Interpreter] -->|again| A\n").unwrap();
+    let placed = layout::layout(&graph, 100);
+    let scene = route::route(&graph, &placed);
+    let box_bottom = scene.boxes[0].rect.bottom();
+    let loop_bottom = scene.edges[0]
+        .points
+        .iter()
+        .map(|point| point.y)
+        .max()
+        .unwrap();
+
+    assert!(
+        loop_bottom > box_bottom,
+        "self-loop should extend at least two rows beyond the bottom border"
     );
 }
 
@@ -210,6 +261,38 @@ fn scene_invariants_detect_a_label_overwritten_by_another_edge() {
         failures
             .iter()
             .any(|failure| failure.contains("edge 0 label") && failure.contains("overwritten")),
+        "{failures:#?}"
+    );
+}
+
+#[test]
+fn scene_invariants_detect_an_edge_crossing_an_unrelated_box() {
+    let scene = Scene {
+        boxes: vec![SceneBox {
+            node: 7,
+            rect: Rect::new(2, 0, 5, 3),
+            lines: vec![],
+            shape: Shape::Rect,
+        }],
+        groups: vec![],
+        edges: vec![RoutedEdge {
+            edge: 0,
+            points: vec![Point::new(0, 1), Point::new(8, 1)],
+            rounded: vec![],
+            kind: EdgeKind::Solid,
+            label: None,
+            arrow: None,
+        }],
+    };
+
+    let (_, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+
+    assert!(
+        failures.iter().any(|failure| {
+            failure.contains("edge 0")
+                && failure.contains("non-endpoint box 7")
+                && failure.contains("intersects")
+        }),
         "{failures:#?}"
     );
 }

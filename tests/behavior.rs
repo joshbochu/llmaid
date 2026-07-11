@@ -1,9 +1,12 @@
 //! Behavior-driven tests. One test per contract in BEHAVIORS.md, named
 //! `b<N>_given_..._then_...`. Parser behaviors call the library; CLI
-//! behaviors (B6–B13) run the real binary; B14 frame invariants live in
-//! `tests/golden.rs` (canvas checks on every case).
+//! behaviors (B6–B13) run the real binary; B14/B16 scene invariants also run
+//! across every golden in `tests/golden.rs`.
 
+use llmaid::layout;
 use llmaid::parse::{Shape, parse};
+use llmaid::render;
+use llmaid::style::Style;
 use std::process::{Command, Stdio};
 
 // ---------- Parsing ----------
@@ -157,6 +160,30 @@ flowchart TB
     assert!(
         outer_i < inner_i,
         "Outer title should appear above Inner:\n{nout}"
+    );
+}
+
+#[test]
+fn b16_given_nested_merges_then_edges_avoid_non_endpoint_boxes() {
+    let source = "\
+flowchart TB
+  D[Final]
+  M[Merge]
+  A[Left] --> M
+  B[RightSide] --> M
+  M --> D
+  C[Other] --> D
+";
+    let graph = parse(source).unwrap();
+    let placed = layout::layout(&graph, 100);
+    let (_, failures) = render::render_with_checks(&graph, &placed, Style { ascii: false });
+
+    assert!(
+        failures
+            .iter()
+            .all(|failure| !failure.contains("intersects non-endpoint box")),
+        "B16 failures:\n  - {}",
+        failures.join("\n  - ")
     );
 }
 

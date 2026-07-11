@@ -17,12 +17,12 @@ without losing glance quality.
 2. `DESIGN.md` — v1 design thesis and architecture  
 3. `ROADMAP.md` — phased plan (what to build next)  
 4. `MATRIX.md` — capability × tool coverage checklist  
-5. `BEHAVIORS.md` — shipped contracts B1–B15  
+5. `BEHAVIORS.md` — shipped contracts B1–B16
 6. `CHANGELOG.md` — decisions D1–D14  
 
 ## Current state
 
-**v1 contracts B1–B15 + Phase 0–1 are landed.**
+**Contracts B1–B16 + Phase 0–1 are landed.**
 
 - Pipeline: parse → flow layout → route into signed `Scene` → pure canvas render
 - `Scene` owns complete paths, arrows, label positions, normalization, and exact bounds
@@ -31,7 +31,23 @@ without losing glance quality.
 - Edge labels: padded on-shaft (` scan `); TB/BT labels beside vertical runs
 - Directions: LR/RL/TB/BT with goldens
 - CLI: `--ascii`, `--width N` (default 100), `--strict`
-- Tests: behavior + IR/render goldens + per-scene B14 path/text/canvas invariants
+- Tests: behavior + IR/render goldens + B14/B16 scene invariants + exact
+  topology-aware quality contracts (`tests/quality.rs`)
+- Quality audit: `cargo run -q --example symmetry` reports hard failures,
+  doubled-cell relational residuals, crossings, bends, and wire length
+- Vertical routing widens lone distinct-peer junction boxes to preserve straight
+  attachment shafts; grouped external children start after internal content;
+  labeled rank gaps place their label on the exact middle row
+- Horizontal acyclic, non-reconverging forks may grow across child rows; box
+  labels are centered vertically after routing-driven growth
+- Equal-width vertical chains resolve odd/even text parity with a deterministic
+  right bias toward the shared arrow column; flipped chains choose width parity
+  from the terminal/top label; root forks keep a two-cell port margin
+- Visual review: `./scripts/review-gallery.py --serve` opens the all-case bulk
+  annotation workflow and atomically saves `.llmaid-review.json`. Its explicit
+  terminal-cell painter keeps CJK/emoji alignment representative in a browser.
+  The terminal slideshow (`./scripts/review-gallery.py`, optionally `--live`)
+  remains the final font/glyph-fidelity check for flagged cases.
 - Regenerate goldens: `UPDATE_GOLDEN=1 cargo test`
 
 ## Next steps (from ROADMAP)

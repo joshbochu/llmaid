@@ -5,9 +5,9 @@
 //! cargo run -q --example symmetry -- fanout
 //! ```
 //!
-//! Scores come from `llmaid::metrics` (Placed + Scene). Lower is better for
-//! crossMad / gapCv / elbows / balance; higher is better for straight / mirror.
-//! See module docs for interpretation. Not a B14 invariant.
+//! Scores come from the exact topology-aware geometry audit. Lower is better
+//! for every quality column; `hard` must always be zero. Superscript `²`
+//! denotes doubled-cell coordinates, not a squared value.
 
 use llmaid::metrics::{self, format_header, format_row};
 use llmaid::parse;
@@ -66,13 +66,8 @@ fn main() {
     }
 
     println!();
-    println!(
-        "legend: crossMad=rank cross-axis MAD (0=aligned)  gapCv=channel width CV (0=even)"
-    );
-    println!(
-        "        straight=frac straight edges  elbows=mean corners  balance=|com-mid|/half (0=centered)"
-    );
-    println!(
-        "        mirror=0..1 about cross mid-line (high=symmetric; only meaningful on balanced graphs)"
-    );
+    println!("legend: hard=edge/non-endpoint-box violations (must be 0)");
+    println!("        rank²/mono²/fork²/merge²=avoidable exact alignment residuals");
+    println!("        mirror²/n=eligible diamond residual/count; cross=edge crossing cells");
+    println!("        bends=total direction changes; wire=total routed Manhattan length");
 }

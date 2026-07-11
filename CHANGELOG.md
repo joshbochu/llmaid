@@ -6,15 +6,58 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Fixed
-- Merge nodes (in-degree ≥ 2) re-center on their parents' barycenter after
-  alignment sweeps. The alternating legalize loop ends on a reverse pass, so
-  sinks could lag one cell when siblings moved afterward (`fanout` D sat on B's
-  row). Mono-chain straighten no longer drags merges/forks off that barycenter;
-  mono children of a merge still snap to the merge centerline.
+- Fifth-round gallery review: equal-width flipped vertical chains choose their
+  shared width parity from the terminal/top label. This makes `top` exactly
+  centered with equal visible padding while both BT boxes remain identical;
+  even-length labels retain only the unavoidable half-cell residual.
+- Fourth-round gallery review: normalized vertical chains retain identical box
+  widths and use a deterministic right bias when odd/even text parity offers
+  two equally near positions around the arrow column. Root vertical forks keep
+  two interior cells between attachment ports and box corners, giving `AST`
+  more visual breathing room without changing its straight shafts.
+- Third-round gallery review: acyclic, non-reconverging horizontal forks may
+  expand across child rows. `shapes` now has zero bends after `rect`, with the
+  label vertically centered in the expanded box. Approved diamond trunks and
+  feedback graphs are excluded.
+- Second-round gallery review: vertical edge labels now occupy the exact middle
+  row of equal rank gaps. Lone vertical fork/merge boxes widen across distinct
+  attachment columns, and collision-free long-edge dummy lanes remain on a
+  source/target column. This removes every avoidable bend from `forkmerge`,
+  `ignored-directives`, and `nested-merge` while parallel edges keep their
+  separate lanes. A grouped fork with internal and external children staggers
+  the external child one rank later, preserving both straight shafts and the
+  external-node/frame non-intersection contract.
+- Bulk-review feedback now has exact routing contracts: eligible diamond motifs
+  share one centered fork/merge trunk and mirrored jog track; simple vertical
+  chains use the widest standard box and one centerline; horizontal bend labels
+  sit on their outgoing branch; and self-loops have a readable return leg.
+  Junction sharing is intentionally limited to immediate reconverging diamonds,
+  preserving already-approved unrelated forks, merges, and shape galleries.
+- Alignment legalization now balances a crowded rank around its desired
+  doubled-cell centers instead of pushing every collision in one direction.
+  Merges prefer incoming lanes, forks prefer outgoing lanes, and the sweep ends
+  downstream; this preserves symmetric fork/merge output without the unsafe
+  post-layout merge snap.
+- Edges may no longer intersect or ride non-endpoint boxes (B16). A nested
+  merge with a long edge exposed the old post-snap collision and is now a
+  permanent behavior + golden regression case.
 - Goldens updated where output is clearly better: `fanout` (symmetric elbows),
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- Golden review workflow (`scripts/review-gallery.py`): an all-case browser app
+  with bulk pass/needs-work controls, annotations, progress, JSON import/export,
+  browser-local persistence, and a local server that atomically autosaves into
+  `.llmaid-review.json`. Browser diagrams are painted in explicit terminal-cell
+  widths, so wide CJK and emoji glyphs cannot shift following geometry when a
+  proportional fallback font is used. The same tool retains committed-vs-live
+  terminal slideshows for final glyph fidelity. Covered by stdlib unit + HTTP
+  tests.
+- Exact topology-aware geometry audit (`audit.rs`, `tests/quality.rs`): hard
+  violations; rank, mono-chain, fork, merge, and eligible-diamond residuals;
+  true perpendicular crossings; bends; wire length. Centers use doubled
+  integers, and parity-forced half-cell offsets are separated from avoidable
+  error. The old global MAD/balance/nearest-mirror scores were removed.
 - Routing/renderer boundary: signed screen-space `Scene` primitives now own
   complete paths, arrows, label positions, one-time normalization, and exact
   bounds. `render.rs` is a pure painter (down from 974 to ~600 lines); the
@@ -169,3 +212,9 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   normalization pass produces exact canvas bounds. The renderer only rasterizes
   these primitives. This keeps future sequence/state/tree engines separate at
   the semantic level while sharing terminal painting and invariants.
+
+- **D16 — Quality is an exact vector, not a beauty scalar.** Correctness gates
+  first; topology-eligible alignment and symmetry use doubled integer centers;
+  crossings, bends, wire length, and area remain descriptive trade-offs.
+  Global balance and nearest-neighbor mirror scores were rejected because they
+  grade asymmetric graphs and can disagree with accepted visual improvements.

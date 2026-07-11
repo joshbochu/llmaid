@@ -206,6 +206,13 @@ fn point(p: Point) -> (usize, usize) {
 fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
     let mut failures = Vec::new();
 
+    for intersection in scene.edge_box_intersections() {
+        failures.push(format!(
+            "edge {} intersects non-endpoint box {} at ({},{})",
+            intersection.edge, intersection.node, intersection.at.x, intersection.at.y
+        ));
+    }
+
     for y in 0..canvas.h {
         for x in 0..canvas.w {
             if let Cell::Text(ch) = canvas.cells[canvas.idx(x, y)]
@@ -235,12 +242,13 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
         check_rect_corners(canvas, b.rect, &format!("box {}", b.node), &mut failures);
         let rect = b.rect;
         let inner_w = rect.w.saturating_sub(2);
+        let text_y = rect.y + (rect.h - b.lines.len() as i32) / 2;
         for (line_index, line) in b.lines.iter().enumerate() {
             let text_w = line.width() as i32;
             let text = crate::scene::SceneText::new(
                 Point::new(
                     rect.x + 1 + (inner_w - text_w).max(0) / 2,
-                    rect.y + 1 + line_index as i32,
+                    text_y + line_index as i32,
                 ),
                 line.clone(),
             );
@@ -347,8 +355,9 @@ fn check_text(
     }
 }
 
-/// Render and verify B14 frame invariants (closed borders, labels intact,
-/// edge endpoints marked). Returns the diagram plus any invariant failures.
+/// Render and verify B14/B16 invariants (closed borders, labels intact, edge
+/// endpoints marked, non-endpoint boxes disjoint from paths). Returns the
+/// diagram plus any invariant failures.
 pub fn render_with_checks(g: &Graph, placed: &Placed, style: Style) -> (String, Vec<String>) {
     render_scene_with_checks(&route::route(g, placed), style)
 }
@@ -479,10 +488,11 @@ fn draw_box_at(
     apply_shape_hints(canvas, x, y, w, h, shape, style);
 
     let inner_w = w.saturating_sub(2);
+    let text_y = y + h.saturating_sub(lines.len()) / 2;
     for (i, line) in lines.iter().enumerate() {
         let text_w = line.width();
         let start = x + 1 + inner_w.saturating_sub(text_w) / 2;
-        canvas.put_text(start, y + 1 + i, line);
+        canvas.put_text(start, text_y + i, line);
     }
 }
 

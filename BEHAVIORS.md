@@ -3,7 +3,7 @@
 Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI behaviors in `tests/behavior.rs` now; layout/render behaviors land with
-their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–D14.
+their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–D16.
 
 ## Parsing
 
@@ -57,3 +57,6 @@ their milestone (marked *pending*). Decisions behind these: `CHANGELOG.md` D9–
   overwrites label text. Enforced per scene/path/label via
   `render_scene_with_checks` + `.txt` goldens
   in `tests/golden.rs` (doubles as the fuzz oracle).
+- **B16** Given any routed edge, then its interior never intersects or rides
+  the border of a non-endpoint node. Enforced from exact `Scene` geometry for
+  every golden; nested and long-edge merges are explicit regression cases.

@@ -130,7 +130,7 @@ diagram; all diagnostics go to stderr.
 
 ## Testing
 
-- **Behavior contracts**: `BEHAVIORS.md` (B1–B14) indexes the promised
+- **Behavior contracts**: `BEHAVIORS.md` (B1–B16) indexes the promised
   behaviors; each has a given/when/then test in `tests/behavior.rs`
   (CLI contracts exercise the real binary).
 - **Golden snapshots**: `tests/cases/*.mmd` → `tests/cases/*.txt`, byte-compared.
@@ -138,7 +138,35 @@ diagram; all diagnostics go to stderr.
   cycle/back-edge, self-loop, CJK + emoji labels, every shape, TB deep chain.
 - **Invariant checks** on every rendered frame (also run as fuzz oracle):
   no truncated labels, box borders closed, every edge reaches its endpoints,
-  no character overwrites text.
+  no character overwrites text, and no edge crosses a non-endpoint box.
+- **Geometry quality contracts** use doubled integer centers to measure exact
+  rank, chain, fork, merge, and eligible-diamond relationships without parity
+  loss. Hard violations and individual residuals remain a vector; aesthetics
+  are never hidden behind one scalar score.
+- **Vertical junction routing** prefers straight shafts over compact boxes. A
+  lone distinct-peer fork/merge may widen across adjacent attachment columns;
+  long-edge dummy lanes snap to a source or target column only when every
+  intermediate box remains clear. If a grouped fork mixes internal and external
+  children, the external child starts one rank later so the rectangular group
+  can close before it. Parallel edges still retain separate lanes.
+- **Horizontal non-reconverging forks** may similarly grow across child rows to
+  keep outgoing shafts straight. Symmetric diamonds retain their shared trunk,
+  and feedback graphs retain perimeter routing. Labels are centered in both
+  axes after any routing-driven box growth.
+- **Cell parity** is explicit: equal-width boxes with odd/even label lengths
+  cannot all share an exact half-cell center. Normalized vertical chains keep
+  equal box widths and choose the right of the two equally near text positions,
+  biased toward the shared integer arrow column. The residual remains one
+  doubled unit and is classified as unavoidable by the audit.
+  For flipped chains, the terminal/top label selects the shared box-width
+  parity, ensuring the visually dominant destination label has equal padding.
+- **Human visual review** uses `scripts/review-gallery.py --serve`: one browser
+  page contains every committed golden, bulk pass/needs-work controls, notes,
+  progress, import/export, and atomic autosave to `.llmaid-review.json`. The
+  browser painter fixes every glyph to its terminal display width (including
+  two-cell CJK and emoji) instead of trusting browser font fallback metrics.
+  Suspicious cases are confirmed in the same script's terminal slideshow,
+  because the real terminal remains the final glyph-fidelity oracle.
 - `cargo test` must stay < 5s.
 
 ## Milestones

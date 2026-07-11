@@ -13,7 +13,21 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
         .map(|(node, b)| SceneBox {
             node,
             rect: box_rect(placed, b),
-            lines: b.lines.clone(),
+            lines: if placed.bias_odd_box_labels_right {
+                let inner_width = b.clen.saturating_sub(2);
+                b.lines
+                    .iter()
+                    .map(|line| {
+                        if inner_width.saturating_sub(line.width()) % 2 == 1 {
+                            format!(" {line}")
+                        } else {
+                            line.clone()
+                        }
+                    })
+                    .collect()
+            } else {
+                b.lines.clone()
+            },
             shape: g.nodes[node].shape,
         })
         .collect();
@@ -64,11 +78,29 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
                 let ch = &placed.channels[first.channel];
                 let at = if placed.horizontal {
                     let label_w = text.width();
-                    let f = ch.start + 1 + ch.label_zone.saturating_sub(label_w) / 2;
-                    if placed.flipped {
-                        to_screen(placed, f + label_w.saturating_sub(1), first.from.1)
+                    let (f, cross) = if first.from.1 == first.to.1 {
+                        (
+                            ch.start + ch.width.saturating_sub(label_w) / 2,
+                            first.from.1,
+                        )
                     } else {
-                        to_screen(placed, f, first.from.1)
+                        // The label sits on the horizontal branch after its
+                        // jog. Center it in the remaining branch span.
+                        let track = ch.track_f(first.track.unwrap_or(0));
+                        let branch_start = track + 1;
+                        let branch_width = ch
+                            .start
+                            .saturating_add(ch.width)
+                            .saturating_sub(branch_start);
+                        (
+                            branch_start + branch_width.saturating_sub(label_w) / 2,
+                            first.to.1,
+                        )
+                    };
+                    if placed.flipped {
+                        to_screen(placed, f + label_w.saturating_sub(1), cross)
+                    } else {
+                        to_screen(placed, f, cross)
                     }
                 } else {
                     let lane = placed.segs[..edge_index]
@@ -79,7 +111,8 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
                                 && other.first().map(|seg| seg.channel) == Some(first.channel)
                         })
                         .count();
-                    let mut point = to_screen(placed, ch.start + 1 + 2 * lane, first.from.1);
+                    let label_band_start = ch.start + ch.width.saturating_sub(ch.label_zone) / 2;
+                    let mut point = to_screen(placed, label_band_start + 2 * lane, first.from.1);
                     point.x += 1;
                     point
                 };
@@ -246,7 +279,7 @@ fn route_self_loop(g: &Graph, placed: &Placed, edge_index: usize) -> RoutedEdge 
     let source = Point::new(rect.right() - 1, rect.y + rect.h / 2);
     let target = Point::new(rect.x + rect.w / 2, rect.bottom() - 1);
     let loop_x = rect.right() + label_w + 3 + EDGE_LABEL_PAD as i32;
-    let loop_y = rect.bottom();
+    let loop_y = rect.bottom() + 2;
     let points = vec![
         source,
         Point::new(loop_x, source.y),

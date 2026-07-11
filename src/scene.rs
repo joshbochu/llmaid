@@ -43,6 +43,14 @@ impl Rect {
         self.y + self.h
     }
 
+    pub const fn contains(self, point: Point) -> bool {
+        point.x >= self.x && point.x < self.right() && point.y >= self.y && point.y < self.bottom()
+    }
+
+    pub const fn center2(self) -> Point {
+        Point::new(2 * self.x + self.w - 1, 2 * self.y + self.h - 1)
+    }
+
     fn translated(self, dx: i32, dy: i32) -> Self {
         Self::new(self.x + dx, self.y + dy, self.w, self.h)
     }
@@ -123,6 +131,13 @@ pub struct RoutedEdge {
     pub arrow: Option<Arrow>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EdgeBoxIntersection {
+    pub edge: usize,
+    pub node: usize,
+    pub at: Point,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Scene {
     pub boxes: Vec<SceneBox>,
@@ -183,4 +198,60 @@ impl Scene {
         let after = self.bounds();
         (after.w.max(0) as usize, after.h.max(0) as usize)
     }
+
+    /// Return the first path cell where each edge intersects a box that is not
+    /// one of that edge's geometric endpoints. Touching a non-endpoint border
+    /// counts: it is visually indistinguishable from routing through the node.
+    pub fn edge_box_intersections(&self) -> Vec<EdgeBoxIntersection> {
+        let mut intersections = Vec::new();
+        for edge in &self.edges {
+            let Some(&source) = edge.points.first() else {
+                continue;
+            };
+            let target = edge
+                .arrow
+                .as_ref()
+                .map(|arrow| arrow.toward)
+                .or_else(|| edge.points.last().copied())
+                .unwrap_or(source);
+            let endpoint_nodes: Vec<usize> = self
+                .boxes
+                .iter()
+                .filter(|box_| box_.rect.contains(source) || box_.rect.contains(target))
+                .map(|box_| box_.node)
+                .collect();
+            let cells = path_cells(&edge.points);
+            for box_ in &self.boxes {
+                if endpoint_nodes.contains(&box_.node) {
+                    continue;
+                }
+                if let Some(&at) = cells.iter().find(|&&point| box_.rect.contains(point)) {
+                    intersections.push(EdgeBoxIntersection {
+                        edge: edge.edge,
+                        node: box_.node,
+                        at,
+                    });
+                }
+            }
+        }
+        intersections
+    }
+}
+
+pub(crate) fn path_cells(points: &[Point]) -> Vec<Point> {
+    let mut cells = Vec::new();
+    for pair in points.windows(2) {
+        let mut current = pair[0];
+        if cells.last() != Some(&current) {
+            cells.push(current);
+        }
+        while current != pair[1] {
+            current = Point::new(
+                current.x + (pair[1].x - current.x).signum(),
+                current.y + (pair[1].y - current.y).signum(),
+            );
+            cells.push(current);
+        }
+    }
+    cells
 }
