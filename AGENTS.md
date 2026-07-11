@@ -4,7 +4,7 @@ Mermaid in, clean deterministic terminal diagrams out. A single fast Rust
 binary that coding agents use to compose diagrams into their output (agents
 create/self-debug; humans look at the visuals).
 
-Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B18),
+Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B20),
 `ROADMAP.md` for phased work, `MATRIX.md` for capability coverage vs other
 tools. Log decisions in `CHANGELOG.md`. Mid-stream? `HANDOFF.md`.
 
@@ -13,6 +13,7 @@ tools. Log decisions in `CHANGELOG.md`. Mid-stream? `HANDOFF.md`.
 ```sh
 cargo run -q -- diagram.mmd      # render a file
 echo "graph LR; A-->B" | cargo run -q    # render stdin
+cargo run -q -- --audit=json diagram.mmd # stable machine geometry report
 cargo test                       # golden snapshots + invariants (< 5s budget)
 cargo build --release            # optimized binary at target/release/llmaid
 
@@ -36,7 +37,7 @@ join only at the shared `Scene` boundary:
 
 ```
 main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ─┐
-                     └→ sequence.rs (IR + lifelines) ────┴→ Scene → render.rs
+                     └→ sequence.rs (events + fragments) ┴→ Scene → render.rs
                                                          style.rs (glyphs)
 ```
 

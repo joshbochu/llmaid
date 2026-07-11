@@ -32,11 +32,11 @@ Agents speak Mermaid; we own primitives behind the door.
 | — | v1 flowchart baseline (B1–B14) | **done** |
 | 0 | Ship & tighten flowchart | **done** |
 | 1 | Flowchart completeness (subgraphs / graph-easy parity) | **done** (1.1 flat; nested parent field ready) |
-| 2 | Sequence diagrams | **done** (core subset) |
-| 3 | Design-doc types (state / class / ER) | later |
+| 2 | Sequence diagrams | **done** (core + controls) |
+| 3 | Design-doc types (state / class / ER) | **next** |
 | 4 | Hierarchy & planning (mindmap / gantt / git) | later |
 | 5 | Charts & boards (selective) | later |
-| 6 | Agent self-debug loop | **next** |
+| 6 | Agent self-debug loop | **in progress** (6.2–6.3 done) |
 | 7 | Distribution & product | later |
 
 ---
@@ -83,7 +83,7 @@ Closest to **graph-easy** parity inside Mermaid.
 
 ---
 
-## Phase 2 — Sequence diagrams · **done** (core subset)
+## Phase 2 — Sequence diagrams · **done** (core + controls)
 
 Highest-value second type (agents + **diagon seq**).
 
@@ -93,9 +93,11 @@ Highest-value second type (agents + **diagon seq**).
 | 2.2 | Layout: actors, lifelines, messages, `-->>` returns | **done** — first end-to-end shared-Scene slice |
 | 2.3 | Notes / activate (core subset) | **done** — left/right/over notes + balanced explicit activation bars |
 | 2.4 | Goldens + invariants + agent errors | **done** — core, notes, activation, ordering, and malformed-input coverage |
+| 2.5 | Control blocks: `loop` / `alt` / `opt` | **done** — balanced nesting, `else`, framed Unicode/ASCII output |
 
-**Exit met:** API/protocol diagrams are viewable and self-debuggable; B17/B18
-plus `sequence-core`, `sequence-notes`, and `sequence-activation` goldens.
+**Exit met:** API/protocol diagrams are viewable and self-debuggable; B17/B18/B20
+plus `sequence-core`, `sequence-notes`, `sequence-activation`, and
+`sequence-blocks` goldens.
 
 ---
 
@@ -144,8 +146,8 @@ Only where glance quality holds (don’t become a junk drawer).
 | ID | Item | Notes |
 |----|------|--------|
 | 6.1 | Richer per-type error catalog | Line + expectation everywhere |
-| 6.2 | Machine-readable geometry audit | `--audit=json`; named violations and exact witnesses for any input |
-| 6.3 | Generated + metamorphic topology tests | Enumerate small graphs; mirror/rotate directions; enforce every applicable contract |
+| 6.2 | Machine-readable geometry audit | **done** — stable v1 JSON; named violations, exact witnesses, flowchart + sequence |
+| 6.3 | Generated + metamorphic topology tests | **done** — 71 small DAGs × four directions; exact opposite-direction signatures |
 | 6.4 | Optional machine-readable parser diagnostics | e.g. `--error-format=json` |
 | 6.5 | Invariant failures as actionable stderr | Not only test-time |
 | 6.6 | Optional JSON IR **input** (same engines) | Tools/compilers; Mermaid remains primary |
@@ -210,10 +212,9 @@ human review remains the oracle for preferences not yet expressed as geometry.
 ## Suggested near-term sequence
 
 ```text
-6.2 machine-readable geometry audit
-→ 6.3 generated/metamorphic topology coverage
-→ sequence control blocks (loop/alt/opt)
-→ 3.x state/class/ER
+3.1 flat stateDiagram/stateDiagram-v2
+→ 3.2 classDiagram
+→ 3.3 erDiagram
 → 4.x mindmap/gantt/git
 → 5.x charts (selective)
 → 6.x agent diagnostics

@@ -1,0 +1,15 @@
+type: sequence
+participants:
+  participant Client "Client"
+  participant API "API"
+events:
+  loop "Retry request"
+  message Client ->> API "request"
+  alt "accepted"
+  message API -->> Client "success"
+  else "rejected"
+  opt "retryable"
+  message API -->> Client "retry"
+  end
+  end
+  end

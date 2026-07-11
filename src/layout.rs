@@ -1032,6 +1032,23 @@ fn widen_cross_junction_boxes(
         let box_ = &boxes[node];
         let left = box_.c.min(minimum.saturating_sub(margin));
         let right = (box_.c + box_.clen - 1).max(maximum + margin);
+
+        // Rank slots were collision-legalized before this quality pass. Do not
+        // widen a junction across an unrelated long-edge dummy: that would
+        // turn its reserved pass-through lane into a non-endpoint box
+        // intersection. Dummies belonging to this node's own incident edges
+        // are attachment lanes and may remain inside the widened box.
+        let swallows_unrelated_lane = ranks[rank].iter().enumerate().any(|(slot, candidate)| {
+            let Slot::Dummy(edge_index) = candidate else {
+                return false;
+            };
+            let cross = slot_cross[rank][slot];
+            let edge = &g.edges[*edge_index];
+            edge.from != node && edge.to != node && cross >= left && cross <= right
+        });
+        if swallows_unrelated_lane {
+            continue;
+        }
         updates[node] = Some((left, right - left + 1));
     }
 

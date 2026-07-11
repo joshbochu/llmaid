@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::process::ExitCode;
 
-use llmaid::{diagram, render, style::Style};
+use llmaid::{audit, diagram, render, style::Style};
 
 const USAGE: &str = "\
 llmaid — Mermaid diagrams rendered for the terminal
@@ -9,13 +9,14 @@ llmaid — Mermaid diagrams rendered for the terminal
 Usage: llmaid [OPTIONS] [FILE]
        cat diagram.mmd | llmaid
 
-Reads Mermaid from FILE (or stdin) and writes the diagram to stdout.
+Reads Mermaid from FILE (or stdin) and writes the diagram or audit to stdout.
 
 Options:
   --ascii        pure ASCII output (+, -, |) instead of Unicode box-drawing
   --width <N>    maximum output width (default: 100; fixed, never terminal-detected,
                  so identical input+flags give identical bytes everywhere)
   --strict       treat warnings (ignored directives, missing header) as errors
+  --audit=json   write a stable machine-readable geometry audit instead of a diagram
   -h, --help     print this help
   -V, --version  print version
 ";
@@ -25,6 +26,7 @@ struct Opts {
     ascii: bool,
     width: Option<usize>,
     strict: bool,
+    audit_json: bool,
 }
 
 fn parse_args() -> Result<Option<Opts>, String> {
@@ -33,6 +35,7 @@ fn parse_args() -> Result<Option<Opts>, String> {
         ascii: false,
         width: None,
         strict: false,
+        audit_json: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -47,6 +50,7 @@ fn parse_args() -> Result<Option<Opts>, String> {
             }
             "--ascii" => opts.ascii = true,
             "--strict" => opts.strict = true,
+            "--audit=json" => opts.audit_json = true,
             "--width" => {
                 let value = args
                     .next()
@@ -57,6 +61,9 @@ fn parse_args() -> Result<Option<Opts>, String> {
                 opts.width = Some(n);
             }
             "-" => opts.file = None,
+            _ if arg.starts_with("--audit=") => {
+                return Err("--audit supports only `json` (use `--audit=json`)".to_string());
+            }
             _ if arg.starts_with('-') => {
                 return Err(format!("unknown option `{arg}` (see --help)"));
             }
@@ -121,12 +128,19 @@ fn main() -> ExitCode {
     // B7: an empty graph is trivia, not an error — pipelines keep flowing.
     if diagram.is_empty() {
         eprintln!("llmaid: warning: nothing to render (input has no nodes)");
-        return ExitCode::SUCCESS;
+        if !opts.audit_json {
+            return ExitCode::SUCCESS;
+        }
     }
 
     // B8: default width is fixed (no terminal detection) for byte-determinism.
     // B9: overflow ladder lives in layout (compact → wrap → over-width).
     let width = opts.width.unwrap_or(100);
+
+    if opts.audit_json {
+        print!("{}", audit::json(&diagram, width));
+        return ExitCode::SUCCESS;
+    }
 
     let scene = diagram::scene(&diagram, width);
     let output = render::render_scene(&scene, Style { ascii: opts.ascii });

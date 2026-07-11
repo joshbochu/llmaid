@@ -6,8 +6,8 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::parse::{ParseError, Warning};
 use crate::scene::{
-    Arrow, ArrowHead, EdgeKind, Point, Rect, RoutedEdge, Scene, SceneBox, ScenePath, SceneText,
-    Shape,
+    Arrow, ArrowHead, EdgeKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, ScenePath,
+    SceneText, Shape,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,12 +87,45 @@ pub enum SequenceEvent {
     Activation(Activation),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FragmentKind {
+    Loop,
+    Alt,
+    Opt,
+}
+
+impl FragmentKind {
+    fn keyword(self) -> &'static str {
+        match self {
+            Self::Loop => "loop",
+            Self::Alt => "alt",
+            Self::Opt => "opt",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControlKind {
+    Start(FragmentKind, String),
+    Else(String),
+    End,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlDirective {
+    /// Event boundary at which this directive occurs.
+    pub at: usize,
+    pub kind: ControlKind,
+    pub line: usize,
+}
+
 /// Declaration order is authoritative for participant columns; source order is
 /// authoritative for messages, notes, and activation events.
 #[derive(Debug, Default)]
 pub struct SequenceDiagram {
     pub participants: Vec<Participant>,
     pub events: Vec<SequenceEvent>,
+    pub controls: Vec<ControlDirective>,
     pub warnings: Vec<Warning>,
     index: HashMap<String, usize>,
 }
@@ -139,6 +172,7 @@ pub fn parse(src: &str) -> Result<SequenceDiagram, ParseError> {
     let mut sequence = SequenceDiagram::default();
     let mut seen_header = false;
     let mut active: Vec<Vec<usize>> = Vec::new();
+    let mut fragments: Vec<(FragmentKind, usize, bool)> = Vec::new();
 
     for (line_index, raw_line) in src.lines().enumerate() {
         let line_number = line_index + 1;
@@ -171,6 +205,12 @@ pub fn parse(src: &str) -> Result<SequenceDiagram, ParseError> {
             parse_participant(&mut sequence, line, line_number, keyword)?;
         } else if keyword == "Note" {
             parse_note(&mut sequence, line, line_number)?;
+        } else if matches!(keyword, "loop" | "alt" | "opt") {
+            parse_fragment_start(&mut sequence, &mut fragments, line, line_number, keyword)?;
+        } else if keyword == "else" {
+            parse_fragment_else(&mut sequence, &mut fragments, line, line_number)?;
+        } else if keyword == "end" {
+            parse_fragment_end(&mut sequence, &mut fragments, line, line_number)?;
         } else if keyword == "activate" || keyword == "deactivate" {
             parse_activation(&mut sequence, &mut active, line, line_number, keyword)?;
         } else {
@@ -182,6 +222,12 @@ pub fn parse(src: &str) -> Result<SequenceDiagram, ParseError> {
         return Err(ParseError {
             line: 1,
             msg: "expected `sequenceDiagram` header".to_string(),
+        });
+    }
+    if let Some((kind, line, _)) = fragments.first() {
+        return Err(ParseError {
+            line: *line,
+            msg: format!("expected a matching `end` for `{}` block", kind.keyword()),
         });
     }
     if let Some((participant, line)) = active
@@ -199,6 +245,101 @@ pub fn parse(src: &str) -> Result<SequenceDiagram, ParseError> {
         });
     }
     Ok(sequence)
+}
+
+fn parse_fragment_start(
+    sequence: &mut SequenceDiagram,
+    fragments: &mut Vec<(FragmentKind, usize, bool)>,
+    line: &str,
+    line_number: usize,
+    keyword: &str,
+) -> Result<(), ParseError> {
+    let label = line[keyword.len()..].trim();
+    if label.is_empty() {
+        return Err(ParseError {
+            line: line_number,
+            msg: format!("expected a label after `{keyword}`"),
+        });
+    }
+    let kind = match keyword {
+        "loop" => FragmentKind::Loop,
+        "alt" => FragmentKind::Alt,
+        "opt" => FragmentKind::Opt,
+        _ => unreachable!(),
+    };
+    sequence.controls.push(ControlDirective {
+        at: sequence.events.len(),
+        kind: ControlKind::Start(kind, label.to_string()),
+        line: line_number,
+    });
+    fragments.push((kind, line_number, false));
+    Ok(())
+}
+
+fn parse_fragment_else(
+    sequence: &mut SequenceDiagram,
+    fragments: &mut [(FragmentKind, usize, bool)],
+    line: &str,
+    line_number: usize,
+) -> Result<(), ParseError> {
+    let label = line["else".len()..].trim();
+    if label.is_empty() {
+        return Err(ParseError {
+            line: line_number,
+            msg: "expected a label after `else`".to_string(),
+        });
+    }
+    let Some((kind, _, seen_else)) = fragments.last_mut() else {
+        return Err(ParseError {
+            line: line_number,
+            msg: "`else` is only valid inside an `alt` block".to_string(),
+        });
+    };
+    if *kind != FragmentKind::Alt {
+        return Err(ParseError {
+            line: line_number,
+            msg: "`else` is only valid inside an `alt` block".to_string(),
+        });
+    }
+    if *seen_else {
+        return Err(ParseError {
+            line: line_number,
+            msg: "expected only one `else` in an `alt` block".to_string(),
+        });
+    }
+    *seen_else = true;
+    sequence.controls.push(ControlDirective {
+        at: sequence.events.len(),
+        kind: ControlKind::Else(label.to_string()),
+        line: line_number,
+    });
+    Ok(())
+}
+
+fn parse_fragment_end(
+    sequence: &mut SequenceDiagram,
+    fragments: &mut Vec<(FragmentKind, usize, bool)>,
+    line: &str,
+    line_number: usize,
+) -> Result<(), ParseError> {
+    if line != "end" {
+        return Err(ParseError {
+            line: line_number,
+            msg: "expected `end` with no trailing text".to_string(),
+        });
+    }
+    if fragments.pop().is_none() {
+        return Err(ParseError {
+            line: line_number,
+            msg: "expected `loop`, `alt`, or `opt` before `end`".to_string(),
+        });
+    }
+    sequence.controls.push(ControlDirective {
+        at: sequence.events.len(),
+        kind: ControlKind::End,
+        line: line_number,
+    });
+    Ok(())
 }
 
 fn parse_participant(
@@ -439,7 +580,14 @@ pub fn dump(sequence: &SequenceDiagram) -> String {
         ));
     }
     output.push_str("events:\n");
-    for event in &sequence.events {
+    let mut controls = sequence.controls.iter().peekable();
+    for (event_index, event) in sequence.events.iter().enumerate() {
+        while controls
+            .peek()
+            .is_some_and(|control| control.at == event_index)
+        {
+            dump_control(&mut output, controls.next().unwrap());
+        }
         match event {
             SequenceEvent::Message(message) => output.push_str(&format!(
                 "  message {} {} {} \"{}\"\n",
@@ -481,6 +629,9 @@ pub fn dump(sequence: &SequenceDiagram) -> String {
             }
         }
     }
+    for control in controls {
+        dump_control(&mut output, control);
+    }
     if !sequence.warnings.is_empty() {
         output.push_str("warnings:\n");
         for warning in &sequence.warnings {
@@ -488,6 +639,20 @@ pub fn dump(sequence: &SequenceDiagram) -> String {
         }
     }
     output
+}
+
+fn dump_control(output: &mut String, control: &ControlDirective) {
+    match &control.kind {
+        ControlKind::Start(kind, label) => output.push_str(&format!(
+            "  {} \"{}\"\n",
+            kind.keyword(),
+            label.replace('"', "\\\"")
+        )),
+        ControlKind::Else(label) => {
+            output.push_str(&format!("  else \"{}\"\n", label.replace('"', "\\\"")))
+        }
+        ControlKind::End => output.push_str("  end\n"),
+    }
 }
 
 /// Lay out the sequence subset directly into the shared terminal scene.
@@ -579,7 +744,46 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
     let mut lifeline_bottom = 5;
     let mut active_rows: Vec<Vec<i32>> = vec![Vec::new(); sequence.participants.len()];
     let mut event_rows = Vec::with_capacity(sequence.events.len());
-    for event in &sequence.events {
+    let mut control_rows = Vec::with_capacity(sequence.controls.len());
+    let mut control_index = 0;
+    let mut fragment_rows = Vec::new();
+    for event_index in 0..=sequence.events.len() {
+        while control_index < sequence.controls.len()
+            && sequence.controls[control_index].at == event_index
+        {
+            let row = match &sequence.controls[control_index].kind {
+                ControlKind::Start(_, _) => {
+                    let row = next_top;
+                    fragment_rows.push(row);
+                    next_top = row + 2;
+                    last_content_bottom = row + 1;
+                    lifeline_bottom = lifeline_bottom.max(row + 1);
+                    row
+                }
+                ControlKind::Else(_) => {
+                    let row = next_top.max(last_content_bottom + 2);
+                    next_top = row + 2;
+                    last_content_bottom = row + 1;
+                    lifeline_bottom = lifeline_bottom.max(row + 1);
+                    row
+                }
+                ControlKind::End => {
+                    let start = fragment_rows
+                        .pop()
+                        .expect("parser guarantees balanced control blocks");
+                    let row = next_top.max(last_content_bottom + 2).max(start + 2);
+                    next_top = row + 1;
+                    last_content_bottom = row;
+                    lifeline_bottom = lifeline_bottom.max(row + 1);
+                    row
+                }
+            };
+            control_rows.push(row);
+            control_index += 1;
+        }
+        let Some(event) = sequence.events.get(event_index) else {
+            break;
+        };
         let row = match event {
             SequenceEvent::Message(message) => {
                 let row = next_top + 1;
@@ -811,13 +1015,121 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
         edges.push(edge);
     }
 
+    struct OpenFragment {
+        kind: FragmentKind,
+        title: String,
+        segment_start: i32,
+        depth: usize,
+        else_branch: Option<(String, i32)>,
+    }
+    let base_left = sequence
+        .participants
+        .iter()
+        .enumerate()
+        .map(|(index, _)| centers[index] - widths[index] / 2)
+        .min()
+        .unwrap()
+        - 2;
+    let base_right = sequence
+        .participants
+        .iter()
+        .enumerate()
+        .map(|(index, _)| centers[index] - widths[index] / 2 + widths[index])
+        .max()
+        .unwrap()
+        + 2;
+    let max_control_title_width = sequence
+        .controls
+        .iter()
+        .filter_map(|control| match &control.kind {
+            ControlKind::Start(kind, label) => Some(kind.keyword().width() + 1 + label.width()),
+            ControlKind::Else(label) => Some("else".width() + 1 + label.width()),
+            ControlKind::End => None,
+        })
+        .max()
+        .unwrap_or(0) as i32;
+    let frame_left = base_left - max_control_title_width - 2;
+    let mut groups = Vec::new();
+    let mut open_fragments: Vec<OpenFragment> = Vec::new();
+    for (control, &row) in sequence.controls.iter().zip(&control_rows) {
+        match &control.kind {
+            ControlKind::Start(kind, label) => {
+                let branch_depth = open_fragments
+                    .iter()
+                    .filter(|fragment| fragment.else_branch.is_some())
+                    .count();
+                let depth = open_fragments.len() + branch_depth;
+                open_fragments.push(OpenFragment {
+                    kind: *kind,
+                    title: format!("{} {label}", kind.keyword()),
+                    segment_start: row,
+                    depth,
+                    else_branch: None,
+                });
+            }
+            ControlKind::Else(label) => {
+                let frame = open_fragments
+                    .last_mut()
+                    .expect("parser guarantees else is inside alt");
+                debug_assert_eq!(frame.kind, FragmentKind::Alt);
+                frame.else_branch = Some((format!("else {label}"), row));
+            }
+            ControlKind::End => {
+                let frame = open_fragments
+                    .pop()
+                    .expect("parser guarantees balanced control blocks");
+                push_fragment_group(
+                    &mut groups,
+                    frame_left,
+                    base_right,
+                    frame.depth,
+                    frame.segment_start,
+                    row,
+                    &frame.title,
+                );
+                if let Some((title, start)) = frame.else_branch {
+                    push_fragment_group(
+                        &mut groups,
+                        frame_left,
+                        base_right,
+                        frame.depth + 1,
+                        start,
+                        row - 1,
+                        &title,
+                    );
+                }
+            }
+        }
+    }
+
     Scene {
         boxes,
         foreground_boxes,
-        groups: Vec::new(),
+        groups,
         paths,
         edges,
     }
+}
+
+fn push_fragment_group(
+    groups: &mut Vec<SceneGroup>,
+    base_left: i32,
+    base_right: i32,
+    depth: usize,
+    top: i32,
+    bottom: i32,
+    title: &str,
+) {
+    let x = base_left + depth as i32 * 2;
+    // Use a shallow right inset: enough to keep nested corners legible, while
+    // retaining the header-sized margin around the destination lifeline.
+    let natural_right = (base_right - depth as i32).max(x + 2);
+    let right = natural_right.max(x + title.width() as i32 + 4);
+    groups.push(SceneGroup {
+        subgraph: groups.len(),
+        rect: Rect::new(x, top, right - x, bottom - top + 1),
+        title: SceneText::new(Point::new(x + 2, top + 1), title),
+    });
 }
 
 fn active_attachment(center: i32, depth: usize, direction: i32) -> i32 {

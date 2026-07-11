@@ -1,0 +1,13 @@
+sequenceDiagram
+  participant Client
+  participant API
+  loop Retry request
+    Client->>API: request
+    alt accepted
+      API-->>Client: success
+    else rejected
+      opt retryable
+        API-->>Client: retry
+      end
+    end
+  end

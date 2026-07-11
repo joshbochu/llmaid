@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D19.
+`CHANGELOG.md` D9–D21.
 
 ## Parsing
 
@@ -36,6 +36,11 @@ structural coverage lives beside its engine tests. Decisions behind these:
 - **B8** Given the same input and flags, when run anywhere (any terminal, any
   TTY state), then output is byte-identical. Default width is a fixed 100;
   only `--width` changes it. No terminal detection.
+- **B19** Given `--audit=json`, when a flowchart or sequence diagram is
+  inspected, then stdout is a byte-stable `llmaid.audit.v1` JSON document
+  instead of a rendered diagram. It names the diagram type, normalized bounds,
+  element counts, deterministic violations, exact witnesses where available,
+  and flowchart geometry metrics; diagnostics remain on stderr.
 
 ## Layout & rendering
 
@@ -80,3 +85,9 @@ structural coverage lives beside its engine tests. Decisions behind these:
   Unicode and `--ascii` output are deterministic; malformed notes, unknown
   participants, and unmatched activation statements name the source line and
   expectation.
+- **B20** Given balanced, arbitrarily nested `loop`, `alt` / `else`, and `opt`
+  sequence control blocks, when rendered, then source event boundaries are
+  preserved and labeled closed frames visibly contain their branches and all
+  participant lifelines. Unicode and `--ascii` output are deterministic and
+  never truncate labels; malformed, unmatched, duplicate-`else`, and unclosed
+  directives name the source line and expectation.

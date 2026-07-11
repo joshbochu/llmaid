@@ -552,3 +552,63 @@ sequenceDiagram
         assert!(ascii.contains(text), "missing {text:?}:\n{ascii}");
     }
 }
+
+#[test]
+fn b19_given_audit_json_then_machine_output_is_stable_and_separate_from_diagram_output() {
+    let source = "flowchart LR\nA --> B\n";
+    let (first, stderr, code) = run_llmaid(&["--audit=json"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stderr, "");
+    assert!(first.starts_with("{\"schema\":\"llmaid.audit.v1\""));
+    assert!(first.contains("\"diagram\":\"flowchart\""));
+    assert!(first.contains("\"violations\":[]"));
+    assert!(first.contains("\"wire_length\":"));
+    assert!(
+        !first.contains('╭'),
+        "audit mixed with diagram output: {first}"
+    );
+
+    let (second, _, code) = run_llmaid(&["--audit=json"], source);
+    assert_eq!(code, 0);
+    assert_eq!(first, second, "audit JSON must be byte-deterministic");
+}
+
+#[test]
+fn b20_given_nested_sequence_controls_then_frames_labels_and_ascii_are_deterministic() {
+    let source = "\
+sequenceDiagram
+  participant Client
+  participant API
+  loop retry
+    Client->>API: request
+    alt accepted
+      API-->>Client: success
+    else rejected
+      opt retryable
+        API-->>Client: retry
+      end
+    end
+  end
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    for label in [
+        "loop retry",
+        "alt accepted",
+        "else rejected",
+        "opt retryable",
+        "request",
+        "success",
+        "retry",
+    ] {
+        assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
+    }
+    let (repeat, _, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0);
+    assert_eq!(unicode, repeat);
+
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+    assert!(ascii.contains("else rejected") && ascii.contains("retry"));
+}

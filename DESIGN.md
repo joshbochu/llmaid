@@ -42,9 +42,9 @@ Mermaid `flowchart` / `graph`, directions `LR` `RL` `TB` `BT`:
 Subgraphs are supported (Phase 1). The core sequence slice supports
 participants/actors (including implicit participants), lifelines, `->>`
 messages, `-->>` returns, left/right/over notes, and balanced explicit
-activation bars. Sequence control blocks, trees/mindmaps, and styling
-directives remain expansion work tracked in `ROADMAP.md`; coverage lives in
-`MATRIX.md`.
+activation bars. Balanced nested `loop`, `alt` / `else`, and `opt` control
+blocks render as labeled frames. Trees/mindmaps and styling directives remain
+expansion work tracked in `ROADMAP.md`; coverage lives in `MATRIX.md`.
 
 ## Architecture
 
@@ -55,7 +55,7 @@ src/
   parse.rs     Mermaid flowchart subset → IR (Graph: nodes, edges, direction)
   layout.rs    IR → integer flow-grid positions
   route.rs     Layout → complete screen-space paths, arrows, and labels
-  sequence.rs  ordered sequence-event IR/parser + lifeline/event layout → Scene
+  sequence.rs  ordered event/control IR + lifeline/fragment layout → Scene
   scene.rs     Signed Point/Rect/Path/Text primitives + exact bounds
   render.rs    Scene → grid canvas → styled box-drawing output
   style.rs     Charsets: unicode (default) / ascii
@@ -122,6 +122,7 @@ llmaid [FILE]              read Mermaid from FILE or stdin, write to stdout
   --width <N>              max output width (default: fixed 100 — never
                            terminal-detected, so output is byte-deterministic)
   --strict                 warnings become errors
+  --audit=json             stable machine geometry report instead of a diagram
   --version / --help
 ```
 
@@ -129,12 +130,13 @@ Exit codes: 0 ok, 1 render error, 64 usage/parse error.
 
 Width overflow ladder (never truncate, never fail): compact inter-node gaps →
 wrap labels → render over-width anyway. Labels wrap only under width pressure.
-Empty graphs exit 0 (empty stdout, stderr warning). stdout carries only the
-diagram; all diagnostics go to stderr.
+Empty graphs exit 0 (empty stdout, stderr warning; audit mode emits a zero
+report). stdout carries only the selected artifact—diagram or audit JSON—and
+all diagnostics go to stderr.
 
 ## Testing
 
-- **Behavior contracts**: `BEHAVIORS.md` (B1–B18) indexes the promised
+- **Behavior contracts**: `BEHAVIORS.md` (B1–B20) indexes the promised
   behaviors; each has a given/when/then test in `tests/behavior.rs`
   (CLI contracts exercise the real binary).
 - **Golden snapshots**: `tests/cases/*.mmd` → `tests/cases/*.txt`, byte-compared.
@@ -147,6 +149,13 @@ diagram; all diagnostics go to stderr.
   rank, chain, fork, merge, and eligible-diamond relationships without parity
   loss. Hard violations and individual residuals remain a vector; aesthetics
   are never hidden behind one scalar score.
+- **Generated coverage** exhausts all 71 non-empty forward DAGs on two through
+  four nodes in LR/RL/TB/BT (284 renders), reruns the integer pipeline for
+  determinism, and compares exact LR↔RL and TB↔BT audit signatures.
+- **Machine audit** (`--audit=json`) exposes normalized named violations and
+  witnesses plus the existing exact flowchart metric vector through a stable,
+  dependency-free `llmaid.audit.v1` schema. Sequence scenes share the generic
+  bounds/count/invariant envelope.
 - **Vertical junction routing** prefers straight shafts over compact boxes. A
   lone distinct-peer fork/merge may widen across adjacent attachment columns;
   long-edge dummy lanes snap to a source or target column only when every

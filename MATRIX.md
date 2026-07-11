@@ -19,7 +19,7 @@ or competitor notes change. Roadmap phases: [`ROADMAP.md`](ROADMAP.md).
 
 | Tool | Role in comparison |
 |------|-------------------|
-| **llmaid** | This project (flowchart + sequence notes/activation subset) |
+| **llmaid** | This project (flowchart + sequence interaction/control subset) |
 | **termiflow** | Terminal Mermaid flowchart (`tw`) |
 | **termaid** | Terminal multi-type Mermaid (Python) |
 | **diagon** | Non-Mermaid ASCII generators |
@@ -94,7 +94,7 @@ Mermaid as the only primary agent language.
 | Dashed return | Y | N | Y | Y | N | Y |
 | Notes | Y | N | Y | P | N | Y |
 | Activate / deactivate | Y | N | P | P | N | Y |
-| Loops / alt / opt | N | N | P | P | N | Y |
+| Loops / alt / opt | Y | N | P | P | N | Y |
 
 **Roadmap:** Phase 2.
 
@@ -176,6 +176,8 @@ Mermaid as the only primary agent language.
 | Never truncate labels | Y | N | P | Y | Y | Y |
 | Behavior contracts / goldens | Y | ? | ? | N | N | — |
 | Frame invariants (tests) | Y | ? | ? | N | N | — |
+| Machine geometry audit | Y | N | N | N | N | — |
+| Generated/metamorphic coverage | Y | ? | ? | N | N | — |
 | Color themes | N | P | Y | N | P | Y |
 | Interactive TUI | N | P | Y | N | N | Y |
 
@@ -210,7 +212,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Edge labels & styles | `-->` `-.->` `==>` \|label\| | **Y** |
 | Node shapes | `[ ] ( ) { }` … | **Y** (hints) |
 | Groups / machines | `subgraph` | **Y** |
-| Sequence | `sequenceDiagram` | **P** (participants, lifelines, messages, returns, notes, activation) |
+| Sequence | `sequenceDiagram` | **P** (participants, messages, notes, activation, loop/alt/opt) |
 | Tree | `mindmap` or flowchart TB | **N** |
 | Class / ER / state | respective types | **N** |
 | Table | Markdown table (not Mermaid) | park |
@@ -249,3 +251,5 @@ When you ship a feature:
 | 2026-07-09 | Phase 1.1: real subgraphs (parse membership, bbox frames, titles). |
 | 2026-07-11 | Phase 2 core: participants/actors, implicit participants, lifelines, `->>` messages, and `-->>` returns. |
 | 2026-07-11 | Phase 2.3: left/right/over notes and balanced explicit activate/deactivate bars; B18 + focused goldens. |
+| 2026-07-11 | Sequence controls: nested loop/alt/else/opt frames; B20 + golden coverage. |
+| 2026-07-11 | Agent audit: stable `--audit=json` plus 284 generated directional renders and 71 mirror-signature checks. |

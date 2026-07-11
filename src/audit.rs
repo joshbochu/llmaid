@@ -9,6 +9,24 @@ use crate::layout::Placed;
 use crate::parse::Graph;
 use crate::scene::{Point, Scene};
 
+/// A correctness failure with a stable machine name and exact scene witness.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GeometryViolation {
+    pub name: &'static str,
+    pub edge: usize,
+    pub node: usize,
+    pub at: Point,
+}
+
+impl GeometryViolation {
+    fn message(&self) -> String {
+        format!(
+            "edge {} intersects non-endpoint box {} at ({},{})",
+            self.edge, self.node, self.at.x, self.at.y
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GeometryAudit {
     pub width: usize,
@@ -85,15 +103,9 @@ pub fn measure(graph: &Graph, placed: &Placed, scene: &Scene) -> GeometryAudit {
         junction_barycenter_residuals(graph, placed, &centers, &topology);
     let (diamond_motifs, diamond_mirror_residual2) = diamond_residuals(&centers, &topology);
 
-    let hard_violations = scene
-        .edge_box_intersections()
+    let hard_violations = violations(scene)
         .into_iter()
-        .map(|intersection| {
-            format!(
-                "edge {} intersects non-endpoint box {} at ({},{})",
-                intersection.edge, intersection.node, intersection.at.x, intersection.at.y
-            )
-        })
+        .map(|violation| violation.message())
         .collect();
 
     GeometryAudit {
@@ -122,6 +134,175 @@ pub fn measure(graph: &Graph, placed: &Placed, scene: &Scene) -> GeometryAudit {
             .map(|edge| path_length(&edge.points))
             .sum(),
     }
+}
+
+/// Named hard geometry failures in deterministic edge/box traversal order.
+pub fn violations(scene: &Scene) -> Vec<GeometryViolation> {
+    scene
+        .edge_box_intersections()
+        .into_iter()
+        .map(|intersection| GeometryViolation {
+            name: "edge_intersects_non_endpoint_box",
+            edge: intersection.edge,
+            node: intersection.node,
+            at: intersection.at,
+        })
+        .collect()
+}
+
+/// Serialize a complete audit as a compact, byte-stable JSON document.
+///
+/// The schema is deliberately handwritten: JSON is a CLI boundary, not a
+/// reason to add a runtime serialization dependency to the renderer.
+pub fn json(diagram: &crate::diagram::Diagram, max_width: usize) -> String {
+    match diagram {
+        crate::diagram::Diagram::Flowchart(graph) => {
+            let placed = crate::layout::layout(graph, max_width);
+            let scene = crate::route::route(graph, &placed);
+            flowchart_json(graph, &placed, &scene)
+        }
+        crate::diagram::Diagram::Sequence(sequence) => {
+            let mut scene = crate::sequence::scene(sequence, max_width);
+            scene.normalize();
+            let bounds = scene.bounds();
+            let edges = sequence
+                .events
+                .iter()
+                .filter(|event| matches!(event, crate::sequence::SequenceEvent::Message(_)))
+                .count();
+            let audit = GeometryAudit {
+                width: bounds.w.max(0) as usize,
+                height: bounds.h.max(0) as usize,
+                area: (bounds.w.max(0) as usize).saturating_mul(bounds.h.max(0) as usize),
+                nodes: sequence.participants.len(),
+                edges,
+                ranks: 0,
+                hard_violations: violations(&scene)
+                    .iter()
+                    .map(GeometryViolation::message)
+                    .collect(),
+                rank_axis_residual2: 0,
+                mono_centerline_residual2: 0,
+                fork_barycenter_residual2: 0,
+                merge_barycenter_residual2: 0,
+                diamond_motifs: 0,
+                diamond_mirror_residual2: 0,
+                crossing_cells: 0,
+                bends: scene
+                    .edges
+                    .iter()
+                    .map(|edge| bend_count(&edge.points))
+                    .sum(),
+                wire_length: scene
+                    .edges
+                    .iter()
+                    .map(|edge| path_length(&edge.points))
+                    .sum(),
+            };
+            let generic = generic_invariant_failures(&scene);
+            json_report("sequence", &audit, &violations(&scene), &generic, false)
+        }
+    }
+}
+
+/// Serialize caller-supplied flowchart geometry, primarily for layout tools
+/// that need the same stable report as the CLI.
+pub fn flowchart_json(graph: &Graph, placed: &Placed, scene: &Scene) -> String {
+    let mut scene = scene.clone();
+    scene.normalize();
+    let mut audit = measure(graph, placed, &scene);
+    if graph.nodes.is_empty() {
+        audit.ranks = 0;
+    }
+    let generic = generic_invariant_failures(&scene);
+    json_report("flowchart", &audit, &violations(&scene), &generic, true)
+}
+
+fn generic_invariant_failures(scene: &Scene) -> Vec<String> {
+    let geometry_messages: Vec<String> = violations(scene)
+        .iter()
+        .map(GeometryViolation::message)
+        .collect();
+    let (_, failures) =
+        crate::render::render_scene_with_checks(scene, crate::style::Style { ascii: false });
+    failures
+        .into_iter()
+        .filter(|failure| !geometry_messages.contains(failure))
+        .collect()
+}
+
+fn json_report(
+    diagram: &str,
+    audit: &GeometryAudit,
+    violations: &[GeometryViolation],
+    generic_violations: &[String],
+    flowchart_metrics: bool,
+) -> String {
+    let mut output = format!(
+        "{{\"schema\":\"llmaid.audit.v1\",\"diagram\":\"{diagram}\",\"bounds\":{{\"width\":{},\"height\":{},\"area\":{}}},\"elements\":{{\"nodes\":{},\"edges\":{},\"ranks\":{}}},\"violations\":[",
+        audit.width, audit.height, audit.area, audit.nodes, audit.edges, audit.ranks
+    );
+    for (index, violation) in violations.iter().enumerate() {
+        if index != 0 {
+            output.push(',');
+        }
+        output.push_str(&format!(
+            "{{\"name\":\"{}\",\"message\":\"{}\",\"witness\":{{\"edge\":{},\"node\":{},\"at\":{{\"x\":{},\"y\":{}}}}}}}",
+            violation.name,
+            json_escape(&violation.message()),
+            violation.edge,
+            violation.node,
+            violation.at.x,
+            violation.at.y
+        ));
+    }
+    for (index, message) in generic_violations.iter().enumerate() {
+        if !violations.is_empty() || index != 0 {
+            output.push(',');
+        }
+        output.push_str(&format!(
+            "{{\"name\":\"scene_invariant\",\"message\":\"{}\",\"witness\":null}}",
+            json_escape(message)
+        ));
+    }
+    output.push_str("],\"metrics\":");
+    if flowchart_metrics {
+        output.push_str(&format!(
+            "{{\"rank_axis_residual2\":{},\"mono_centerline_residual2\":{},\"fork_barycenter_residual2\":{},\"merge_barycenter_residual2\":{},\"diamond_motifs\":{},\"diamond_mirror_residual2\":{},\"crossing_cells\":{},\"bends\":{},\"wire_length\":{}}}",
+            audit.rank_axis_residual2,
+            audit.mono_centerline_residual2,
+            audit.fork_barycenter_residual2,
+            audit.merge_barycenter_residual2,
+            audit.diamond_motifs,
+            audit.diamond_mirror_residual2,
+            audit.crossing_cells,
+            audit.bends,
+            audit.wire_length
+        ));
+    } else {
+        output.push_str("null");
+    }
+    output.push_str("}\n");
+    output
+}
+
+fn json_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            ch if ch <= '\u{1f}' => {
+                use std::fmt::Write;
+                write!(escaped, "\\u{:04x}", ch as u32).expect("writing to String cannot fail");
+            }
+            ch => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 struct Topology {

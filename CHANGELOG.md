@@ -6,6 +6,10 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Fixed
+- Generated small-graph coverage found a fork box widening across an unrelated
+  long-edge dummy lane. The late quality pass now refuses that expansion while
+  retaining incident attachment lanes; the minimized four-node case is a
+  permanent regression.
 - Sequence calls and returns no longer rely on subtly different dot density or
   unusual dash glyphs: calls use a solid shaft plus filled arrowhead (`────▶`),
   while returns use a solid shaft plus thin directional arrow (`←────`). ASCII
@@ -49,6 +53,20 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- Stable machine geometry audit (B19): `--audit=json` emits
+  `llmaid.audit.v1` for flowcharts and sequences with normalized bounds,
+  element counts, deterministic named violations, exact witnesses where
+  available, generic scene invariant failures, and the exact flowchart metric
+  vector. JSON is handwritten and dependency-free; warnings stay on stderr.
+- Deterministic generated/metamorphic coverage: all 71 non-empty forward DAGs
+  on two through four nodes render in LR/RL/TB/BT (284 cases), rerender
+  byte-identically, satisfy scene/audit invariants, and preserve exact LR↔RL
+  and TB↔BT comparable signatures.
+- Nested sequence controls (B20): canonical `loop`, `alt` / `else`, and `opt`
+  directives are recorded at exact event boundaries, validated with
+  line-specific errors, and rendered as labeled containing frames in Unicode
+  and ASCII. Nested `else` branches and their child blocks have exact
+  containment/inset/lifeline-span contracts plus a focused golden.
 - Sequence notes and activation (B18): ordered source events; `Note left of`,
   `Note right of`, and `Note over` one/two participants; balanced and nested
   explicit `activate` / `deactivate`; line-specific errors; deterministic
@@ -72,8 +90,8 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 - Documented the quality guarantee boundary and enforcement loop: the integer
   grid supplies exact coordinates, reusable topology constraints supply the
   aesthetic rules, goldens prevent known regressions, and human review finds
-  preferences not yet formalized. The roadmap now calls for `--audit=json`
-  named violations plus generated/metamorphic small-graph coverage.
+  preferences not yet formalized. `--audit=json` and generated/metamorphic
+  small-graph coverage now expose and enforce that boundary programmatically.
 - Golden review workflow (`scripts/review-gallery.py`): an all-case browser app
   with bulk pass/needs-work controls, annotations, progress, JSON import/export,
   browser-local persistence, and a local server that atomically autosaves into
@@ -158,6 +176,21 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 
 ### Decisions
 
+- **D21 — Sequence controls are boundary directives, not fake events.**
+  `loop`, `alt` / `else`, `opt`, and `end` attach to stable indices in the
+  ordered event stream, preserving message/note/activation semantics and
+  arbitrary nesting. Layout emits generic nested `SceneGroup` frames spanning
+  every lifeline. Rejected: synthetic messages (wrong ordering/geometry) and
+  type-specific renderer logic.
+
+- **D20 — Audit JSON is a versioned dependency-free CLI artifact.**
+  `--audit=json` replaces diagram stdout with compact `llmaid.audit.v1`; all
+  diagnostics remain stderr. Flowcharts expose the exact metric vector while
+  sequences use the same bounds/count/violation envelope with `metrics:null`.
+  Stable machine names and normalized witnesses are separate from human error
+  messages. Rejected: serde solely for one fixed schema and mixing JSON with
+  rendered diagram bytes.
+
 - **D19 — Sequence source order is semantic; foreground layering is generic.**
   Sequence messages, notes, and activation commands live in one ordered event
   stream, so layout cannot reorder interactions by maintaining parallel lists.
@@ -200,8 +233,8 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   tables, worse. Known limit (all tools share it): chat UIs / markdown viewers
   with font fallback may visually wobble non-ASCII labels; real terminals align.
 
-- **D5 — No CLI framework; std-only arg parsing.** Five flags (`--ascii`,
-  `--width`, `--strict`, `--help`, `--version`) ≈ 40 lines by hand. clap
+- **D5 — No CLI framework; std-only arg parsing.** Six flags (`--ascii`,
+  `--width`, `--strict`, `--audit=json`, `--help`, `--version`) stay small by hand. clap
   rejected: ~10 transitive deps + compile time against a minimal-binary thesis.
   Escalation path if the surface grows: `lexopt` (zero-dep) before clap.
 
