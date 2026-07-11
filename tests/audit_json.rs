@@ -180,3 +180,18 @@ fn design_diagrams_have_coherent_typed_audits() {
         assert_eq!(run(&["--audit=json"], source).0, first);
     }
 }
+
+#[test]
+fn mindmaps_have_a_stable_typed_audit_with_tree_levels() {
+    let source = "mindmap\n  Root\n    A\n      A1\n    B\n";
+    let (first, stderr, code) = run(&["--audit=json"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(first.contains("\"diagram\":\"mindmap\""), "{first}");
+    assert!(
+        first.contains("\"elements\":{\"nodes\":4,\"edges\":3,\"ranks\":3}"),
+        "{first}"
+    );
+    assert!(first.contains("\"violations\":[]"), "{first}");
+    assert!(first.contains("\"metrics\":null"), "{first}");
+    assert_eq!(run(&["--audit=json"], source).0, first);
+}

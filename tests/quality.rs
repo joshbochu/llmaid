@@ -1,7 +1,7 @@
 use llmaid::audit;
 use llmaid::scene::{CardinalityMaximum, CardinalityMinimum, EndpointDecorationKind};
 use llmaid::style::Style;
-use llmaid::{class, er, layout, parse, render, route};
+use llmaid::{class, er, layout, mindmap, parse, render, route};
 use unicode_width::UnicodeWidthStr;
 
 fn audit_source(source: &str) -> audit::GeometryAudit {
@@ -385,4 +385,60 @@ fn er_cardinalities_are_exactly_adjacent_and_tables_keep_one_row_per_attribute()
     }
     assert_eq!(scene.boxes[0].table.as_ref().unwrap().rows.len(), 2);
     assert_eq!(scene.boxes[0].rect.h, 7);
+}
+
+#[test]
+fn mindmap_parent_ports_are_centered_on_their_ordered_child_span() {
+    let diagram = mindmap::parse(
+        "mindmap\n  Root\n    Alpha\n      A1\n      A2\n    Beta\n      B1\n      B2\n",
+    )
+    .unwrap();
+    let scene = mindmap::scene(&diagram, 100);
+
+    for parent in 0..diagram.nodes.len() {
+        let children: Vec<usize> = diagram
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, child)| (child.parent == Some(parent)).then_some(index))
+            .collect();
+        if children.is_empty() {
+            continue;
+        }
+        let parent_center2 = scene.boxes[parent].rect.center2().y;
+        let first_center2 = scene.boxes[children[0]].rect.center2().y;
+        let last_center2 = scene.boxes[*children.last().unwrap()].rect.center2().y;
+        assert_eq!(2 * parent_center2, first_center2 + last_center2);
+    }
+}
+
+#[test]
+fn mindmap_edges_attach_exactly_to_parent_and_child_center_rows() {
+    let diagram = mindmap::parse("mindmap\n  Root\n    A\n      A1\n    B\n").unwrap();
+    let scene = mindmap::scene(&diagram, 100);
+
+    for edge in &scene.edges {
+        let child = edge.edge + 1;
+        let parent = diagram.nodes[child].parent.unwrap();
+        let source = scene.boxes[parent].rect;
+        let target = scene.boxes[child].rect;
+        assert_eq!(edge.points.first().unwrap().x, source.right() - 1);
+        assert_eq!(2 * edge.points.first().unwrap().y, source.center2().y);
+        assert_eq!(edge.points.last().unwrap().x, target.x);
+        assert_eq!(2 * edge.points.last().unwrap().y, target.center2().y);
+        assert!(edge.arrow.is_none());
+    }
+}
+
+#[test]
+fn mindmap_boxes_keep_one_visible_padding_cell_beside_every_label() {
+    let diagram = mindmap::parse("mindmap\n  Agent loop\n    Read contracts\n    解析\n").unwrap();
+    let scene = mindmap::scene(&diagram, 100);
+    for (node, box_) in diagram.nodes.iter().zip(&scene.boxes) {
+        assert!(
+            box_.rect.w >= node.label.width() as i32 + 4,
+            "{} needs border + visible left/right padding",
+            node.label
+        );
+    }
 }

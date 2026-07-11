@@ -1,0 +1,8 @@
+mindmap
+node 0 depth=0 parent=- line=2 label="Agent loop"
+node 1 depth=1 parent=0 line=3 label="Understand"
+node 2 depth=2 parent=1 line=4 label="Read contracts"
+node 3 depth=2 parent=1 line=5 label="Inspect code"
+node 4 depth=1 parent=0 line=6 label="Build"
+node 5 depth=2 parent=4 line=7 label="Test first"
+node 6 depth=2 parent=4 line=8 label="Verify output"

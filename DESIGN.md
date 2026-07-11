@@ -45,8 +45,10 @@ messages, `-->>` returns, left/right/over notes, and balanced explicit
 activation bars. Balanced nested `loop`, `alt` / `else`, and `opt` control
 blocks render as labeled frames. Phase 3 adds flat state diagrams, core class
 diagrams, and core ER diagrams through separate semantic IRs and a shared
-typed-box geometry adapter. Trees/mindmaps and styling directives remain
-expansion work tracked in `ROADMAP.md`; coverage lives in `MATRIX.md`.
+typed-box geometry adapter. Phase 4.1 adds a core `mindmap` slice with one
+ordered indentation-defined hierarchy of plain labels. Icons, custom classes,
+Markdown, general mindmap shapes, and styling directives remain expansion work
+tracked in `ROADMAP.md`; coverage lives in `MATRIX.md`.
 
 ## Architecture
 
@@ -62,6 +64,8 @@ src/
   class.rs     class/member/relation semantic IR → boxed geometry → Scene
   er.rs        entity/attribute/cardinality semantic IR → boxed geometry → Scene
   boxed.rs     semantic-free typed boxes/relations → layered layout + routing
+  mindmap.rs   ordered indentation IR + width fallback → tree geometry → Scene
+  tree.rs      reusable deterministic integer layout for ordered rooted trees
   scene.rs     Signed Point/Rect/Path/Text primitives + exact bounds
   render.rs    Scene → grid canvas → styled box-drawing output
   style.rs     Charsets: unicode (default) / ascii
@@ -97,6 +101,23 @@ Orthogonal (H/V segments only), on a routing grid between node cells:
   reserves the space up front so labels never collide or float.
 - Back-edges route around the diagram's edge channel.
 - Arrowheads: `▶ ▼ ◀ ▲` (unicode), `> v < ^` (ascii).
+
+### Tree layout — ordered, integer, hierarchy-native
+
+Mindmaps do not pass through the layered digraph engine. `tree.rs` accepts
+declaration-ordered parent indices and measured box sizes, assigns one depth
+column per level, places leaves on an even integer stride, and centers every
+parent exactly on the span from its first child to its last. Mindmap lowering
+routes arrowless solid edges through a shared trunk between adjacent columns,
+matching Unix/Diagon ancestry conventions while keeping llmaid's rounded boxes.
+
+The Phase 4.1 parser deliberately uses a strict agent-fixable subset: the root
+is indented two spaces under `mindmap`, descendants add exactly two spaces per
+level, and labels are plain text. Canonical `root((label))` is accepted as a
+root-label spelling but does not request a special shape. Advanced syntax is
+rejected explicitly. Zero-width Unicode sequences are also rejected in this
+slice because the current cell painter cannot preserve them without corrupting
+geometry; precomposed text, CJK, and single-scalar emoji remain supported.
 
 ### Renderer
 
@@ -150,7 +171,7 @@ all diagnostics go to stderr.
 
 ## Testing
 
-- **Behavior contracts**: `BEHAVIORS.md` (B1–B20) indexes the promised
+- **Behavior contracts**: `BEHAVIORS.md` (B1–B25) indexes the promised
   behaviors; each has a given/when/then test in `tests/behavior.rs`
   (CLI contracts exercise the real binary).
 - **Golden snapshots**: `tests/cases/*.mmd` → `tests/cases/*.txt`, byte-compared.
@@ -166,6 +187,10 @@ all diagnostics go to stderr.
 - **Generated coverage** exhausts all 71 non-empty forward DAGs on two through
   four nodes in LR/RL/TB/BT (284 renders), reruns the integer pipeline for
   determinism, and compares exact LR↔RL and TB↔BT audit signatures.
+- **Generated mindmap coverage** exhausts all 197 ordered tree shapes through
+  seven nodes, then adds deep, wide, mixed, CJK/emoji, tight-width, and ASCII
+  cases. Exact parent-span centering, border-center attachment, and interior
+  padding contracts live in `tests/quality.rs`.
 - **Machine audit** (`--audit=json`) exposes normalized named violations and
   witnesses plus the existing exact flowchart metric vector through a stable,
   dependency-free `llmaid.audit.v1` schema. Sequence scenes share the generic
@@ -216,9 +241,10 @@ The guarantees have deliberately different scopes:
    frame.
 2. Alignment and symmetry are topology-aware. The layout applies reusable
    rules to recognized relationships (chains, forks, merges, eligible
-   diamonds, and group boundaries), while `tests/quality.rs` checks exact
-   doubled-cell relations such as equal widths, common centerlines, midpoint
-   labels, mirrored branches, straight shafts, and port clearance.
+   diamonds, group boundaries, and ordered tree parent-child spans), while
+   `tests/quality.rs` checks exact doubled-cell relations such as equal widths,
+   common centerlines, midpoint labels, mirrored branches, straight shafts,
+   tree attachment centers, visible padding, and port clearance.
 3. Goldens prove representative compositions and prevent regressions. They do
    not prove that an arbitrary, previously unclassified topology is beautiful.
    The audit intentionally declines to grade inapplicable relationships rather

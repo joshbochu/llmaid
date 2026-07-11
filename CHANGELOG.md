@@ -58,6 +58,14 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- Phase 4.1 core mindmaps (B25): `mindmap` dispatch, a type-specific ordered
+  indentation IR, strict line-specific errors, a reusable native integer tree
+  layout, arrowless shared-trunk Scene geometry, deterministic Unicode/ASCII
+  output, B9 width fallback, typed audit JSON with exact level counts, 197
+  generated ordered-tree shapes, exact parent-child quality contracts, and
+  balanced/deep/wide/Unicode goldens. Canonical `root((label))` is accepted as
+  a label spelling; icons, styles, classes, Markdown, general node shapes, and
+  zero-width terminal sequences remain explicitly deferred.
 - Phase 3.4 terminal visual fidelity: class headers and members now use closed
   compartments; aggregation/composition/inheritance/dependency/realization use
   endpoint diamonds, arrows, and triangles; multiplicities sit beside their
@@ -200,6 +208,17 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 - `DESIGN.md` (v1 design), `AGENTS.md` (agent guide), this changelog.
 
 ### Decisions
+
+- **D25 — Mindmaps own ordered tree geometry, not layered-graph lowering.**
+  Phase 4.1 parses a strict two-space indentation subset into a flat preorder
+  IR with explicit parent indices, then lowers through a semantic-free native
+  integer tree engine. Source sibling order is authoritative; parents center
+  exactly on their child span; arrowless shared trunks follow Unix/Diagon tree
+  convention; width fallback wraps only under pressure and may render
+  over-width rather than truncate. Advanced Mermaid mindmap syntax and
+  zero-width terminal sequences fail explicitly until their rendering semantics
+  are designed. Rejected: feeding fake flowchart edges to Sugiyama (order and
+  tidy-tree contracts become incidental) and embedding/invoking Diagon.
 
 - **D24 — Relationship notation is endpoint geometry, not edge-label text.**
   Class/ER engines lower semantic adornments and structured table content into

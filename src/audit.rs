@@ -203,18 +203,23 @@ pub fn json(diagram: &crate::diagram::Diagram, max_width: usize) -> String {
             json_report("sequence", &audit, &violations(&scene), &generic, false)
         }
         crate::diagram::Diagram::State(state) => {
-            generic_scene_json("state", crate::state::scene(state, max_width))
+            generic_scene_json("state", crate::state::scene(state, max_width), 0)
         }
         crate::diagram::Diagram::Class(class) => {
-            generic_scene_json("class", crate::class::scene(class, max_width))
+            generic_scene_json("class", crate::class::scene(class, max_width), 0)
         }
         crate::diagram::Diagram::Er(er) => {
-            generic_scene_json("er", crate::er::scene(er, max_width))
+            generic_scene_json("er", crate::er::scene(er, max_width), 0)
         }
+        crate::diagram::Diagram::Mindmap(mindmap) => generic_scene_json(
+            "mindmap",
+            crate::mindmap::scene(mindmap, max_width),
+            mindmap.levels(),
+        ),
     }
 }
 
-fn generic_scene_json(diagram: &str, mut scene: Scene) -> String {
+fn generic_scene_json(diagram: &str, mut scene: Scene, ranks: usize) -> String {
     scene.normalize();
     let bounds = scene.bounds();
     let violations = violations(&scene);
@@ -224,7 +229,7 @@ fn generic_scene_json(diagram: &str, mut scene: Scene) -> String {
         area: (bounds.w.max(0) as usize).saturating_mul(bounds.h.max(0) as usize),
         nodes: scene.boxes.len(),
         edges: scene.edges.len(),
-        ranks: 0,
+        ranks,
         hard_violations: violations.iter().map(GeometryViolation::message).collect(),
         rank_axis_residual2: 0,
         mono_centerline_residual2: 0,

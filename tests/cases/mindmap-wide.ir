@@ -1,0 +1,9 @@
+mindmap
+node 0 depth=0 parent=- line=2 label="Release"
+node 1 depth=1 parent=0 line=3 label="Format"
+node 2 depth=1 parent=0 line=4 label="Lint"
+node 3 depth=1 parent=0 line=5 label="Test"
+node 4 depth=1 parent=0 line=6 label="Build"
+node 5 depth=1 parent=0 line=7 label="Audit"
+node 6 depth=1 parent=0 line=8 label="Gallery"
+node 7 depth=1 parent=0 line=9 label="Commit"

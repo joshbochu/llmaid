@@ -778,3 +778,39 @@ fn b24_given_runtime_invariant_failure_then_checked_render_returns_actionable_di
     assert!(!stdout.is_empty());
     assert!(!stderr.contains("invariant failure"), "{stderr}");
 }
+
+#[test]
+fn b25_given_core_mindmap_then_ordered_hierarchy_is_preserved_and_self_debuggable() {
+    let source = "\
+mindmap
+  root((Agent loop))
+    Parse
+      Ordered IR
+      Clear errors
+    Render
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    for label in [
+        "Agent loop",
+        "Parse",
+        "Ordered IR",
+        "Clear errors",
+        "Render",
+    ] {
+        assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
+    }
+    assert_eq!(run_llmaid(&[], source).0, unicode);
+
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+
+    let (stdout, stderr, code) = run_llmaid(&[], "mindmap\n  Root\n      Missing parent\n");
+    assert_eq!(code, 64);
+    assert_eq!(stdout, "");
+    assert!(
+        stderr.contains("line 3") && stderr.contains("missing parent"),
+        "{stderr}"
+    );
+}

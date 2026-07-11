@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D21.
+`CHANGELOG.md` D9–D25.
 
 ## Parsing
 
@@ -124,3 +124,15 @@ structural coverage lives beside its engine tests. Decisions behind these:
   checked-render path runs, then no diagram is returned as successful and each
   exact failure is available for actionable stderr diagnostics. The CLI exits
   70, keeps stdout empty, and points agents to `--audit=json` for inspection.
+
+## Hierarchy diagrams
+
+- **B25** Given a core `mindmap` with one root and plain descendants indented
+  in two-space levels, when rendered, then the ordered parent-child hierarchy
+  and source sibling order are preserved as a deterministic left-to-right
+  boxed tree with arrowless shared trunks. Unicode and `--ascii` structure are
+  deterministic; labels follow B9/B10 and never truncate; `--audit=json`
+  reports the mindmap type and exact level count. Malformed indentation,
+  missing parents, multiple roots, deferred advanced syntax, and terminal-
+  unsafe zero-width sequences fail with the source line and a repairable
+  expectation instead of producing an ambiguous or corrupt frame.

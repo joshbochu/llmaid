@@ -19,7 +19,7 @@ or competitor notes change. Roadmap phases: [`ROADMAP.md`](ROADMAP.md).
 
 | Tool | Role in comparison |
 |------|-------------------|
-| **llmaid** | This project (flowchart + sequence + core design-doc subsets) |
+| **llmaid** | This project (flowchart + sequence + core design-doc and mindmap subsets) |
 | **termiflow** | Terminal Mermaid flowchart (`tw`) |
 | **termaid** | Terminal multi-type Mermaid (Python) |
 | **diagon** | Non-Mermaid ASCII generators |
@@ -40,7 +40,7 @@ not a formal audit. llmaid cells should stay honest.
 | Mermaid state | P | N | Y | N | N | Y |
 | Mermaid class | P | N | Y | N | N | Y |
 | Mermaid ER | P | N | Y | N | N | Y |
-| Mermaid mindmap | N | N | Y | N | N | Y |
+| Mermaid mindmap | P | N | Y | N | N | Y |
 | Mermaid gantt / timeline | N | N | Y | N | N | Y |
 | Mermaid gitGraph | N | N | Y | N | N | Y |
 | Mermaid pie / charts | N | N | Y | N | N | Y |
@@ -104,8 +104,8 @@ Mermaid as the only primary agent language.
 
 | Capability | llmaid | termiflow | termaid | diagon | graph-easy | mermaid.js |
 |------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
-| Indented / box tree | N | N | Y (mindmap) | Y | P (as graph) | Y (mindmap) |
-| Parent–child only layout | N | N | Y | Y | P | Y |
+| Indented / box tree | Y | N | Y (mindmap) | Y | P (as graph) | Y (mindmap) |
+| Parent–child only layout | Y | N | Y | Y | P | Y |
 
 **Roadmap:** Phase 4.1.
 
@@ -197,7 +197,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Clustered / compound graph | Y | ? | P | N | Y | Y |
 | Sequence / swimlane time | P | N | Y | Y (seq) | N | Y |
 | Typed boxed design graphs | Y | N | Y | N | P | Y |
-| Tree hierarchy | N | N | Y | Y (tree) | P | Y |
+| Tree hierarchy | Y | N | Y | Y (tree) | P | Y |
 | Math typography | N | N | N | Y | N | N |
 | Table grid | N | N | N | Y | N | P |
 | Time-axis bars (gantt) | N | N | Y | N | N | Y |
@@ -216,7 +216,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Node shapes | `[ ] ( ) { }` … | **Y** (hints) |
 | Groups / machines | `subgraph` | **Y** |
 | Sequence | `sequenceDiagram` | **P** (participants, messages, notes, activation, loop/alt/opt) |
-| Tree | `mindmap` or flowchart TB | **N** |
+| Tree | `mindmap` or flowchart TB | **P** (one plain-label root hierarchy) |
 | Class / ER / state | respective types | **P** (core subsets) |
 | Table | Markdown table (not Mermaid) | park |
 | Math | not Mermaid | park |
@@ -228,7 +228,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Goal | Leader today | llmaid |
 |------|--------------|--------|
 | Terminal flowchart **quality** (thesis) | **llmaid** | Leading |
-| Terminal Mermaid **breadth** | **termaid** | Flowchart, sequence, and core design-doc types |
+| Terminal Mermaid **breadth** | **termaid** | Flowchart, sequence, core design-doc types, and core mindmap |
 | Non-Mermaid ASCII kit | **diagon** | — |
 | General graph language + clusters | **graph-easy** | Missing subgraphs |
 | Full language reference | **mermaid.js** | Slice only |
@@ -256,3 +256,4 @@ When you ship a feature:
 | 2026-07-11 | Phase 2.3: left/right/over notes and balanced explicit activate/deactivate bars; B18 + focused goldens. |
 | 2026-07-11 | Sequence controls: nested loop/alt/else/opt frames; B20 + golden coverage. |
 | 2026-07-11 | Agent audit: stable `--audit=json` plus 284 generated directional renders and 71 mirror-signature checks. |
+| 2026-07-11 | Phase 4.1: core ordered `mindmap`, reusable integer tree layout, exact parent-child contracts, and four goldens. |

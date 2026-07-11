@@ -1,0 +1,8 @@
+mindmap
+node 0 depth=0 parent=- line=2 label="端末図 🧜"
+node 1 depth=1 parent=0 line=3 label="解析"
+node 2 depth=2 parent=1 line=4 label="順序"
+node 3 depth=2 parent=1 line=5 label="診断"
+node 4 depth=1 parent=0 line=6 label="描画"
+node 5 depth=2 parent=4 line=7 label="Unicode"
+node 6 depth=2 parent=4 line=8 label="ASCII"

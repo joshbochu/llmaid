@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-11 — Phase 3.4 design-doc visual fidelity landed.
+Last updated: 2026-07-11 — Phase 4.1 core mindmap hierarchy landed.
 
 ## What this project is
 
@@ -17,12 +17,12 @@ without losing glance quality.
 2. `DESIGN.md` — v1 design thesis and architecture  
 3. `ROADMAP.md` — phased plan (what to build next)  
 4. `MATRIX.md` — capability × tool coverage checklist  
-5. `BEHAVIORS.md` — shipped contracts B1–B24
-6. `CHANGELOG.md` — decisions D1–D23
+5. `BEHAVIORS.md` — shipped contracts B1–B25
+6. `CHANGELOG.md` — decisions D1–D25
 
 ## Current state
 
-**Contracts B1–B24 + Phase 0–3 core + Phase 6.2–6.3/6.5 are landed.**
+**Contracts B1–B25 + Phase 0–3 core + Phase 4.1 + Phase 6.2–6.3/6.5 are landed.**
 
 - Pipeline: parse → flow layout → route into signed `Scene` → pure canvas render
 - Diagram dispatch: flowcharts retain their established pipeline; the sequence
@@ -35,6 +35,13 @@ without losing glance quality.
   transitions; classes with members, UML relation operators, multiplicities,
   and labels; ER entities with typed attributes, PK/FK/UK markers, comments,
   cardinalities, and identifying/non-identifying relations
+- Core mindmaps: `mindmap` dispatch, one two-space-indented root, plain
+  descendants, stable sibling order, canonical `root((label))` label support,
+  and distinct line-specific errors for malformed indentation, missing parents,
+  multiple roots, deferred syntax, and zero-width terminal sequences
+- Reusable tree geometry: independent integer-grid ordered-tree layout with
+  left-to-right depth columns, exact parent/child-span centering, shared
+  arrowless trunks, Unicode measurement, width fallback, and shared-Scene output
 - Typed boxed adapter: state/class/ER retain independent semantic IR and join
   the established integer layered geometry only when lowering to `Scene`
 - Design-doc visual grammar: class headers/members use compartments; UML
@@ -59,17 +66,20 @@ without losing glance quality.
   topology-aware quality contracts (`tests/quality.rs`)
 - Quality audit: `cargo run -q --example symmetry` reports hard failures,
   doubled-cell relational residuals, crossings, bends, and wire length
-- CLI audit: `--audit=json` emits byte-stable `llmaid.audit.v1` for flowcharts
-  and sequences with normalized bounds/counts, named invariant violations,
-  exact edge/box/cell witnesses, and the flowchart metric vector
+- CLI audit: `--audit=json` emits byte-stable `llmaid.audit.v1` for every
+  shipped type with normalized bounds/counts and named invariant violations;
+  mindmaps report exact level counts and flowcharts add the geometry metric vector
 - Generated coverage: all 71 non-empty forward DAGs on 2–4 nodes render in all
   four directions (284 cases); opposite directions have exact audit signatures
 - Generated design coverage: 40 state/class/ER direction renders verify
   invariants, determinism, ASCII purity, semantics, and opposite envelopes
+- Generated hierarchy coverage: all 197 ordered tree shapes through seven
+  nodes plus deep, wide, mixed, Unicode, tight-width, and ASCII cases verify
+  determinism, source order, label survival, and Scene invariants
 - Guarantee boundary: engine-wide grid/determinism rules and scene invariants
   are distinct from topology-specific aesthetic contracts. Known chains,
-  forks, merges, eligible diamonds, and group boundaries have exact tests;
-  goldens do not prove arbitrary unclassified topologies beautiful. See
+  forks, merges, eligible diamonds, group boundaries, and ordered tree spans
+  have exact tests; goldens do not prove arbitrary unclassified topologies beautiful. See
   `DESIGN.md` "Quality guarantee model."
 - Vertical routing widens lone distinct-peer junction boxes to preserve straight
   attachment shafts; grouped external children start after internal content;
@@ -88,8 +98,8 @@ without losing glance quality.
 
 ## Next steps (from ROADMAP)
 
-1. **Phase 4.1** — `mindmap` / tree hierarchy
-2. Planning timelines and `gitGraph`, then selective charts
+1. **Phase 4.2** — planning timelines (`gantt` or `timeline`)
+2. **Phase 4.3** — `gitGraph`, then selective charts
 3. Remaining agent diagnostics (JSON parser errors / optional JSON IR input)
 4. Optional visual polish: native state pseudo-markers and nested
    state/subgraph handling
@@ -98,9 +108,9 @@ Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 
 ### Suggested next pickup
 
-Choose whether Phase 4 starts with `mindmap` or a reusable tree layout. Keep the
-same thin vertical-slice discipline: type-specific IR, shared `Scene`, behavior
-contract, generated directions where applicable, goldens, and visual review.
+Apply the same thin vertical-slice discipline to a time-axis engine: type-
+specific ordered IR, shared `Scene`, behavior contract, deterministic generated
+coverage, focused goldens, and visual review.
 
 ## Quality bar
 

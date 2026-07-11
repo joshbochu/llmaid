@@ -11,6 +11,8 @@
 
 use llmaid::diagram::{self, Diagram};
 use llmaid::metrics::{self, format_header, format_row};
+use llmaid::render;
+use llmaid::style::Style;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -45,6 +47,7 @@ fn main() {
     println!("{}", format_header());
     println!("{}", "-".repeat(format_header().len()));
 
+    let mut failed = false;
     for name in &names {
         let src = fs::read_to_string(dir.join(format!("{name}.mmd"))).unwrap_or_else(|e| {
             eprintln!("{name}: {e}");
@@ -57,16 +60,26 @@ fn main() {
                 continue;
             }
         };
-        let Diagram::Flowchart(graph) = diagram else {
-            println!("{name:<20} (non-flow engine; scene invariants only)");
-            continue;
-        };
-        if graph.nodes.is_empty() {
-            println!("{name:<20} (empty)");
-            continue;
+        if let Diagram::Flowchart(graph) = &diagram {
+            if graph.nodes.is_empty() {
+                println!("{name:<20} (empty)");
+                continue;
+            }
+            let m = metrics::measure_graph(graph, 100);
+            failed |= !m.hard_violations.is_empty();
+            println!("{}", format_row(name, &m));
+        } else {
+            let scene = diagram::scene(&diagram, 100);
+            let (_, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+            failed |= !failures.is_empty();
+            println!(
+                "{name:<20} (non-flow scene invariants: {})",
+                if failures.is_empty() { "pass" } else { "FAIL" }
+            );
+            for failure in failures {
+                eprintln!("{name}: {failure}");
+            }
         }
-        let m = metrics::measure_graph(&graph, 100);
-        println!("{}", format_row(name, &m));
     }
 
     println!();
@@ -74,4 +87,7 @@ fn main() {
     println!("        rank²/mono²/fork²/merge²=avoidable exact alignment residuals");
     println!("        mirror²/n=eligible diamond residual/count; cross=edge crossing cells");
     println!("        bends=total direction changes; wire=total routed Manhattan length");
+    if failed {
+        process::exit(1);
+    }
 }
