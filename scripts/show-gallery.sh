@@ -6,6 +6,9 @@
 #   ./scripts/show-gallery.sh pipeline     # filter by name substring
 #   ./scripts/show-gallery.sh --txt cycle  # combine flags
 #
+# For a multi-diagram packed contact sheet (side-by-side shelves), see:
+#   ./scripts/contact-sheet.py --help
+#
 # Run each command on its own line (don't paste comments on the same line as the command).
 set -euo pipefail
 

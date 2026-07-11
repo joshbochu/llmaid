@@ -18,6 +18,9 @@ cargo build --release            # optimized binary at target/release/llmaid
 
 ./scripts/show-gallery.sh        # eyeball all golden cases (live render)
 ./scripts/show-gallery.sh --txt  # same, from committed *.txt (fast)
+./scripts/contact-sheet.py       # packed contact sheet (terminal shelves)
+./scripts/contact-sheet.py --html -o /tmp/llmaid-gallery.html
+cargo run -q --example symmetry  # grid/symmetry metrics table (all goldens)
 UPDATE_GOLDEN=1 cargo test        # regen tests/cases/*.{ir,txt} after intentional changes
 ```
 

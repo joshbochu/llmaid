@@ -1,4 +1,5 @@
 pub mod layout;
+pub mod metrics;
 pub mod parse;
 pub mod render;
 pub mod route;
