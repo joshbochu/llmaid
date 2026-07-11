@@ -19,7 +19,7 @@ or competitor notes change. Roadmap phases: [`ROADMAP.md`](ROADMAP.md).
 
 | Tool | Role in comparison |
 |------|-------------------|
-| **llmaid** | This project (flowchart + sequence interaction/control subset) |
+| **llmaid** | This project (flowchart + sequence + core design-doc subsets) |
 | **termiflow** | Terminal Mermaid flowchart (`tw`) |
 | **termaid** | Terminal multi-type Mermaid (Python) |
 | **diagon** | Non-Mermaid ASCII generators |
@@ -37,9 +37,9 @@ not a formal audit. llmaid cells should stay honest.
 |------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
 | Mermaid flowchart/graph | Y | Y | Y | N | N | Y |
 | Mermaid sequence | P | N | Y | N | N | Y |
-| Mermaid state | N | N | Y | N | N | Y |
-| Mermaid class | N | N | Y | N | N | Y |
-| Mermaid ER | N | N | Y | N | N | Y |
+| Mermaid state | P | N | Y | N | N | Y |
+| Mermaid class | P | N | Y | N | N | Y |
+| Mermaid ER | P | N | Y | N | N | Y |
 | Mermaid mindmap | N | N | Y | N | N | Y |
 | Mermaid gantt / timeline | N | N | Y | N | N | Y |
 | Mermaid gitGraph | N | N | Y | N | N | Y |
@@ -115,9 +115,9 @@ Mermaid as the only primary agent language.
 
 | Capability | llmaid | termiflow | termaid | diagon | graph-easy | mermaid.js |
 |------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
-| State machines | N | N | Y | N | P | Y |
-| Class diagrams | N | N | Y | N | P | Y |
-| ER diagrams | N | N | Y | N | P | Y |
+| State machines | P | N | Y | N | P | Y |
+| Class diagrams | P | N | Y | N | P | Y |
+| ER diagrams | P | N | Y | N | P | Y |
 
 **Roadmap:** Phase 3. (graph-easy can fake some via shapes; not first-class.)
 
@@ -194,6 +194,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Layered digraph (Sugiyama-like) | Y | Y | Y | Y (dag) | Y | Y |
 | Clustered / compound graph | Y | ? | P | N | Y | Y |
 | Sequence / swimlane time | P | N | Y | Y (seq) | N | Y |
+| Typed boxed design graphs | Y | N | Y | N | P | Y |
 | Tree hierarchy | N | N | Y | Y (tree) | P | Y |
 | Math typography | N | N | N | Y | N | N |
 | Table grid | N | N | N | Y | N | P |
@@ -214,7 +215,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Groups / machines | `subgraph` | **Y** |
 | Sequence | `sequenceDiagram` | **P** (participants, messages, notes, activation, loop/alt/opt) |
 | Tree | `mindmap` or flowchart TB | **N** |
-| Class / ER / state | respective types | **N** |
+| Class / ER / state | respective types | **P** (core subsets) |
 | Table | Markdown table (not Mermaid) | park |
 | Math | not Mermaid | park |
 
@@ -225,7 +226,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Goal | Leader today | llmaid |
 |------|--------------|--------|
 | Terminal flowchart **quality** (thesis) | **llmaid** | Leading |
-| Terminal Mermaid **breadth** | **termaid** | Narrow (flowchart + core sequence) |
+| Terminal Mermaid **breadth** | **termaid** | Flowchart, sequence, and core design-doc types |
 | Non-Mermaid ASCII kit | **diagon** | — |
 | General graph language + clusters | **graph-easy** | Missing subgraphs |
 | Full language reference | **mermaid.js** | Slice only |

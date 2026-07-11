@@ -147,6 +147,9 @@ fn b14_frame_invariants_hold_for_all_cases() {
                     llmaid::sequence::SequenceEvent::Activation(_) => None,
                 }))
                 .collect(),
+            Diagram::State(state) => llmaid::state::labels(state),
+            Diagram::Class(class) => class.labels(),
+            Diagram::Er(er) => er.labels(),
         };
         for label in labels {
             let want: String = label.chars().filter(|c| c.is_alphanumeric()).collect();

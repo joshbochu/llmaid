@@ -1,0 +1,5 @@
+╭───────────────────╮                          ╭────────────╮                           ╭────────╮
+│     Customer      │                          │   Ticket   ├┄┄┄ ..|> : persists as ┄┄┄▶│ Record │
+│   +String name    ├─── 1 o-- 0..* : owns ────┤ +String id │                           ╰────────╯
+│ +buy(ticket) bool │                          ╰────────────╯
+╰───────────────────╯

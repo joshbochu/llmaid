@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-11 — audit, generated coverage, and sequence controls landed.
+Last updated: 2026-07-11 — Phase 3 design-doc types and runtime checks landed.
 
 ## What this project is
 
@@ -17,12 +17,12 @@ without losing glance quality.
 2. `DESIGN.md` — v1 design thesis and architecture  
 3. `ROADMAP.md` — phased plan (what to build next)  
 4. `MATRIX.md` — capability × tool coverage checklist  
-5. `BEHAVIORS.md` — shipped contracts B1–B20
-6. `CHANGELOG.md` — decisions D1–D21
+5. `BEHAVIORS.md` — shipped contracts B1–B24
+6. `CHANGELOG.md` — decisions D1–D23
 
 ## Current state
 
-**Contracts B1–B20 + Phase 0–2 core + Phase 6.2–6.3 are landed.**
+**Contracts B1–B24 + Phase 0–3 core + Phase 6.2–6.3/6.5 are landed.**
 
 - Pipeline: parse → flow layout → route into signed `Scene` → pure canvas render
 - Diagram dispatch: flowcharts retain their established pipeline; the sequence
@@ -31,6 +31,12 @@ without losing glance quality.
   headers, dotted lifelines, ordered messages/notes/activation events, `->>`
   messages, `-->>` returns, left/right/over notes, balanced activation bars,
   and nested framed `loop`, `alt` / `else`, and `opt` controls
+- Core design-doc diagrams: flat state machines with aliases/markers/labeled
+  transitions; classes with members, UML relation operators, multiplicities,
+  and labels; ER entities with typed attributes, PK/FK/UK markers, comments,
+  cardinalities, and identifying/non-identifying relations
+- Typed boxed adapter: state/class/ER retain independent semantic IR and join
+  the established integer layered geometry only when lowering to `Scene`
 - Sequence visual grammar: calls end with a filled arrow at the destination
   lifeline (`────▶┊`); returns begin at the destination with a thin arrow
   (`┊←────`); active messages attach to the nearest bar boundary; ASCII uses
@@ -40,7 +46,9 @@ without losing glance quality.
   spacious pad; nested parent tracked
 - Edge labels: padded on-shaft (` scan `); TB/BT labels beside vertical runs
 - Directions: LR/RL/TB/BT with goldens
-- CLI: `--ascii`, `--width N` (default 100), `--strict`, `--audit=json`
+- CLI: `--ascii`, `--width N` (default 100), `--strict`, `--audit=json`;
+  normal rendering is invariant-checked and exits 70 without stdout on an
+  internal geometry failure
 - Tests: behavior + IR/render goldens + B14/B16 scene invariants + exact
   topology-aware quality contracts (`tests/quality.rs`)
 - Quality audit: `cargo run -q --example symmetry` reports hard failures,
@@ -50,6 +58,8 @@ without losing glance quality.
   exact edge/box/cell witnesses, and the flowchart metric vector
 - Generated coverage: all 71 non-empty forward DAGs on 2–4 nodes render in all
   four directions (284 cases); opposite directions have exact audit signatures
+- Generated design coverage: 40 state/class/ER direction renders verify
+  invariants, determinism, ASCII purity, semantics, and opposite envelopes
 - Guarantee boundary: engine-wide grid/determinism rules and scene invariants
   are distinct from topology-specific aesthetic contracts. Known chains,
   forks, merges, eligible diamonds, and group boundaries have exact tests;
@@ -72,19 +82,19 @@ without losing glance quality.
 
 ## Next steps (from ROADMAP)
 
-1. **Phase 3.1** — flat `stateDiagram` / `stateDiagram-v2`
-2. `classDiagram`, then `erDiagram`
-3. Planning/hierarchy → charts → remaining agent diagnostics → distribute
-4. Optional: nested subgraph polish / exit-edge routing through frames
+1. **Phase 4.1** — `mindmap` / tree hierarchy
+2. Planning timelines and `gitGraph`, then selective charts
+3. Remaining agent diagnostics (JSON parser errors / optional JSON IR input)
+4. Shared visual-quality slice: native state pseudo-markers and endpoint
+   adornments for UML/ER relations; optional nested state/subgraph polish
 
 Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 
 ### Suggested next pickup
 
-Land a thin flat-state vertical slice: detect `stateDiagram` /
-`stateDiagram-v2`, parse named states and transitions into a type-specific IR,
-emit the shared `Scene`, and ship behavior/error coverage plus focused goldens
-before considering nested composite states.
+Choose whether Phase 4 starts with `mindmap` or a reusable tree layout. Keep the
+same thin vertical-slice discipline: type-specific IR, shared `Scene`, behavior
+contract, generated directions where applicable, goldens, and visual review.
 
 ## Quality bar
 

@@ -53,6 +53,17 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- Phase 3 design-document diagrams (B21–B23): flat `stateDiagram` /
+  `stateDiagram-v2`, core `classDiagram`, and core `erDiagram` now dispatch to
+  independent semantic parsers and lower through a shared typed-box adapter.
+  State aliases/markers/transitions, class members/UML relations, and ER
+  attributes/keys/cardinalities remain visible in deterministic Unicode and
+  ASCII output, with per-type line diagnostics, audit JSON, generated coverage,
+  behavior tests, and IR/render goldens.
+- Runtime invariant enforcement (B24 / Phase 6.5): the normal CLI render path
+  now runs the same scene checks as tests. A failure writes exact diagnostics
+  and an audit hint to stderr, keeps stdout empty, and exits 70 instead of
+  publishing corrupt geometry.
 - Stable machine geometry audit (B19): `--audit=json` emits
   `llmaid.audit.v1` for flowcharts and sequences with normalized bounds,
   element counts, deterministic named violations, exact witnesses where
@@ -175,6 +186,20 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 - `DESIGN.md` (v1 design), `AGENTS.md` (agent guide), this changelog.
 
 ### Decisions
+
+- **D23 — Invariant checks gate normal CLI output.** The runtime uses the same
+  checked scene painter as tests. If internal geometry violates a contract,
+  stdout stays empty, exact failures go to stderr, and exit 70 distinguishes an
+  internal renderer failure from malformed input (64). Rejected: knowingly
+  printing a damaged diagram and test-only invariants.
+
+- **D22 — Design-doc types share geometry, not semantic IR.** State, class,
+  and ER own separate ordered parsers and semantic models, then lower structured
+  nodes and relations through a small typed-box adapter into the established
+  integer layout/router. Relation operators/cardinalities remain visible in
+  edge labels until generic endpoint adornments exist. Rejected: fake Mermaid
+  flowchart source (lossy diagnostics) and one union IR coupling unrelated
+  language rules.
 
 - **D21 — Sequence controls are boundary directives, not fake events.**
   `loop`, `alt` / `else`, `opt`, and `end` attach to stable indices in the

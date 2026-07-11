@@ -36,9 +36,10 @@ Flowcharts retain the five-stage pipeline; diagram dispatch and other engines
 join only at the shared `Scene` boundary:
 
 ```
-main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ─┐
-                     └→ sequence.rs (events + fragments) ┴→ Scene → render.rs
-                                                         style.rs (glyphs)
+main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ─────────┐
+                     ├→ sequence.rs (events + fragments)         │
+                     └→ state.rs / class.rs / er.rs → boxed.rs ──┴→ Scene → render.rs
+                                                                  style.rs (glyphs)
 ```
 
 - `diagram.rs` — top-level Mermaid type detection and engine dispatch.
@@ -51,6 +52,8 @@ main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ─┐
   orthogonal paths, arrows, and collision-free label positions. Back-edges use
   the perimeter channel.
 - `sequence.rs` — sequence semantic IR + integer lifeline/message layout.
+- `state.rs` / `class.rs` / `er.rs` — independent design-doc semantic IR;
+  lower structured boxes/relations through `boxed.rs` into shared geometry.
 - `scene.rs` — shared `Point` / `Rect` / path / text primitives; normalizes the
   finished scene once and derives exact bounds.
 - `render.rs` — pure scene painter + char canvas; box-drawing junctions resolved

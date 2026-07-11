@@ -143,7 +143,17 @@ fn main() -> ExitCode {
     }
 
     let scene = diagram::scene(&diagram, width);
-    let output = render::render_scene(&scene, Style { ascii: opts.ascii });
-    print!("{output}");
-    ExitCode::SUCCESS
+    match render::render_scene_checked(&scene, Style { ascii: opts.ascii }) {
+        Ok(output) => {
+            print!("{output}");
+            ExitCode::SUCCESS
+        }
+        Err(failures) => {
+            for failure in failures {
+                eprintln!("llmaid: invariant failure: {failure}");
+            }
+            eprintln!("llmaid: diagram not written; inspect with `--audit=json`");
+            ExitCode::from(70)
+        }
+    }
 }

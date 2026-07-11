@@ -43,7 +43,9 @@ Subgraphs are supported (Phase 1). The core sequence slice supports
 participants/actors (including implicit participants), lifelines, `->>`
 messages, `-->>` returns, left/right/over notes, and balanced explicit
 activation bars. Balanced nested `loop`, `alt` / `else`, and `opt` control
-blocks render as labeled frames. Trees/mindmaps and styling directives remain
+blocks render as labeled frames. Phase 3 adds flat state diagrams, core class
+diagrams, and core ER diagrams through separate semantic IRs and a shared
+typed-box geometry adapter. Trees/mindmaps and styling directives remain
 expansion work tracked in `ROADMAP.md`; coverage lives in `MATRIX.md`.
 
 ## Architecture
@@ -56,6 +58,10 @@ src/
   layout.rs    IR → integer flow-grid positions
   route.rs     Layout → complete screen-space paths, arrows, and labels
   sequence.rs  ordered event/control IR + lifeline/fragment layout → Scene
+  state.rs     flat state semantic IR → boxed geometry → Scene
+  class.rs     class/member/relation semantic IR → boxed geometry → Scene
+  er.rs        entity/attribute/cardinality semantic IR → boxed geometry → Scene
+  boxed.rs     semantic-free typed boxes/relations → layered layout + routing
   scene.rs     Signed Point/Rect/Path/Text primitives + exact bounds
   render.rs    Scene → grid canvas → styled box-drawing output
   style.rs     Charsets: unicode (default) / ascii

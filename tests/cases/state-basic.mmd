@@ -1,0 +1,8 @@
+stateDiagram-v2
+  direction LR
+  state "Waiting for request" as Waiting
+  state Processing
+  [*] --> Waiting
+  Waiting --> Processing : request received
+  Processing --> Waiting : retry
+  Processing --> [*] : complete

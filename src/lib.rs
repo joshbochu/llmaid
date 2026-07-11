@@ -1,5 +1,8 @@
 pub mod audit;
+pub mod boxed;
+pub mod class;
 pub mod diagram;
+pub mod er;
 pub mod layout;
 pub mod metrics;
 pub mod parse;
@@ -7,4 +10,5 @@ pub mod render;
 pub mod route;
 pub mod scene;
 pub mod sequence;
+pub mod state;
 pub mod style;

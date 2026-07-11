@@ -36,7 +36,7 @@ structural coverage lives beside its engine tests. Decisions behind these:
 - **B8** Given the same input and flags, when run anywhere (any terminal, any
   TTY state), then output is byte-identical. Default width is a fixed 100;
   only `--width` changes it. No terminal detection.
-- **B19** Given `--audit=json`, when a flowchart or sequence diagram is
+- **B19** Given `--audit=json`, when any supported diagram is
   inspected, then stdout is a byte-stable `llmaid.audit.v1` JSON document
   instead of a rendered diagram. It names the diagram type, normalized bounds,
   element counts, deterministic violations, exact witnesses where available,
@@ -91,3 +91,30 @@ structural coverage lives beside its engine tests. Decisions behind these:
   participant lifelines. Unicode and `--ascii` output are deterministic and
   never truncate labels; malformed, unmatched, duplicate-`else`, and unclosed
   directives name the source line and expectation.
+
+## Design-document diagrams
+
+- **B21** Given a flat `stateDiagram` or `stateDiagram-v2` containing named,
+  aliased, or implicit states, `[*]` start/end markers, labeled transitions,
+  and a direction, when rendered, then declaration order and every transition
+  are preserved with distinct connected marker nodes. Unicode and `--ascii`
+  output are deterministic and never truncate labels; unsupported composite
+  states and malformed statements name the source line and expectation.
+- **B22** Given a `classDiagram` containing classes, visibility-bearing
+  members/methods, primary UML relation operators, multiplicities, labels, and
+  a direction, when rendered, then all visible semantics remain in the class
+  boxes or relation labels. Unicode and `--ascii` output are deterministic and
+  malformed declarations/relations name the source line and expectation.
+- **B23** Given an `erDiagram` containing aliased entities, typed attributes,
+  PK/FK/UK markers, comments, zero/one/many cardinalities, identifying or
+  non-identifying relations, labels, and a direction, when rendered, then all
+  visible semantics are preserved. Unicode and `--ascii` output are
+  deterministic and malformed attributes/relationships name the source line
+  and expectation.
+
+## Runtime self-checks
+
+- **B24** Given a scene with a renderer invariant failure, when the runtime
+  checked-render path runs, then no diagram is returned as successful and each
+  exact failure is available for actionable stderr diagnostics. The CLI exits
+  70, keeps stdout empty, and points agents to `--audit=json` for inspection.

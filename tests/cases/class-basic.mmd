@@ -1,0 +1,11 @@
+classDiagram
+  direction LR
+  class Customer {
+    +String name
+    +buy(ticket) bool
+  }
+  class Ticket {
+    +String id
+  }
+  Customer "1" o-- "0..*" Ticket : owns
+  Ticket ..|> Record : persists as

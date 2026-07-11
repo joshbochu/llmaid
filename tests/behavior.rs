@@ -612,3 +612,155 @@ sequenceDiagram
     assert!(ascii.is_ascii(), "{ascii}");
     assert!(ascii.contains("else rejected") && ascii.contains("retry"));
 }
+
+#[test]
+fn b21_given_flat_state_diagram_then_states_markers_and_transitions_are_preserved() {
+    let source = "\
+stateDiagram-v2
+  direction LR
+  state \"Waiting for request\" as Waiting
+  [*] --> Waiting
+  Waiting --> Processing : request received
+  Processing --> [*] : complete
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    for label in [
+        "Waiting for request",
+        "Processing",
+        "request received",
+        "complete",
+    ] {
+        assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
+    }
+    assert!(
+        unicode.contains("( * )") && unicode.contains("( O )"),
+        "{unicode}"
+    );
+
+    let (repeat, _, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0);
+    assert_eq!(unicode, repeat);
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+
+    let (_, stderr, code) = run_llmaid(&[], "stateDiagram\nstate Outer {\n");
+    assert_eq!(code, 64);
+    assert!(
+        stderr.contains("line 2") && stderr.contains("flat state"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn b22_given_class_diagram_then_members_relations_and_multiplicities_are_preserved() {
+    let source = "\
+classDiagram
+  direction LR
+  class Customer {
+    +String name
+    +buy(ticket) bool
+  }
+  Customer \"1\" o-- \"0..*\" Ticket : owns
+  Ticket ..|> Record : persists as
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    for label in [
+        "Customer",
+        "+String name",
+        "+buy(ticket) bool",
+        "1 o-- 0..* : owns",
+        "..|> : persists as",
+    ] {
+        assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
+    }
+    let (repeat, _, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0);
+    assert_eq!(unicode, repeat);
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+
+    let (_, stderr, code) = run_llmaid(&[], "classDiagram\nA ??? B\n");
+    assert_eq!(code, 64);
+    assert!(
+        stderr.contains("line 2") && stderr.contains("relation operator"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn b23_given_er_diagram_then_attributes_cardinalities_and_relation_kinds_are_preserved() {
+    let source = "\
+erDiagram
+  direction LR
+  CUSTOMER[Customer Account] {
+    string customer_id PK, UK \"public identifier\"
+    string region_id FK
+  }
+  CUSTOMER ||--o{ ORDER : \"places\"
+  ORDER }o..|| RECEIPT : generates
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    for label in [
+        "Customer Account",
+        "string customer_id PK UK",
+        "string region_id FK",
+        "||--o{ : places",
+        "}o..|| : generates",
+    ] {
+        assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
+    }
+    let (repeat, _, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0);
+    assert_eq!(unicode, repeat);
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+
+    let (_, stderr, code) = run_llmaid(&[], "erDiagram\nA ||--o{ B\n");
+    assert_eq!(code, 64);
+    assert!(
+        stderr.contains("line 2") && stderr.contains("expected `:`"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn b24_given_runtime_invariant_failure_then_checked_render_returns_actionable_diagnostics() {
+    use llmaid::parse::EdgeKind;
+    use llmaid::scene::{Point, Rect, RoutedEdge, Scene, SceneBox};
+
+    let scene = Scene {
+        boxes: vec![SceneBox {
+            node: 7,
+            rect: Rect::new(2, 0, 5, 3),
+            lines: vec![],
+            shape: Shape::Rect,
+        }],
+        edges: vec![RoutedEdge {
+            edge: 0,
+            points: vec![Point::new(0, 1), Point::new(8, 1)],
+            rounded: vec![],
+            kind: EdgeKind::Solid,
+            label: None,
+            arrow: None,
+        }],
+        ..Scene::default()
+    };
+    let failures = render::render_scene_checked(&scene, Style { ascii: false }).unwrap_err();
+    assert!(
+        failures.iter().any(|failure| failure.contains("edge 0")
+            && failure.contains("non-endpoint box 7")
+            && failure.contains("(2,1)")),
+        "{failures:#?}"
+    );
+
+    let (stdout, stderr, code) = run_llmaid(&[], "flowchart LR\nA --> B\n");
+    assert_eq!(code, 0, "{stderr}");
+    assert!(!stdout.is_empty());
+    assert!(!stderr.contains("invariant failure"), "{stderr}");
+}

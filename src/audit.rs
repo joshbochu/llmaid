@@ -202,7 +202,50 @@ pub fn json(diagram: &crate::diagram::Diagram, max_width: usize) -> String {
             let generic = generic_invariant_failures(&scene);
             json_report("sequence", &audit, &violations(&scene), &generic, false)
         }
+        crate::diagram::Diagram::State(state) => {
+            generic_scene_json("state", crate::state::scene(state, max_width))
+        }
+        crate::diagram::Diagram::Class(class) => {
+            generic_scene_json("class", crate::class::scene(class, max_width))
+        }
+        crate::diagram::Diagram::Er(er) => {
+            generic_scene_json("er", crate::er::scene(er, max_width))
+        }
     }
+}
+
+fn generic_scene_json(diagram: &str, mut scene: Scene) -> String {
+    scene.normalize();
+    let bounds = scene.bounds();
+    let violations = violations(&scene);
+    let audit = GeometryAudit {
+        width: bounds.w.max(0) as usize,
+        height: bounds.h.max(0) as usize,
+        area: (bounds.w.max(0) as usize).saturating_mul(bounds.h.max(0) as usize),
+        nodes: scene.boxes.len(),
+        edges: scene.edges.len(),
+        ranks: 0,
+        hard_violations: violations.iter().map(GeometryViolation::message).collect(),
+        rank_axis_residual2: 0,
+        mono_centerline_residual2: 0,
+        fork_barycenter_residual2: 0,
+        merge_barycenter_residual2: 0,
+        diamond_motifs: 0,
+        diamond_mirror_residual2: 0,
+        crossing_cells: 0,
+        bends: scene
+            .edges
+            .iter()
+            .map(|edge| bend_count(&edge.points))
+            .sum(),
+        wire_length: scene
+            .edges
+            .iter()
+            .map(|edge| path_length(&edge.points))
+            .sum(),
+    };
+    let generic = generic_invariant_failures(&scene);
+    json_report(diagram, &audit, &violations, &generic, false)
 }
 
 /// Serialize caller-supplied flowchart geometry, primarily for layout tools

@@ -1,0 +1,8 @@
+erDiagram
+  direction LR
+  CUSTOMER[Customer Account] {
+    string customer_id PK, UK "public identifier"
+    string region_id FK
+  }
+  CUSTOMER ||--o{ ORDER : "places"
+  ORDER }o..|| RECEIPT : generates

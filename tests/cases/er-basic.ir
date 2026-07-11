@@ -1,0 +1,11 @@
+type: er
+direction: LR
+entities:
+  0: CUSTOMER [Customer Account]
+    attribute: string customer_id PK UK "public identifier"
+    attribute: string region_id FK
+  1: ORDER [ORDER]
+  2: RECEIPT [RECEIPT]
+relationships:
+  CUSTOMER ||--o{ ORDER : "places"
+  ORDER }o..|| RECEIPT : "generates"

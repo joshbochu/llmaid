@@ -212,6 +212,18 @@ pub fn render_scene_with_checks(scene: &Scene, style: Style) -> (String, Vec<Str
     (canvas.finish(style), failures)
 }
 
+/// Runtime render gate used by the CLI: invalid geometry never becomes a
+/// successful diagram. Tests can exercise the same path without spawning the
+/// binary or relying on an intentionally broken parser/layout input.
+pub fn render_scene_checked(scene: &Scene, style: Style) -> Result<String, Vec<String>> {
+    let (output, failures) = render_scene_with_checks(scene, style);
+    if failures.is_empty() {
+        Ok(output)
+    } else {
+        Err(failures)
+    }
+}
+
 fn draw_scene_edge(canvas: &mut Canvas, edge: &RoutedEdge, style: Style) {
     for pair in edge.points.windows(2) {
         draw_screen_line(canvas, point(pair[0]), point(pair[1]), edge.kind);

@@ -1,0 +1,12 @@
+type: class
+direction: LR
+classes:
+  0: Customer
+    member: +String name
+    member: +buy(ticket) bool
+  1: Ticket
+    member: +String id
+  2: Record
+relations:
+  Customer "1" o-- "0..*" Ticket : owns
+  Ticket ..|> Record : persists as

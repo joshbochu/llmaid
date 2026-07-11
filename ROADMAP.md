@@ -33,10 +33,10 @@ Agents speak Mermaid; we own primitives behind the door.
 | 0 | Ship & tighten flowchart | **done** |
 | 1 | Flowchart completeness (subgraphs / graph-easy parity) | **done** (1.1 flat; nested parent field ready) |
 | 2 | Sequence diagrams | **done** (core + controls) |
-| 3 | Design-doc types (state / class / ER) | **next** |
+| 3 | Design-doc types (state / class / ER) | **done** (flat/core subsets) |
 | 4 | Hierarchy & planning (mindmap / gantt / git) | later |
 | 5 | Charts & boards (selective) | later |
-| 6 | Agent self-debug loop | **in progress** (6.2–6.3 done) |
+| 6 | Agent self-debug loop | **in progress** (6.2–6.3 and 6.5 done) |
 | 7 | Distribution & product | later |
 
 ---
@@ -101,17 +101,18 @@ plus `sequence-core`, `sequence-notes`, `sequence-activation`, and
 
 ---
 
-## Phase 3 — Design-doc types
+## Phase 3 — Design-doc types · **done** (core)
 
 Boxed-graph family; reuse canvas + much of edge drawing.
 
-| ID | Item |
-|----|------|
-| 3.1 | `stateDiagram` / `stateDiagram-v2` (flat first, nested later) |
-| 3.2 | `classDiagram` |
-| 3.3 | `erDiagram` |
+| ID | Item | Notes |
+|----|------|-------|
+| 3.1 | `stateDiagram` / `stateDiagram-v2` (flat first, nested later) | **done** — aliases, markers, labels, directions |
+| 3.2 | `classDiagram` | **done** — members, relations, multiplicities |
+| 3.3 | `erDiagram` | **done** — attributes, keys, cardinalities |
 
-**Exit:** design conversations have a visual home in the terminal.
+**Exit met:** design conversations have a visual home in the terminal; B21–B23
+plus state/class/ER goldens and generated direction coverage.
 
 ---
 
@@ -145,11 +146,11 @@ Only where glance quality holds (don’t become a junk drawer).
 
 | ID | Item | Notes |
 |----|------|--------|
-| 6.1 | Richer per-type error catalog | Line + expectation everywhere |
-| 6.2 | Machine-readable geometry audit | **done** — stable v1 JSON; named violations, exact witnesses, flowchart + sequence |
-| 6.3 | Generated + metamorphic topology tests | **done** — 71 small DAGs × four directions; exact opposite-direction signatures |
+| 6.1 | Richer per-type error catalog | **in progress** — line + expectation for all shipped types |
+| 6.2 | Machine-readable geometry audit | **done** — stable v1 JSON; named violations, exact witnesses, every shipped type |
+| 6.3 | Generated + metamorphic topology tests | **done** — 71 DAGs + 40 design-doc renders across four directions |
 | 6.4 | Optional machine-readable parser diagnostics | e.g. `--error-format=json` |
-| 6.5 | Invariant failures as actionable stderr | Not only test-time |
+| 6.5 | Invariant failures as actionable stderr | **done** — checked runtime render, exit 70, audit hint |
 | 6.6 | Optional JSON IR **input** (same engines) | Tools/compilers; Mermaid remains primary |
 
 **Exit:** an agent can render any input, inspect exact structural violations,
@@ -212,10 +213,7 @@ human review remains the oracle for preferences not yet expressed as geometry.
 ## Suggested near-term sequence
 
 ```text
-3.1 flat stateDiagram/stateDiagram-v2
-→ 3.2 classDiagram
-→ 3.3 erDiagram
-→ 4.x mindmap/gantt/git
+4.x mindmap/gantt/git
 → 5.x charts (selective)
 → 6.x agent diagnostics
 → 7.x distribute

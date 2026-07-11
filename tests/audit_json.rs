@@ -151,3 +151,29 @@ fn sequence_diagrams_have_a_coherent_typed_audit() {
     assert!(stdout.contains("\"violations\":[]"), "{stdout}");
     assert!(stdout.contains("\"metrics\":null"), "{stdout}");
 }
+
+#[test]
+fn design_diagrams_have_coherent_typed_audits() {
+    let cases = [
+        ("state", "stateDiagram\nA --> B\n", 2, 1),
+        ("class", "classDiagram\nA --> B\n", 2, 1),
+        ("er", "erDiagram\nA ||--o{ B : owns\n", 2, 1),
+    ];
+    for (diagram, source, nodes, edges) in cases {
+        let (first, stderr, code) = run(&["--audit=json"], source);
+        assert_eq!(code, 0, "{diagram}: {stderr}");
+        assert!(
+            first.contains(&format!("\"diagram\":\"{diagram}\"")),
+            "{first}"
+        );
+        assert!(
+            first.contains(&format!(
+                "\"elements\":{{\"nodes\":{nodes},\"edges\":{edges},\"ranks\":0}}"
+            )),
+            "{first}"
+        );
+        assert!(first.contains("\"violations\":[]"), "{first}");
+        assert!(first.contains("\"metrics\":null"), "{first}");
+        assert_eq!(run(&["--audit=json"], source).0, first);
+    }
+}

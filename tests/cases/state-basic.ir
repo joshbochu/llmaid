@@ -1,0 +1,10 @@
+type: state
+direction: LR
+states:
+  Waiting "Waiting for request"
+  Processing "Processing"
+transitions:
+  [*] --> Waiting
+  Waiting --> Processing "request received"
+  Processing --> Waiting "retry"
+  Processing --> [*] "complete"
