@@ -498,24 +498,18 @@ fn temporal_ranks_have_strict_chronology_one_spine_exact_attachments_and_separat
             .iter()
             .all(|anchor| anchor.x == placed.spine_x)
     );
-    let content_left = placed
-        .leading_boxes
-        .iter()
-        .map(|rect| rect.x)
-        .min()
-        .unwrap();
-    let content_right = placed
-        .trailing_boxes
-        .iter()
-        .flatten()
-        .map(|rect| rect.right())
-        .max()
-        .unwrap();
-    assert_eq!(
-        2 * placed.spine_x,
-        content_left + content_right,
-        "the temporal content envelope must balance exactly around the spine"
-    );
+    for (leading, trailing) in placed.leading_boxes.iter().zip(&placed.trailing_boxes) {
+        assert_eq!(placed.spine_x - leading.right(), 2);
+        assert!(trailing.iter().all(|rect| rect.x - placed.spine_x == 2));
+        if let Some(first) = trailing.first() {
+            let connector_midpoint2 = leading.right() - 1 + first.x;
+            assert_eq!(
+                (connector_midpoint2 - 2 * placed.spine_x).abs(),
+                1,
+                "the compact connector gap centers the spine up to its unavoidable half-cell"
+            );
+        }
+    }
     for entry in 0..entries.len() {
         let lead = &placed.connectors[placed
             .connectors
@@ -553,7 +547,6 @@ fn temporal_ranks_have_strict_chronology_one_spine_exact_attachments_and_separat
     }
     assert!(placed.band_rects[0].bottom() < placed.band_rects[1].y);
     for (band, rect) in placed.band_rects.iter().enumerate() {
-        assert_eq!(rect.center2().x, 2 * placed.spine_x);
         let entry = bands[band].first_entry;
         assert!(rect.contains(placed.anchors[entry]));
         for corner in rect_corners(placed.leading_boxes[entry]) {
@@ -568,17 +561,13 @@ fn temporal_ranks_have_strict_chronology_one_spine_exact_attachments_and_separat
 }
 
 #[test]
-fn timeline_title_unsectioned_envelope_and_section_frames_center_on_the_spine() {
+fn timeline_titles_center_on_the_compact_chronological_spine() {
     let unsectioned = timeline::parse(
         "timeline\n  title Product launch\n  Plan : Define scope\n  Build : Implement core\n  Ship : Release\n",
     )
     .unwrap();
     let scene = timeline::scene(&unsectioned, 100);
     let spine_x = scene.paths[0].points[0].x;
-    assert!(
-        (scene.bounds().center2().x - 2 * spine_x).abs() <= 1,
-        "unsectioned content must center on the chronological spine"
-    );
     let title = scene
         .texts
         .iter()
@@ -596,12 +585,6 @@ fn timeline_title_unsectioned_envelope_and_section_frames_center_on_the_spine() 
     .unwrap();
     let scene = timeline::scene(&sectioned, 100);
     let spine_x = scene.paths[0].points[0].x;
-    assert!(
-        scene
-            .groups
-            .iter()
-            .all(|group| group.rect.center2().x == 2 * spine_x)
-    );
     let title = scene
         .texts
         .iter()

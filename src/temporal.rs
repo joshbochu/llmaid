@@ -112,16 +112,8 @@ pub fn layout(
         .map(|entry| checked(entry.leading).width)
         .max()
         .unwrap_or(3);
-    let trailing_column = entries
-        .iter()
-        .flat_map(|entry| entry.trailing.iter())
-        .map(|extent| checked(*extent).width)
-        .max()
-        .unwrap_or(1);
-    let half_width =
-        (leading_column + gaps.leading_to_spine).max(trailing_column + gaps.spine_to_trailing);
-    let spine_x = half_width;
-    let trailing_x = spine_x + half_width - trailing_column;
+    let spine_x = leading_column + gaps.leading_to_spine;
+    let trailing_x = spine_x + gaps.spine_to_trailing;
 
     let locals: Vec<LocalEntry> = entries
         .iter()
@@ -263,14 +255,20 @@ pub fn layout(
         first = end;
     }
 
-    let title_radius = bands
+    let content_right = trailing_boxes
         .iter()
-        .map(|band| (band.title_width + 4) / 2)
+        .flatten()
+        .map(|rect| rect.right())
+        .chain(leading_boxes.iter().map(|rect| rect.right()))
+        .max()
+        .unwrap_or(spine_x + 1);
+    let widest_band = bands
+        .iter()
+        .map(|band| band.title_width + 4)
         .max()
         .unwrap_or(0);
-    let band_radius = (spine_x + 2).max(title_radius);
-    let band_left = spine_x - band_radius;
-    let band_width = 2 * band_radius + 1;
+    let band_left = -2;
+    let band_right = (content_right + 2).max(band_left + widest_band);
     let mut band_rects = Vec::with_capacity(bands.len());
     let mut band_title_points = Vec::with_capacity(bands.len());
     for band in bands {
@@ -285,7 +283,12 @@ pub fn layout(
                 .last()
                 .map_or(i32::MIN, |rect| rect.bottom()),
         );
-        band_rects.push(Rect::new(band_left, y, band_width, last_bottom + 2 - y));
+        band_rects.push(Rect::new(
+            band_left,
+            y,
+            band_right - band_left,
+            last_bottom + 2 - y,
+        ));
         band_title_points.push(Point::new(band_left + 2, y + 1));
     }
 

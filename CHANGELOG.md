@@ -6,12 +6,12 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Fixed
-- Phase 4.2 gallery feedback: timeline geometry now expands the shorter side's
-  connector lane so measured period/event extents balance around the common
-  chronological spine. Unsectioned envelopes allow only the unavoidable
-  half-cell residual, every section frame has its exact integer center on the
-  spine, and diagram titles center on that same axis. Exact quality contracts
-  cover all three relationships before the affected timeline goldens change.
+- Phase 4.2 gallery correction: diagram titles now center on the existing
+  compact chronological spine, and the connector gap centers that spine up to
+  its unavoidable half-cell. A rejected intermediate attempt balanced the
+  entire unequal label envelope by stretching the shorter connector lane; a
+  screenshot review exposed the resulting long horizontal wires, so the exact
+  contracts now protect compact gaps instead.
 - Phase 3.4 gallery feedback: class/ER relationship channels reserve explicit
   endpoint space; diamonds, triangles, and arrows sit two cells from box
   borders; ER min/max marks have a line cell between them; and dependency
