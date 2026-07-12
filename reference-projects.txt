@@ -1,0 +1,120 @@
+# Reference projects & links from HN Mermaid ASCII threads
+# Sources:
+#   https://news.ycombinator.com/item?id=41847407  (Show HN: Mermaid ASCII Diagrams)
+#   https://news.ycombinator.com/item?id=46804828  (Mermaid ASCII: Render Mermaid diagrams in your terminal)
+
+## Main story links
+
+https://news.ycombinator.com/item?id=41847407
+https://mermaid-ascii.art/
+https://news.ycombinator.com/item?id=46804828
+https://github.com/lukilabs/beautiful-mermaid
+
+## Core Mermaid ASCII projects
+
+https://github.com/AlexanderGrooff/mermaid-ascii
+https://mermaid-ascii.art/
+https://github.com/lukilabs/beautiful-mermaid
+https://agents.craft.do/mermaid
+https://skills.sh/intellectronica/agent-skills/beautiful-mermaid
+https://udiagram.com
+
+## Related Mermaid implementations
+
+https://github.com/mermaid-js/mermaid
+https://github.com/mermaid-js/mermaid-cli
+https://github.com/1jehuang/mermaid-rs-renderer
+https://github.com/btucker/selkie
+https://btucker.github.io/selkie/
+https://github.com/btucker/midtown
+https://github.com/probelabs/maid
+https://github.com/unslop-xyz/noodles
+
+## Other diagram / ASCII tools
+
+https://github.com/scottvr/phart
+https://github.com/cjlm/graph-easy-online
+https://metacpan.org/dist/Graph-Easy/view/bin/graph-easy
+https://kroki.io/
+https://keenwrite.com/
+https://arthursonzogni.com/Diagon
+https://diagon.arthursonzogni.com/#Sequence
+https://monodraw.helftone.com/
+https://github.com/lewish/asciiflow
+https://github.com/blampe/goat
+https://github.com/tbanel/uniline/
+https://github.com/JuliaPlots/UnicodePlots.jl
+https://github.com/mingrammer/diagrams
+https://d2lang.com/
+https://pikchr.org/
+https://plantuml.com/ascii-art
+https://ditaa.sourceforge.net/
+https://casual-effects.com/markdeep/
+https://code.sgo.to/typograms/#installation
+https://mbarkhau.github.io/asciigrid/
+https://diagwiz.io/playground/
+https://ivanceras.github.io/svgbob-editor/
+https://ivanceras.github.io/bob-editor/
+https://weidagang.github.io/text-diagram/
+https://dot-to-ascii.ggerganov.com/
+https://swimlanes.io/
+https://textart.io/sequence
+https://xosh.org/text-to-diagram/
+https://www.luismg.com/protocol/
+
+## Kroki-supported formats (named in thread)
+
+BlockDiag
+BPMN
+Bytefield
+SeqDiag
+ActDiag
+NwDiag
+PacketDiag
+RackDiag
+C4 with PlantUML
+D2
+DBML
+Ditaa
+Erd
+Excalidraw
+GraphViz
+Nomnoml
+Pikchr
+PlantUML
+Structurizr
+Svgbob
+Symbolator
+TikZ
+Vega
+Vega-Lite
+WaveDrom
+WireViz
+Mermaid
+
+## Product / platform mentions with links
+
+https://www.craft.do/
+https://github.com/anthropics/claude-code/issues/14375
+https://github.com/mermaid-js/mermaid/pull/7349
+https://github.com/orgs/mermaid-js/discussions/7085
+https://github.com/orgs/community/discussions/65040
+https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams
+https://handbook.gitlab.com/handbook/tools-and-tips/#using-mermaid
+https://learn.microsoft.com/en-us/azure/devops/project/wiki/markdown-guidance?view=azure-devops#add-mermaid-diagrams-to-a-wiki-page
+https://www.youtube.com/watch?v=vIp8spwykZY
+https://news.ycombinator.com/edit?id=46807750
+
+## Named tools / platforms without dedicated URLs in threads
+
+Org Mode
+GFM (GitHub Flavored Markdown)
+Obsidian
+Forgejo
+Vim / NeoVim
+Kitty
+Ghostty
+NetworkX
+rehype
+Claude Code
+PlantUML (.puml)
