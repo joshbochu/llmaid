@@ -49,6 +49,8 @@ typed-box geometry adapter. Phase 4.1 adds a core `mindmap` slice with one
 ordered indentation-defined hierarchy of plain labels. Phase 4.2 adds a core
 `timeline` slice with an optional title, ordered periods and continuation
 events, and named containing sections on one vertical chronological spine.
+Phase 4.3 adds a core `gitGraph` slice with commits, stable branch lanes,
+checkout/switch operations, and two-parent merges in chronological columns.
 Icons, custom classes,
 Markdown, general mindmap shapes, and styling directives remain expansion work
 tracked in `ROADMAP.md`; coverage lives in `MATRIX.md`.
@@ -71,6 +73,7 @@ src/
   tree.rs      reusable deterministic integer layout for ordered rooted trees
   timeline.rs  ordered period/event/section IR + width fallback → Scene
   temporal.rs  reusable deterministic integer layout for temporal ranks/bands
+  gitgraph.rs  ordered commit/branch IR + width fallback + lane geometry → Scene
   scene.rs     Signed Point/Rect/Path/Text primitives + exact bounds
   render.rs    Scene → grid canvas → styled box-drawing output
   style.rs     Charsets: unicode (default) / ascii

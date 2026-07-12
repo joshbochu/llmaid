@@ -150,3 +150,13 @@ structural coverage lives beside its engine tests. Decisions behind these:
   empty periods/events/sections, malformed `:` syntax, late/duplicate titles,
   empty named sections, deferred directions, and terminal-unsafe zero-width
   sequences fail with the source line and a repairable expectation.
+- **B27** Given a core `gitGraph` containing commits, branches, `checkout` or
+  `switch`, and merges, when rendered, then chronological commit order,
+  stable branch lanes, commit ids/tags/types, and both merge parents are
+  preserved in a deterministic left-to-right history. Unicode and `--ascii`
+  structure are deterministic; labels follow B9/B10 and never truncate;
+  `--audit=json` reports commit, parent-edge, and chronological-rank counts.
+  Duplicate ids/branches, unknown checkouts/merges, self-merges, empty merge
+  sources, malformed attributes, deferred directions and cherry-picks, and
+  terminal-unsafe zero-width sequences fail with the source line and a
+  repairable expectation.

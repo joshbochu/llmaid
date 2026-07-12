@@ -875,3 +875,44 @@ timeline
         "{stderr}"
     );
 }
+
+#[test]
+fn b27_given_core_gitgraph_then_branches_commits_and_merges_are_preserved_and_self_debuggable() {
+    let source = "\
+gitGraph
+  commit id: \"root\" tag: \"v1\"
+  branch feature
+  commit id: \"parser\" type: HIGHLIGHT
+  checkout main
+  commit id: \"release\"
+  merge feature id: \"joined\" type: REVERSE
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    for label in [
+        "main", "feature", "root", "v1", "parser", "release", "joined",
+    ] {
+        assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
+    }
+    assert_eq!(run_llmaid(&[], source).0, unicode);
+
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+
+    let (audit, stderr, code) = run_llmaid(&["--audit=json"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(audit.contains("\"diagram\":\"gitgraph\""), "{audit}");
+    assert!(
+        audit.contains("\"nodes\":4,\"edges\":4,\"ranks\":4"),
+        "{audit}"
+    );
+
+    let (stdout, stderr, code) = run_llmaid(&[], "gitGraph\ncheckout missing\n");
+    assert_eq!(code, 64);
+    assert_eq!(stdout, "");
+    assert!(
+        stderr.contains("line 2") && stderr.contains("unknown branch"),
+        "{stderr}"
+    );
+}

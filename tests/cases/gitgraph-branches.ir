@@ -1,0 +1,7 @@
+gitGraph
+branch 0 head=3 line=1 name="main"
+branch 1 head=1 line=3 name="feature"
+commit 0 branch=0 parents=- type=normal line=2 id="root" tag="v1"
+commit 1 branch=1 parents=0 type=highlight line=4 id="parser" tag=-
+commit 2 branch=0 parents=0 type=normal line=6 id="release" tag=-
+commit 3 branch=0 parents=2,1 type=reverse line=7 id="joined" tag=-

@@ -210,3 +210,18 @@ fn timelines_have_stable_semantic_counts_and_chronological_ranks() {
     assert!(first.contains("\"metrics\":null"), "{first}");
     assert_eq!(run(&["--audit=json"], source).0, first);
 }
+
+#[test]
+fn gitgraphs_have_stable_commit_parent_counts_and_chronological_ranks() {
+    let source = "gitGraph\ncommit\nbranch topic\ncommit\ncheckout main\ncommit\nmerge topic\n";
+    let (first, stderr, code) = run(&["--audit=json"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(first.contains("\"diagram\":\"gitgraph\""), "{first}");
+    assert!(
+        first.contains("\"elements\":{\"nodes\":4,\"edges\":4,\"ranks\":4}"),
+        "{first}"
+    );
+    assert!(first.contains("\"violations\":[]"), "{first}");
+    assert!(first.contains("\"metrics\":null"), "{first}");
+    assert_eq!(run(&["--audit=json"], source).0, first);
+}

@@ -1,0 +1,6 @@
+gitGraph
+branch 0 head=2 line=1 name="main"
+branch 1 head=1 line=3 name="unicode work"
+commit 0 branch=0 parents=- type=normal line=2 id="initial release with details" tag=-
+commit 1 branch=1 parents=0 type=highlight line=4 id="解析 🚀" tag="candidate"
+commit 2 branch=0 parents=0,1 type=reverse line=6 id="integrated release" tag=-

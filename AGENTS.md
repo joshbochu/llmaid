@@ -4,7 +4,7 @@ Mermaid in, clean deterministic terminal diagrams out. A single fast Rust
 binary that coding agents use to compose diagrams into their output (agents
 create/self-debug; humans look at the visuals).
 
-Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B26),
+Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B27),
 `ROADMAP.md` for phased work, `MATRIX.md` for capability coverage vs other
 tools. Log decisions in `CHANGELOG.md`. Mid-stream? `HANDOFF.md`.
 
@@ -40,7 +40,8 @@ main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ────�
                      ├→ sequence.rs (events + fragments)         │
                      ├→ state.rs / class.rs / er.rs → boxed.rs ──┤
                      ├→ mindmap.rs → tree.rs                     │
-                     └→ timeline.rs → temporal.rs ───────────────┴→ Scene → render.rs
+                     ├→ timeline.rs → temporal.rs                │
+                     └→ gitgraph.rs ─────────────────────────────┴→ Scene → render.rs
                                                                   style.rs (glyphs)
 ```
 
@@ -64,6 +65,8 @@ main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ────�
   lowering for titles, periods/events, continuation events, and sections.
 - `temporal.rs` — reusable semantic-free integer layout for ordered temporal
   ranks on a common spine with measured leading/trailing slots and band ranges.
+- `gitgraph.rs` — strict ordered commit/branch IR, width fallback, and native
+  integer commit columns on stable branch lanes with two-parent merge routes.
 - `scene.rs` — shared `Point` / `Rect` / path / text primitives plus structured
   tables and endpoint decorations; normalizes the finished scene once and
   derives exact bounds.

@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-11 — Phase 4.2 core timeline planning slice landed.
+Last updated: 2026-07-11 — Phase 4.3 core gitGraph planning slice landed.
 
 ## What this project is
 
@@ -17,12 +17,12 @@ without losing glance quality.
 2. `DESIGN.md` — v1 design thesis and architecture  
 3. `ROADMAP.md` — phased plan (what to build next)  
 4. `MATRIX.md` — capability × tool coverage checklist  
-5. `BEHAVIORS.md` — shipped contracts B1–B26
-6. `CHANGELOG.md` — decisions D1–D26
+5. `BEHAVIORS.md` — shipped contracts B1–B27
+6. `CHANGELOG.md` — decisions D1–D27
 
 ## Current state
 
-**Contracts B1–B26 + Phase 0–3 core + Phase 4.1–4.2 + Phase 6.2–6.3/6.5 are landed.**
+**Contracts B1–B27 + Phase 0–4 core + Phase 6.2–6.3/6.5 are landed.**
 
 - Pipeline: parse → flow layout → route into signed `Scene` → pure canvas render
 - Diagram dispatch: flowcharts retain their established pipeline; the sequence
@@ -49,6 +49,11 @@ without losing glance quality.
   measured leading/trailing slots, fixed chronological spine, exact event
   attachments, and source-ordered separated band rectangles. Calendar/date
   arithmetic and gantt bars remain deferred
+- Core git graphs: `gitGraph` dispatch, chronological commits, stable branch
+  lanes, `branch`, `checkout` / `switch`, two-parent `merge`, quoted ids/tags,
+  commit types, generated ids, width fallback, typed audit counts, and explicit
+  diagnostics for malformed or deferred syntax. Cherry-pick, directions,
+  configuration, themes, and parallel commits remain deferred
 - Timeline visual grammar: right-aligned period text and one-sided event
   branches use a compact changelog rail; diagram titles center on the common
   spine without stretching unequal label columns, every odd-width connector
@@ -94,6 +99,9 @@ without losing glance quality.
 - Generated timeline coverage: all 170 small combinations of one-to-four
   periods, one-to-two events, and section-cut masks plus deep, broad, Unicode,
   long-label, tight-width, determinism, ASCII, and same-width metamorphic cases
+- Generated git coverage: all 20 one-to-four topic by zero-to-four main commit
+  schedules plus linear, multi-branch, Unicode, long-label, tight-width, and
+  consecutive-merge stress histories
 - Guarantee boundary: engine-wide grid/determinism rules and scene invariants
   are distinct from topology-specific aesthetic contracts. Known chains,
   forks, merges, eligible diamonds, group boundaries, and ordered tree spans
@@ -117,7 +125,7 @@ without losing glance quality.
 
 ## Next steps (from ROADMAP)
 
-1. **Phase 4.3** — `gitGraph`, then selective charts
+1. **Phase 5.1** — selective `pie` chart slice
 2. Remaining agent diagnostics (JSON parser errors / optional JSON IR input)
 3. Optional visual polish: native state pseudo-markers and nested
    state/subgraph handling
@@ -126,9 +134,10 @@ Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 
 ### Suggested next pickup
 
-Apply the same thin vertical-slice discipline to `gitGraph`: type-specific
-ordered IR, native integer geometry, shared `Scene`, behavior contract,
-deterministic generated coverage, focused goldens, and visual review.
+Apply the same thin vertical-slice discipline to `pie`: type-specific ordered
+IR, integer apportionment, shared `Scene`, behavior contract, deterministic
+generated coverage, focused goldens, and visual review. Decide the terminal
+visual grammar before broadening into other chart types.
 
 ## Quality bar
 

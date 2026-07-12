@@ -74,6 +74,14 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- Phase 4.3 core git graphs (B27): `gitGraph` dispatch, ordered commits and
+  branch operations, `checkout` / `switch`, two-parent merges, quoted ids and
+  tags, NORMAL/REVERSE/HIGHLIGHT commit types, generated ids, strict
+  line-specific diagnostics, stable branch-lane Scene geometry, deterministic
+  Unicode/ASCII output, B9 width fallback, typed audit counts, 20 generated
+  two-branch schedules, exact parent-port/merge-channel contracts, and two
+  focused goldens. Cherry-pick, direction/configuration options, themes, and
+  parallel-commit modes remain explicitly deferred.
 - Phase 4.2 core timelines (B26): `timeline` dispatch, a type-specific ordered
   title/period/event/section IR, inline and continuation events, strict
   line-specific placement/syntax errors, a reusable semantic-free integer
@@ -230,6 +238,17 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 - `DESIGN.md` (v1 design), `AGENTS.md` (agent guide), this changelog.
 
 ### Decisions
+
+- **D27 — Git history owns chronological columns and stable branch lanes.**
+  Phase 4.3 stores branch heads and commit parent indices in an independent
+  source-ordered IR. Every commit advances one integer column; branch creation
+  inherits the current head and switches immediately; merges retain target and
+  source parents, with cross-lane links approaching through the reserved gap
+  before the merge commit. Width pressure wraps commit labels without changing
+  topology, and audit ranks mean commit chronology. Rejected: fake flowchart
+  lowering (branch identity and first/second parent order become incidental),
+  diagonal glyphs, and accepting cherry-pick/configuration before their
+  semantics and tests are designed.
 
 - **D26 — Timeline semantics own a reusable plain temporal spine.** Phase 4.2
   parses free-text periods, source-ordered events, and contiguous named section

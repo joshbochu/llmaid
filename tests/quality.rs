@@ -1,7 +1,7 @@
 use llmaid::audit;
 use llmaid::scene::{CardinalityMaximum, CardinalityMinimum, EndpointDecorationKind};
 use llmaid::style::Style;
-use llmaid::{class, er, layout, mindmap, parse, render, route, temporal, timeline};
+use llmaid::{class, er, gitgraph, layout, mindmap, parse, render, route, temporal, timeline};
 use unicode_width::UnicodeWidthStr;
 
 fn audit_source(source: &str) -> audit::GeometryAudit {
@@ -441,6 +441,48 @@ fn mindmap_boxes_keep_one_visible_padding_cell_beside_every_label() {
             node.label
         );
     }
+}
+
+#[test]
+fn gitgraph_commits_advance_chronologically_on_stable_lanes_with_exact_parent_ports() {
+    let graph = gitgraph::parse(
+        "gitGraph\ncommit id: \"root\"\nbranch topic\ncommit id: \"work\"\ncheckout main\ncommit id: \"release\"\nmerge topic id: \"joined\"\n",
+    )
+    .unwrap();
+    let scene = gitgraph::scene(&graph, 100);
+    let boxes = &scene.foreground_boxes;
+
+    assert!(boxes.windows(2).all(|pair| pair[0].rect.x < pair[1].rect.x));
+    let main_centers: Vec<i32> = graph
+        .commits
+        .iter()
+        .enumerate()
+        .filter_map(|(commit, value)| (value.branch == 0).then_some(boxes[commit].rect.center2().y))
+        .collect();
+    assert!(main_centers.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(boxes[0].rect.center2().y < boxes[1].rect.center2().y);
+
+    let parent_child: Vec<(usize, usize)> = graph
+        .commits
+        .iter()
+        .enumerate()
+        .flat_map(|(child, commit)| commit.parents.iter().map(move |&parent| (parent, child)))
+        .collect();
+    assert_eq!(scene.edges.len(), parent_child.len());
+    for (edge, &(parent, child)) in scene.edges.iter().zip(&parent_child) {
+        let source = boxes[parent].rect;
+        let target = boxes[child].rect;
+        assert_eq!(edge.points.first().unwrap().x, source.right() - 1);
+        assert_eq!(2 * edge.points.first().unwrap().y, source.center2().y);
+        assert_eq!(edge.points.last().unwrap().x, target.x);
+        assert_eq!(2 * edge.points.last().unwrap().y, target.center2().y);
+        assert!(edge.arrow.is_none());
+    }
+
+    let merge_parent = scene.edges.last().unwrap();
+    let merge_box = boxes.last().unwrap().rect;
+    assert_eq!(merge_parent.points[1].x, merge_box.x - 2);
+    assert_eq!(merge_parent.points[2].x, merge_box.x - 2);
 }
 
 #[test]

@@ -211,6 +211,13 @@ pub fn json(diagram: &crate::diagram::Diagram, max_width: usize) -> String {
         crate::diagram::Diagram::Er(er) => {
             generic_scene_json("er", crate::er::scene(er, max_width), 0)
         }
+        crate::diagram::Diagram::GitGraph(graph) => generic_scene_json_with_counts(
+            "gitgraph",
+            crate::gitgraph::scene(graph, max_width),
+            graph.commits.len(),
+            graph.edge_count(),
+            graph.commits.len(),
+        ),
         crate::diagram::Diagram::Mindmap(mindmap) => generic_scene_json(
             "mindmap",
             crate::mindmap::scene(mindmap, max_width),

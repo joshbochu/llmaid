@@ -3,6 +3,7 @@ pub mod boxed;
 pub mod class;
 pub mod diagram;
 pub mod er;
+pub mod gitgraph;
 pub mod layout;
 pub mod metrics;
 pub mod mindmap;

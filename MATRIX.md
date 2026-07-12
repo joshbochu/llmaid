@@ -42,7 +42,7 @@ not a formal audit. llmaid cells should stay honest.
 | Mermaid ER | P | N | Y | N | N | Y |
 | Mermaid mindmap | P | N | Y | N | N | Y |
 | Mermaid gantt / timeline | P (timeline) | N | Y | N | N | Y |
-| Mermaid gitGraph | N | N | Y | N | N | Y |
+| Mermaid gitGraph | P | N | Y | N | N | Y |
 | Mermaid pie / charts | N | N | Y | N | N | Y |
 | Mermaid journey / kanban / block | N | N | Y | N | N | Y |
 | Mermaid subgraph (real layout) | Y | ? | P | N | — | Y |
@@ -130,7 +130,7 @@ Mermaid as the only primary agent language.
 | Capability | llmaid | termiflow | termaid | diagon | graph-easy | mermaid.js |
 |------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
 | Gantt / timeline | P (timeline) | N | Y | N | N | Y |
-| Git graph | N | N | Y | N | N | Y |
+| Git graph | P (commits, branches, merges) | N | Y | N | N | Y |
 
 **Roadmap:** Phase 4.2–4.3.
 
@@ -219,6 +219,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Tree | `mindmap` or flowchart TB | **P** (one plain-label root hierarchy) |
 | Class / ER / state | respective types | **P** (core subsets) |
 | Timeline | `timeline` | **P** (title, periods/events, sections) |
+| Git history | `gitGraph` | **P** (commits, branch lanes, checkout/switch, merges) |
 | Table | Markdown table (not Mermaid) | park |
 | Math | not Mermaid | park |
 
@@ -259,3 +260,4 @@ When you ship a feature:
 | 2026-07-11 | Agent audit: stable `--audit=json` plus 284 generated directional renders and 71 mirror-signature checks. |
 | 2026-07-11 | Phase 4.1: core ordered `mindmap`, reusable integer tree layout, exact parent-child contracts, and four goldens. |
 | 2026-07-11 | Phase 4.2: core ordered `timeline`, reusable integer temporal layout, exact spine/attachment/section contracts, 170 generated structures, and five goldens. Local termaid 0.7.1 comparison confirmed its compact rail as a useful baseline but found weaker continuation ownership, section containment, and width semantics. |
+| 2026-07-11 | Phase 4.3: core ordered `gitGraph` with stable branch lanes, exact parent-port and merge-channel contracts, 20 generated two-branch schedules, and two focused goldens. |

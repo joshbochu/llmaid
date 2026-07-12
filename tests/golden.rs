@@ -150,6 +150,7 @@ fn b14_frame_invariants_hold_for_all_cases() {
             Diagram::State(state) => llmaid::state::labels(state),
             Diagram::Class(class) => class.labels(),
             Diagram::Er(er) => er.labels(),
+            Diagram::GitGraph(graph) => graph.labels(),
             Diagram::Mindmap(mindmap) => mindmap.labels(),
             Diagram::Timeline(timeline) => timeline.labels(),
         };

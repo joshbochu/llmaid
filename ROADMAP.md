@@ -34,7 +34,7 @@ Agents speak Mermaid; we own primitives behind the door.
 | 1 | Flowchart completeness (subgraphs / graph-easy parity) | **done** (1.1 flat; nested parent field ready) |
 | 2 | Sequence diagrams | **done** (core + controls) |
 | 3 | Design-doc types (state / class / ER) | **done** (core + visual fidelity) |
-| 4 | Hierarchy & planning (mindmap / timeline / git) | **in progress** (4.1–4.2 done) |
+| 4 | Hierarchy & planning (mindmap / timeline / git) | **done** |
 | 5 | Charts & boards (selective) | later |
 | 6 | Agent self-debug loop | **in progress** (6.2–6.3 and 6.5 done) |
 | 7 | Distribution & product | later |
@@ -118,13 +118,13 @@ structured-box quality contracts.
 
 ---
 
-## Phase 4 — Hierarchy & planning · **in progress**
+## Phase 4 — Hierarchy & planning · **done**
 
 | ID | Item | Maps from |
 |----|------|-----------|
 | 4.1 | `mindmap` + reusable ordered tree layout | **done** — one root, plain descendants, exact geometry, audit, goldens |
 | 4.2 | `timeline` + reusable integer temporal layout | **done** — title, periods/events, sections, audit, exact geometry, generated coverage |
-| 4.3 | `gitGraph` | branch explainers |
+| 4.3 | `gitGraph` | **done** — commits, branches, checkout/switch, merges, ids/tags/types, audit, exact geometry, generated coverage |
 
 **Exit:** planning + repo narrative diagrams.
 
@@ -150,7 +150,7 @@ Only where glance quality holds (don’t become a junk drawer).
 |----|------|--------|
 | 6.1 | Richer per-type error catalog | **in progress** — line + expectation for all shipped types |
 | 6.2 | Machine-readable geometry audit | **done** — stable v1 JSON; named violations, exact witnesses, every shipped type |
-| 6.3 | Generated + metamorphic topology tests | **done** — 71 DAGs + 40 design-doc direction renders + 197 ordered tree shapes + 170 timeline structures |
+| 6.3 | Generated + metamorphic topology tests | **done** — 71 DAGs + 40 design-doc direction renders + 197 ordered tree shapes + 170 timeline structures + 20 two-branch git schedules |
 | 6.4 | Optional machine-readable parser diagnostics | e.g. `--error-format=json` |
 | 6.5 | Invariant failures as actionable stderr | **done** — checked runtime render, exit 70, audit hint |
 | 6.6 | Optional JSON IR **input** (same engines) | Tools/compilers; Mermaid remains primary |
@@ -215,7 +215,7 @@ human review remains the oracle for preferences not yet expressed as geometry.
 ## Suggested near-term sequence
 
 ```text
-4.3 gitGraph
+5.1 pie
 → 5.x charts (selective)
 → 6.x agent diagnostics
 → 7.x distribute
