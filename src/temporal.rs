@@ -39,7 +39,7 @@ impl TemporalGaps {
     pub const fn normal() -> Self {
         Self {
             leading_to_spine: 3,
-            spine_to_trailing: 3,
+            spine_to_trailing: 4,
             entry_gap: 0,
             rank_gap: 1,
             band_gap: 1,
@@ -49,7 +49,7 @@ impl TemporalGaps {
     pub const fn compact() -> Self {
         Self {
             leading_to_spine: 2,
-            spine_to_trailing: 2,
+            spine_to_trailing: 3,
             entry_gap: 0,
             rank_gap: 1,
             band_gap: 1,

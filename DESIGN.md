@@ -131,11 +131,12 @@ measured leading/trailing extents, declaration-ordered band ranges, and integer
 spacing. It right-aligns period slots, fixes one common vertical spine, centers
 each period anchor on its ordered event span, attaches every event on its exact
 text row, and returns separated containing band rectangles. Compact connector
-gaps place the spine at their exact or half-cell midpoint; diagram titles use
-that same centerline, with only the unavoidable half-cell residual for
-even-width text. The layout does not stretch connectors to balance unequal
-label widths. It performs no date parsing, duration calculation, or calendar
-arithmetic.
+strokes use an odd cell span with the spine at the exact midpoint; the trailing
+gap is one cell larger because the leading border endpoint is inclusive.
+Diagram titles use that same centerline, with only the unavoidable half-cell
+residual for even-width text. The layout does not stretch connectors to balance
+unequal label widths. It performs no date parsing, duration calculation, or
+calendar arithmetic.
 
 `timeline.rs` owns Mermaid semantics and the B9 width ladder: unwrapped normal
 spacing, unwrapped compact spacing, stable two-column wrapping, then natural

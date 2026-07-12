@@ -500,13 +500,13 @@ fn temporal_ranks_have_strict_chronology_one_spine_exact_attachments_and_separat
     );
     for (leading, trailing) in placed.leading_boxes.iter().zip(&placed.trailing_boxes) {
         assert_eq!(placed.spine_x - leading.right(), 2);
-        assert!(trailing.iter().all(|rect| rect.x - placed.spine_x == 2));
+        assert!(trailing.iter().all(|rect| rect.x - placed.spine_x == 3));
         if let Some(first) = trailing.first() {
             let connector_midpoint2 = leading.right() - 1 + first.x;
             assert_eq!(
-                (connector_midpoint2 - 2 * placed.spine_x).abs(),
-                1,
-                "the compact connector gap centers the spine up to its unavoidable half-cell"
+                connector_midpoint2,
+                2 * placed.spine_x,
+                "the compact connector stroke must center exactly on the spine cell"
             );
         }
     }

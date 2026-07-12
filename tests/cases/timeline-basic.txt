@@ -1,7 +1,7 @@
    Product launch
 
- Plan ────┬─── Define scope
+ Plan ────┬──── Define scope
           │
-Build ────┼─── Implement core
+Build ────┼──── Implement core
           │
- Ship ────┴─── Release
+ Ship ────┴──── Release

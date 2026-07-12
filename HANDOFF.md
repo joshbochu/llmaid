@@ -51,7 +51,8 @@ without losing glance quality.
   arithmetic and gantt bars remain deferred
 - Timeline visual grammar: right-aligned period text and one-sided event
   branches use a compact changelog rail; diagram titles center on the common
-  spine without stretching unequal label columns, every label keeps a visible
+  spine without stretching unequal label columns, every odd-width connector
+  stroke has that spine at its exact midpoint, every label keeps a visible
   blank cell from its connector, section frames contain all assigned content,
   and B9 wraps before the documented over-width fallback. Phase 4.1 mindmap
   visuals and contracts remain byte-identical

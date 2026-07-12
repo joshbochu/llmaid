@@ -7,11 +7,13 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 
 ### Fixed
 - Phase 4.2 gallery correction: diagram titles now center on the existing
-  compact chronological spine, and the connector gap centers that spine up to
-  its unavoidable half-cell. A rejected intermediate attempt balanced the
-  entire unequal label envelope by stretching the shorter connector lane; a
-  screenshot review exposed the resulting long horizontal wires, so the exact
-  contracts now protect compact gaps instead.
+  compact chronological spine. Connector strokes reserve one more trailing
+  cell than leading gap because the leading endpoint is inclusive; their odd
+  cell span now has the spine at its exact midpoint. An even-width title keeps
+  only its unavoidable half-cell residual. A rejected intermediate attempt
+  balanced the entire unequal label envelope by stretching the shorter lane;
+  screenshot review exposed the resulting long wires, so exact contracts now
+  protect compact, midpoint-correct gaps instead.
 - Phase 3.4 gallery feedback: class/ER relationship channels reserve explicit
   endpoint space; diamonds, triangles, and arrows sit two cells from box
   borders; ER min/max marks have a line cell between them; and dependency
