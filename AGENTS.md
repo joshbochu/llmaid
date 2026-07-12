@@ -19,9 +19,9 @@ cargo build --release            # optimized binary at target/release/llmaid
 
 ./scripts/show-gallery.sh        # eyeball all golden cases (live render)
 ./scripts/show-gallery.sh --txt  # same, from committed *.txt (fast)
-./scripts/review-gallery.py --serve # browser bulk review; autosaves annotations
+./scripts/review-gallery.py --serve # browser review carousel; autosaves annotations
 ./scripts/review-gallery.py      # terminal slideshow (glyph-fidelity check)
-./scripts/review-gallery.py --live  # terminal slideshow from current renderer
+./scripts/review-gallery.py --live  # slideshow from current renderer
 ./scripts/review-gallery.py --html target/llmaid-review.html
 ./scripts/contact-sheet.py       # packed contact sheet (terminal shelves)
 ./scripts/contact-sheet.py --html -o /tmp/llmaid-gallery.html
@@ -105,5 +105,5 @@ main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ────�
 - When output quality is in question, render the reference diagrams in
   `tests/cases/` and eyeball them — aesthetics are a spec here, not a nice-to-have.
   Use `review-gallery.py --serve` for bulk browser annotations, then confirm
-  suspicious cases in the terminal slideshow. Its local `.llmaid-review.json`
-  records `pass` / `needs-work` plus notes without changing committed goldens.
+  suspicious cases with its terminal slideshow. Its local `.llmaid-review.json`
+  contains only flagged cases and their notes, without changing committed goldens.

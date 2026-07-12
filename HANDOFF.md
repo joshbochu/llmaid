@@ -107,11 +107,12 @@ without losing glance quality.
 - Equal-width vertical chains resolve odd/even text parity with a deterministic
   right bias toward the shared arrow column; flipped chains choose width parity
   from the terminal/top label; root forks keep a two-cell port margin
-- Visual review: `./scripts/review-gallery.py --serve` opens the all-case bulk
-  annotation workflow and atomically saves `.llmaid-review.json`. Its explicit
-  terminal-cell painter keeps CJK/emoji alignment representative in a browser.
-  The terminal slideshow (`./scripts/review-gallery.py`, optionally `--live`)
-  remains the final font/glyph-fidelity check for flagged cases.
+- Visual review: `./scripts/review-gallery.py --serve` opens the browser carousel workflow.
+  Arrow keys move between cases, Enter marks OK, and Space marks No and focuses
+  notes. Browser saves are case-scoped and `.llmaid-review.json` is agent-facing
+  annotation state: only cases with notes are persisted there. The Python cell
+  painter preserves terminal widths for CJK and emoji. Use the same script's
+  terminal slideshow for the final font/glyph-fidelity check on flagged cases.
 - Regenerate goldens: `UPDATE_GOLDEN=1 cargo test`
 
 ## Next steps (from ROADMAP)

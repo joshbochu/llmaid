@@ -244,12 +244,14 @@ all diagnostics go to stderr.
   doubled unit and is classified as unavoidable by the audit.
   For flipped chains, the terminal/top label selects the shared box-width
   parity, ensuring the visually dominant destination label has equal padding.
-- **Human visual review** uses `scripts/review-gallery.py --serve`: one browser
-  page contains every committed golden, bulk pass/needs-work controls, notes,
-  progress, import/export, and atomic autosave to `.llmaid-review.json`. The
-  browser painter fixes every glyph to its terminal display width (including
-  two-cell CJK and emoji) instead of trusting browser font fallback metrics.
-  Suspicious cases are confirmed in the same script's terminal slideshow,
+- **Human visual review** uses `scripts/review-gallery.py --serve`: a browser carousel shows
+  one committed golden per card. Arrow keys move between cards, Enter marks the
+  current case OK, and Space marks it as needing notes. Dev-server saves update
+  one case at a time, while `.llmaid-review.json` remains agent-facing
+  annotation state: only cases with notes are persisted there. The Python
+  renderer groups combining characters and locks each glyph to its terminal
+  display width, so CJK and emoji font fallback cannot shift later connectors.
+  Suspicious cases are confirmed with the same script's terminal slideshow,
   because the real terminal remains the final glyph-fidelity oracle.
 - `cargo test` must stay < 5s.
 

@@ -85,6 +85,8 @@ class ReviewGalleryTests(unittest.TestCase):
         self.assertIn("╭fanout╮", html)
         self.assertIn("const apiEnabled = false", html)
         self.assertIn("terminal-cell", html)
+        self.assertIn("carousel-card", html)
+        self.assertIn("/api/review/case", html)
 
     def test_terminal_cells_preserve_wide_cjk_and_emoji_columns(self):
         lines = review_gallery.terminal_cell_lines("│ 世界 ├── emoji 🚀 ─▶│\n")
@@ -151,6 +153,47 @@ class ReviewGalleryTests(unittest.TestCase):
                 with urllib.request.urlopen(request, timeout=2) as response:
                     self.assertEqual(response.status, 200)
                 self.assertEqual(json.loads(path.read_text()), payload)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+    def test_local_review_server_accepts_case_scoped_annotation_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "review.json"
+            store = review_gallery.ReviewStore(path)
+            cases = [review_gallery.Case("fanout", Path("fanout.mmd"), Path("fanout.txt"))]
+            server = review_gallery.make_review_server(
+                cases,
+                {"fanout": "[fanout]\n"},
+                store,
+                host="127.0.0.1",
+                port=0,
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                payload = {
+                    "case": "fanout",
+                    "record": {"status": "needs-work", "notes": ["  uneven  "]},
+                }
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}/api/review/case",
+                    data=json.dumps(payload).encode("utf-8"),
+                    method="PUT",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=2) as response:
+                    self.assertEqual(response.status, 200)
+                self.assertEqual(
+                    json.loads(path.read_text()),
+                    {
+                        "version": 1,
+                        "cases": {
+                            "fanout": {"status": "needs-work", "notes": ["uneven"]}
+                        },
+                    },
+                )
             finally:
                 server.shutdown()
                 server.server_close()

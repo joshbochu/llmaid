@@ -5,7 +5,15 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 
 ## [Unreleased]
 
+### Changed
+- The Python golden-review server remains the sole browser review workflow and
+  adopts the card carousel and keyboard UX prototyped in React. It autosaves one
+  case at a time and persists only annotated cases to `.llmaid-review.json`.
+
 ### Fixed
+- Golden reviewer: mixed-width CJK and emoji use the original Python terminal
+  cell painter, avoiding browser fallback-font advances without breaking joined
+  sequence lifelines and frame strokes.
 - Phase 4.2 gallery correction: diagram titles now center on the existing
   compact chronological spine. Connector strokes reserve one more trailing
   cell than leading gap because the leading endpoint is inclusive; their odd
@@ -143,14 +151,10 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   aesthetic rules, goldens prevent known regressions, and human review finds
   preferences not yet formalized. `--audit=json` and generated/metamorphic
   small-graph coverage now expose and enforce that boundary programmatically.
-- Golden review workflow (`scripts/review-gallery.py`): an all-case browser app
-  with bulk pass/needs-work controls, annotations, progress, JSON import/export,
-  browser-local persistence, and a local server that atomically autosaves into
-  `.llmaid-review.json`. Browser diagrams are painted in explicit terminal-cell
-  widths, so wide CJK and emoji glyphs cannot shift following geometry when a
-  proportional fallback font is used. The same tool retains committed-vs-live
-  terminal slideshows for final glyph fidelity. Covered by stdlib unit + HTTP
-  tests.
+- Golden review workflow: an all-case browser app with bulk pass/needs-work
+  controls, annotations, progress, JSON import/export, browser-local
+  persistence, and a local server that atomically autosaves into
+  `.llmaid-review.json`.
 - Exact topology-aware geometry audit (`audit.rs`, `tests/quality.rs`): hard
   violations; rank, mono-chain, fork, merge, and eligible-diamond residuals;
   true perpendicular crossings; bends; wire length. Centers use doubled

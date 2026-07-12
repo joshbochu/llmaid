@@ -72,6 +72,13 @@ class ReviewStore:
         notes.pop()
         return True
 
+    def set_agent_annotation(self, name: str, record: dict) -> None:
+        notes = [note.strip() for note in record.get("notes", []) if note.strip()]
+        if notes:
+            self.data["cases"][name] = {"status": "needs-work", "notes": notes}
+        else:
+            self.data["cases"].pop(name, None)
+
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(f".{self.path.name}.tmp")
@@ -104,6 +111,19 @@ def validate_review_payload(payload: object, allowed_cases: set[str]) -> dict:
             raise ValueError(f"notes for `{name}` exceed review limits")
         normalized["cases"][name] = {"status": status, "notes": notes}
     return normalized
+
+
+def validate_case_review_payload(payload: object, allowed_cases: set[str]) -> tuple[str, dict]:
+    if not isinstance(payload, dict):
+        raise ValueError("case review payload must be an object")
+    name = payload.get("case")
+    if not isinstance(name, str) or name not in allowed_cases:
+        raise ValueError(f"unknown review case: {name}")
+    normalized = validate_review_payload(
+        {"version": 1, "cases": {name: payload.get("record")}},
+        allowed_cases,
+    )
+    return name, normalized["cases"][name]
 
 
 def load_diagram(case: Case, live: bool = False) -> str:
@@ -171,8 +191,8 @@ REVIEW_HTML_TEMPLATE = r"""<!doctype html>
     :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
     * { box-sizing: border-box; }
     body { margin: 0; background: Canvas; color: CanvasText; }
-    button, select, textarea, input { font: inherit; }
-    button, select, textarea, .import-label {
+    button, textarea, input { font: inherit; }
+    button, textarea, .import-label {
       border: 1px solid color-mix(in srgb, CanvasText 28%, Canvas);
       border-radius: 6px;
       background: Canvas;
@@ -180,30 +200,26 @@ REVIEW_HTML_TEMPLATE = r"""<!doctype html>
     }
     button, .import-label { padding: 0.45rem 0.7rem; cursor: pointer; }
     button:hover, .import-label:hover { background: color-mix(in srgb, CanvasText 8%, Canvas); }
-    button[aria-current="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
-    button:focus-visible, select:focus-visible, textarea:focus-visible, .import-label:focus-within {
+    button:focus-visible, textarea:focus-visible, .import-label:focus-within {
       outline: 2px solid Highlight;
       outline-offset: 2px;
     }
-    .app { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); min-height: 100vh; }
-    .sidebar { border-right: 1px solid color-mix(in srgb, CanvasText 20%, Canvas); padding: 1rem; }
-    .sidebar h1 { margin: 0 0 0.35rem; font-size: 1.05rem; font-weight: 600; }
-    .summary { margin: 0 0 1rem; color: color-mix(in srgb, CanvasText 68%, Canvas); font-size: 0.9rem; }
-    .case-list { display: grid; gap: 0.35rem; }
-    .case-button { display: flex; justify-content: space-between; width: 100%; text-align: left; }
-    .status-symbol { font-family: ui-monospace, monospace; }
-    .main { min-width: 0; padding: 1rem 1.25rem 2rem; }
-    .toolbar, .case-toolbar, .review-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-    .toolbar { justify-content: space-between; margin-bottom: 1rem; }
+    .app { min-height: 100vh; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+    .main { min-width: 0; padding: 1.5rem clamp(0.75rem, 3vw, 2rem); }
+    .carousel-shell { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.75rem; align-items: center; height: 100%; }
+    .nav-button { align-self: stretch; min-width: 2.75rem; font-size: 1.25rem; }
+    .carousel-card { border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas); border-radius: 8px; height: calc(100vh - 6rem); min-height: 26rem; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+    .card-header { border-bottom: 1px solid color-mix(in srgb, CanvasText 16%, Canvas); display: flex; justify-content: space-between; gap: 1rem; padding: 0.85rem 1rem; }
+    .case-title { margin: 0; font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; }
+    .case-position, .summary, .save-state { color: color-mix(in srgb, CanvasText 68%, Canvas); font-size: 0.9rem; }
+    .case-position { margin-top: 0.2rem; }
+    .status-pill { align-self: start; border: 1px solid color-mix(in srgb, CanvasText 24%, Canvas); border-radius: 999px; padding: 0.2rem 0.55rem; font-size: 0.8rem; }
+    .status-pass { color: color-mix(in srgb, green 75%, CanvasText); border-color: color-mix(in srgb, green 55%, CanvasText); }
+    .status-needs-work { color: color-mix(in srgb, red 78%, CanvasText); border-color: color-mix(in srgb, red 55%, CanvasText); }
     .toolbar-group { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-    .save-state { color: color-mix(in srgb, CanvasText 68%, Canvas); font-size: 0.9rem; }
-    .case-toolbar { margin-bottom: 0.75rem; }
-    .case-toolbar select { min-width: 12rem; padding: 0.45rem; }
     .diagram-wrap {
-      border-block: 1px solid color-mix(in srgb, CanvasText 18%, Canvas);
-      margin-bottom: 1rem;
       overflow: auto;
-      padding: 1.25rem 0;
+      padding: 1.5rem;
     }
     pre {
       margin: 0;
@@ -216,66 +232,58 @@ REVIEW_HTML_TEMPLATE = r"""<!doctype html>
     }
     .terminal-row { display: block; min-height: 1.2em; }
     .terminal-cell { display: inline-block; text-align: center; vertical-align: top; }
-    .review-grid { display: grid; grid-template-columns: minmax(12rem, 0.35fr) minmax(18rem, 1fr); gap: 1rem; }
+    .review-panel { border-top: 1px solid color-mix(in srgb, CanvasText 16%, Canvas); display: grid; gap: 0.65rem; padding: 0.85rem 1rem 1rem; }
     label { display: grid; gap: 0.35rem; font-weight: 600; }
     label span { font-size: 0.9rem; }
-    select, textarea { width: 100%; padding: 0.55rem; }
-    textarea { min-height: 8rem; resize: vertical; font-family: ui-monospace, monospace; font-weight: 400; }
-    .review-actions { margin-top: 0.75rem; }
+    textarea { width: 100%; min-height: 5rem; resize: vertical; padding: 0.55rem; font-family: ui-monospace, monospace; font-weight: 400; }
+    .review-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
     .primary { background: Highlight; color: HighlightText; border-color: Highlight; }
     .primary:hover { background: Highlight; }
     .import-label input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; }
-    .help { margin: 0.75rem 0 0; color: color-mix(in srgb, CanvasText 68%, Canvas); font-size: 0.85rem; }
+    .help { margin: 0; color: color-mix(in srgb, CanvasText 68%, Canvas); font-size: 0.85rem; }
+    .footer { border-top: 1px solid color-mix(in srgb, CanvasText 18%, Canvas); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem; align-items: center; padding: 0.65rem 1rem; }
+    .footer-state { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
     @media (max-width: 760px) {
-      .app { grid-template-columns: 1fr; }
-      .sidebar { border-right: 0; border-bottom: 1px solid color-mix(in srgb, CanvasText 20%, Canvas); }
-      .case-list { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
-      .review-grid { grid-template-columns: 1fr; }
+      .main { padding: 0.75rem; }
+      .carousel-shell { grid-template-columns: 1fr; }
+      .nav-button { min-height: 2.5rem; }
+      .carousel-card { height: auto; min-height: 32rem; }
     }
   </style>
 </head>
 <body>
   <div class="app">
-    <aside class="sidebar">
-      <h1>llmaid golden review</h1>
-      <p class="summary" id="summary"></p>
-      <nav class="case-list" id="case-list" aria-label="Golden cases"></nav>
-    </aside>
     <main class="main">
-      <div class="toolbar">
-        <div class="toolbar-group">
-          <button type="button" id="export-json">Export JSON</button>
-          <button type="button" id="copy-json">Copy JSON</button>
-          <label class="import-label">Import JSON<input type="file" id="import-json" accept="application/json,.json"></label>
-        </div>
-        <span class="save-state" id="save-state" aria-live="polite"></span>
+      <div class="carousel-shell" aria-label="Golden case carousel">
+        <button type="button" id="previous" class="nav-button" aria-label="Previous case">←</button>
+        <article class="carousel-card">
+          <header class="card-header">
+            <div><h1 class="case-title" id="case-title"></h1><div class="case-position" id="case-position"></div></div>
+            <span class="status-pill" id="status-pill"></span>
+          </header>
+          <div class="diagram-wrap"><pre id="diagram" aria-label="Rendered terminal diagram"></pre></div>
+          <div class="review-panel">
+            <label><span>Notes for this case</span><textarea id="review-note" placeholder="Alignment, spacing, routing, composition..."></textarea></label>
+            <div class="review-actions">
+              <button type="button" id="pass-next" class="primary">OK &amp; next</button>
+              <button type="button" id="flag-note">No, add notes</button>
+              <button type="button" id="flag-next">No &amp; next</button>
+            </div>
+            <p class="help">←/→ move · Enter OK &amp; next · Space No + notes · in notes Enter submits &amp; next, Shift+Enter newline · Esc exits notes</p>
+          </div>
+        </article>
+        <button type="button" id="next" class="nav-button" aria-label="Next case">→</button>
       </div>
-      <div class="case-toolbar">
-        <button type="button" id="previous">Previous</button>
-        <select id="case-select" aria-label="Current case"></select>
-        <button type="button" id="next">Next</button>
-      </div>
-      <div class="diagram-wrap">
-        <pre id="diagram" aria-label="Rendered terminal diagram"></pre>
-      </div>
-      <div class="review-grid">
-        <label><span>Status</span>
-          <select id="review-status">
-            <option value="unreviewed">Unreviewed</option>
-            <option value="pass">Pass</option>
-            <option value="needs-work">Needs work</option>
-          </select>
-        </label>
-        <label><span>Annotations — one item per line</span>
-          <textarea id="review-note" placeholder="Alignment, spacing, routing, composition…"></textarea>
-        </label>
-      </div>
-      <div class="review-actions">
-        <button type="button" id="pass-next" class="primary">Pass &amp; next</button>
-        <button type="button" id="flag-next">Needs work &amp; next</button>
-      </div>
-      <p class="help">Arrow keys change cases when focus is outside a field. Served mode saves directly to .llmaid-review.json; static mode uses browser storage and Export JSON.</p>
     </main>
+    <footer class="footer">
+      <div class="toolbar-group">
+        <button type="button" id="clear-all">Clear all annotations</button>
+        <button type="button" id="copy-json">Copy annotation JSON</button>
+        <button type="button" id="export-json">Export JSON</button>
+        <label class="import-label">Import JSON<input type="file" id="import-json" accept="application/json,.json"></label>
+      </div>
+      <div class="footer-state"><span class="summary" id="summary"></span><span class="save-state" id="save-state" aria-live="polite"></span></div>
+    </footer>
   </div>
   <script id="bootstrap" type="application/json">__DATA__</script>
   <script>
@@ -287,15 +295,15 @@ REVIEW_HTML_TEMPLATE = r"""<!doctype html>
       const storageKey = "llmaid-review-v1";
       let state = normalize(bootstrap.review);
       let selected = Math.max(0, Math.min(Number(localStorage.getItem(storageKey + "-selected") || 0), items.length - 1));
-      let saveTimer;
+      const saveTimers = new Map();
 
-      const caseList = document.getElementById("case-list");
-      const caseSelect = document.getElementById("case-select");
+      const caseTitle = document.getElementById("case-title");
+      const casePosition = document.getElementById("case-position");
       const diagram = document.getElementById("diagram");
-      const reviewStatus = document.getElementById("review-status");
       const reviewNote = document.getElementById("review-note");
       const summary = document.getElementById("summary");
       const saveState = document.getElementById("save-state");
+      const statusPill = document.getElementById("status-pill");
 
       function normalize(candidate) {
         const output = {version: 1, cases: {}};
@@ -313,8 +321,24 @@ REVIEW_HTML_TEMPLATE = r"""<!doctype html>
         return state.cases[name];
       }
 
-      function statusSymbol(status) {
-        return status === "pass" ? "✓" : status === "needs-work" ? "!" : "○";
+      function displayStatus(status) {
+        return status === "pass" ? "OK" : status === "needs-work" ? "No" : "Unreviewed";
+      }
+
+      function agentReviewState() {
+        const output = {version: 1, cases: {}};
+        items.forEach(item => {
+          const notes = record(item.name).notes.map(note => note.trim()).filter(Boolean);
+          if (notes.length) output.cases[item.name] = {status: "needs-work", notes};
+        });
+        return output;
+      }
+
+      function mergeServerAnnotations(serverState) {
+        const annotations = normalize(serverState);
+        Object.entries(annotations.cases).forEach(([name, serverRecord]) => {
+          if (serverRecord.notes.length) state.cases[name] = {status: "needs-work", notes: serverRecord.notes};
+        });
       }
 
       function renderTerminalCells(item) {
@@ -339,28 +363,14 @@ REVIEW_HTML_TEMPLATE = r"""<!doctype html>
         const current = record(item.name);
         renderTerminalCells(item);
         diagram.setAttribute("aria-label", `${item.name} rendered terminal diagram`);
-        caseSelect.value = String(selected);
-        reviewStatus.value = current.status;
+        caseTitle.textContent = item.name;
+        casePosition.textContent = `${selected + 1} of ${items.length}`;
         reviewNote.value = current.notes.join("\n");
-        caseList.replaceChildren();
-        items.forEach((entry, index) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "case-button";
-          button.dataset.index = String(index);
-          button.setAttribute("aria-current", String(index === selected));
-          const name = document.createElement("span");
-          name.textContent = entry.name;
-          const symbol = document.createElement("span");
-          symbol.className = "status-symbol";
-          symbol.textContent = statusSymbol(record(entry.name).status);
-          button.append(name, symbol);
-          button.addEventListener("click", () => select(index));
-          caseList.appendChild(button);
-        });
+        statusPill.textContent = displayStatus(current.status);
+        statusPill.className = `status-pill status-${current.status}`;
         const reviewed = items.filter(item => record(item.name).status !== "unreviewed").length;
-        const flagged = items.filter(item => record(item.name).status === "needs-work").length;
-        summary.textContent = `${reviewed}/${items.length} reviewed · ${flagged} need work`;
+        const annotated = Object.keys(agentReviewState().cases).length;
+        summary.textContent = `${reviewed}/${items.length} reviewed · ${annotated} annotated`;
       }
 
       function select(index) {
@@ -369,34 +379,48 @@ REVIEW_HTML_TEMPLATE = r"""<!doctype html>
         render();
       }
 
-      function persist() {
+      function persistCase(name) {
         localStorage.setItem(storageKey, JSON.stringify(state));
         saveState.textContent = apiEnabled ? "Saving…" : "Saved in browser";
         if (!apiEnabled) return;
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(async () => {
+        clearTimeout(saveTimers.get(name));
+        saveTimers.set(name, setTimeout(async () => {
           try {
-            const response = await fetch("/api/review", {
+            const response = await fetch("/api/review/case", {
               method: "PUT",
               headers: {"Content-Type": "application/json"},
-              body: JSON.stringify(state),
+              body: JSON.stringify({case: name, record: record(name)}),
             });
             if (!response.ok) throw new Error(`save failed: ${response.status}`);
-            saveState.textContent = "Saved to .llmaid-review.json";
+            saveState.textContent = "Saved annotation state";
           } catch (error) {
             saveState.textContent = error.message;
+          } finally {
+            saveTimers.delete(name);
           }
-        }, 200);
+        }, 200));
       }
 
-      function updateStatus(status, advance) {
-        record(items[selected].name).status = status;
-        persist();
-        if (advance) select(selected + 1); else render();
+      function markOk() {
+        const name = items[selected].name;
+        state.cases[name] = {status: "pass", notes: []};
+        persistCase(name);
+        select(selected + 1);
+      }
+
+      function markNo({focusNote, advance}) {
+        const name = items[selected].name;
+        record(name).status = "needs-work";
+        persistCase(name);
+        if (advance) select(selected + 1);
+        else {
+          render();
+          if (focusNote) requestAnimationFrame(() => reviewNote.focus());
+        }
       }
 
       function exportJson() {
-        const blob = new Blob([JSON.stringify(state, null, 2) + "\n"], {type: "application/json"});
+        const blob = new Blob([JSON.stringify(agentReviewState(), null, 2) + "\n"], {type: "application/json"});
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
         link.download = "llmaid-review.json";
@@ -407,31 +431,52 @@ REVIEW_HTML_TEMPLATE = r"""<!doctype html>
       async function importJson(file) {
         const parsed = normalize(JSON.parse(await file.text()));
         state = parsed;
-        persist();
+        localStorage.setItem(storageKey, JSON.stringify(state));
+        if (apiEnabled) {
+          const response = await fetch("/api/review", {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(agentReviewState()),
+          });
+          if (!response.ok) throw new Error(`save failed: ${response.status}`);
+        }
         render();
       }
 
-      items.forEach((item, index) => {
-        const option = document.createElement("option");
-        option.value = String(index);
-        option.textContent = item.name;
-        caseSelect.appendChild(option);
-      });
-
-      caseSelect.addEventListener("change", () => select(Number(caseSelect.value)));
       document.getElementById("previous").addEventListener("click", () => select(selected - 1));
       document.getElementById("next").addEventListener("click", () => select(selected + 1));
-      reviewStatus.addEventListener("change", () => updateStatus(reviewStatus.value, false));
       reviewNote.addEventListener("input", () => {
-        record(items[selected].name).notes = reviewNote.value.split("\n").map(note => note.trim()).filter(Boolean);
-        persist();
+        const name = items[selected].name;
+        const current = record(name);
+        current.notes = reviewNote.value.split("\n").map(note => note.trim()).filter(Boolean);
+        if (current.notes.length) current.status = "needs-work";
+        persistCase(name);
       });
-      document.getElementById("pass-next").addEventListener("click", () => updateStatus("pass", true));
-      document.getElementById("flag-next").addEventListener("click", () => updateStatus("needs-work", true));
+      reviewNote.addEventListener("keydown", event => {
+        if (event.key === "Escape") { event.preventDefault(); reviewNote.blur(); }
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          markNo({focusNote: false, advance: true});
+          reviewNote.blur();
+        }
+      });
+      document.getElementById("pass-next").addEventListener("click", markOk);
+      document.getElementById("flag-note").addEventListener("click", () => markNo({focusNote: true, advance: false}));
+      document.getElementById("flag-next").addEventListener("click", () => markNo({focusNote: false, advance: true}));
+      document.getElementById("clear-all").addEventListener("click", async () => {
+        if (!confirm("Clear all annotations and return to case 1?")) return;
+        state = {version: 1, cases: {}};
+        localStorage.setItem(storageKey, JSON.stringify(state));
+        select(0);
+        if (apiEnabled) {
+          const response = await fetch("/api/review", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(state)});
+          if (!response.ok) saveState.textContent = `save failed: ${response.status}`;
+        }
+      });
       document.getElementById("export-json").addEventListener("click", exportJson);
       document.getElementById("copy-json").addEventListener("click", async () => {
-        await navigator.clipboard.writeText(JSON.stringify(state, null, 2) + "\n");
-        saveState.textContent = "Copied review JSON";
+        await navigator.clipboard.writeText(JSON.stringify(agentReviewState(), null, 2) + "\n");
+        saveState.textContent = "Copied annotation JSON";
       });
       document.getElementById("import-json").addEventListener("change", event => {
         const file = event.target.files[0];
@@ -439,9 +484,13 @@ REVIEW_HTML_TEMPLATE = r"""<!doctype html>
         event.target.value = "";
       });
       window.addEventListener("keydown", event => {
-        if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
-        if (event.key === "ArrowLeft") select(selected - 1);
-        if (event.key === "ArrowRight") select(selected + 1);
+        const activeTag = document.activeElement.tagName;
+        if (["INPUT", "TEXTAREA"].includes(activeTag)) return;
+        if (activeTag === "BUTTON" && ["Enter", " "].includes(event.key)) return;
+        if (event.key === "ArrowLeft") { event.preventDefault(); select(selected - 1); }
+        if (event.key === "ArrowRight") { event.preventDefault(); select(selected + 1); }
+        if (event.key === "Enter") { event.preventDefault(); markOk(); }
+        if (event.key === " ") { event.preventDefault(); markNo({focusNote: true, advance: false}); }
       });
 
       try {
@@ -453,7 +502,7 @@ REVIEW_HTML_TEMPLATE = r"""<!doctype html>
       if (apiEnabled) {
         fetch("/api/review")
           .then(response => response.json())
-          .then(serverState => { state = normalize(serverState); localStorage.setItem(storageKey, JSON.stringify(state)); render(); saveState.textContent = "Saved to .llmaid-review.json"; })
+          .then(serverState => { mergeServerAnnotations(serverState); localStorage.setItem(storageKey, JSON.stringify(state)); render(); saveState.textContent = "Saved annotation state"; })
           .catch(error => { saveState.textContent = error.message; });
       } else {
         saveState.textContent = "Saved in browser";
@@ -522,19 +571,23 @@ def make_review_server(
                 self.send_bytes(404, "text/plain; charset=utf-8", b"not found\n")
 
         def do_PUT(self) -> None:
-            if self.path != "/api/review":
+            if self.path not in ("/api/review", "/api/review/case"):
                 self.send_bytes(404, "text/plain; charset=utf-8", b"not found\n")
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if length <= 0 or length > 1_000_000:
                     raise ValueError("review payload size is invalid")
-                payload = validate_review_payload(
-                    json.loads(self.rfile.read(length).decode("utf-8")),
-                    allowed,
-                )
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
                 with lock:
-                    store.data = payload
+                    if self.path == "/api/review/case":
+                        name, record = validate_case_review_payload(payload, allowed)
+                        store.set_agent_annotation(name, record)
+                    else:
+                        normalized = validate_review_payload(payload, allowed)
+                        store.data = {"version": 1, "cases": {}}
+                        for name, record in normalized["cases"].items():
+                            store.set_agent_annotation(name, record)
                     store.save()
                 self.send_bytes(200, "application/json; charset=utf-8", b'{"ok":true}\n')
             except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
