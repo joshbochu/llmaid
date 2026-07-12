@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-11 — Phase 4.2 core timeline planning slice landed.
+Last updated: 2026-07-11 — breadth paused after Phase 4.2; polish is next.
 
 ## What this project is
 
@@ -117,18 +117,24 @@ without losing glance quality.
 
 ## Next steps (from ROADMAP)
 
-1. **Phase 4.3** — `gitGraph`, then selective charts
-2. Remaining agent diagnostics (JSON parser errors / optional JSON IR input)
-3. Optional visual polish: native state pseudo-markers and nested
-   state/subgraph handling
+1. Gallery-driven polish of shipped flowchart, sequence, design-doc, mindmap,
+   and timeline output; turn accepted preferences into exact contracts
+2. Remaining agent diagnostics, especially machine-readable parser errors
+3. Distribution: choose a first release channel, version the CLI, and publish
+   per-type examples plus the checked-in visual gallery
+
+`gitGraph` and its complete tested vertical slice are parked on
+`codex/git-todo-later` at commit `7f2989b`. Phase 5 charts and boards are also
+parked until concrete demand justifies additional terminal visual grammars.
 
 Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 
 ### Suggested next pickup
 
-Apply the same thin vertical-slice discipline to `gitGraph`: type-specific
-ordered IR, native integer geometry, shared `Scene`, behavior contract,
-deterministic generated coverage, focused goldens, and visual review.
+Run the browser gallery across every shipped case, record only actionable
+visual notes, then handle one topology at a time: reproduce it as an exact
+geometry predicate, add the failing quality test, improve the renderer, and
+accept the new golden only after terminal review.
 
 ## Quality bar
 

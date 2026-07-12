@@ -6,6 +6,12 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Changed
+- Roadmap breadth is deliberately paused after the shipped flowchart,
+  sequence, state/class/ER, mindmap, and timeline core. `gitGraph` remains
+  available as a tested parked branch (`codex/git-todo-later` at `7f2989b`),
+  while charts and boards move to explicit non-goals until concrete demand
+  outweighs their terminal visual-grammar and maintenance cost. Active work
+  now favors gallery-driven polish, machine-readable errors, and distribution.
 - The Python golden-review server remains the sole browser review workflow and
   adopts the card carousel and keyboard UX prototyped in React. It autosaves one
   case at a time and persists only annotated cases to `.llmaid-review.json`.

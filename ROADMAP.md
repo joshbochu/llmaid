@@ -34,8 +34,8 @@ Agents speak Mermaid; we own primitives behind the door.
 | 1 | Flowchart completeness (subgraphs / graph-easy parity) | **done** (1.1 flat; nested parent field ready) |
 | 2 | Sequence diagrams | **done** (core + controls) |
 | 3 | Design-doc types (state / class / ER) | **done** (core + visual fidelity) |
-| 4 | Hierarchy & planning (mindmap / timeline / git) | **in progress** (4.1–4.2 done) |
-| 5 | Charts & boards (selective) | later |
+| 4 | Hierarchy & planning (mindmap / timeline) | **done for current scope** |
+| 5 | Charts & boards (selective) | **parked** |
 | 6 | Agent self-debug loop | **in progress** (6.2–6.3 and 6.5 done) |
 | 7 | Distribution & product | later |
 
@@ -118,27 +118,30 @@ structured-box quality contracts.
 
 ---
 
-## Phase 4 — Hierarchy & planning · **in progress**
+## Phase 4 — Hierarchy & planning · **done for current scope**
 
 | ID | Item | Maps from |
 |----|------|-----------|
 | 4.1 | `mindmap` + reusable ordered tree layout | **done** — one root, plain descendants, exact geometry, audit, goldens |
 | 4.2 | `timeline` + reusable integer temporal layout | **done** — title, periods/events, sections, audit, exact geometry, generated coverage |
-| 4.3 | `gitGraph` | branch explainers |
+| 4.3 | `gitGraph` | **parked** — tested slice retained on `codex/git-todo-later` |
 
-**Exit:** planning + repo narrative diagrams.
+**Exit:** hierarchy and chronological planning narratives without another
+specialty engine.
 
 ---
 
-## Phase 5 — Charts & boards (selective)
+## Phase 5 — Charts & boards (selective) · **parked**
 
-Only where glance quality holds (don’t become a junk drawer).
+The shipped core covers the primary agent communication use cases. Additional
+chart and board breadth stays parked until concrete usage justifies its layout
+and maintenance cost.
 
 | ID | Item | Priority |
 |----|------|----------|
-| 5.1 | `pie` | higher |
-| 5.2 | `xychart` / `quadrantChart` / `treemap` | medium |
-| 5.3 | `journey` / `kanban` / `block-beta` | lower |
+| 5.1 | `pie` | parked |
+| 5.2 | `xychart` / `quadrantChart` / `treemap` | parked |
+| 5.3 | `journey` / `kanban` / `block-beta` | parked |
 
 **Exit:** multi-type without sacrificing the visual bar.
 
@@ -177,6 +180,9 @@ human review remains the oracle for preferences not yet expressed as geometry.
 
 | Item | Why |
 |------|-----|
+| `gitGraph` | Useful but non-core; tested implementation retained on `codex/git-todo-later` at `7f2989b` |
+| `pie` / `xychart` / `quadrantChart` / `treemap` | Colorless terminal grammar and real demand are not yet strong enough |
+| `journey` / `kanban` / `block-beta` | Lower-value breadth; overlaps existing timeline, flowchart, and document workflows |
 | Full Mermaid.js theme/color parity | Fights terminal + determinism |
 | Interactive TUI as core product | Humans look at static output; agents don’t need a TUI |
 | Diagon **math** formulas | Not Mermaid; separate tool if ever |
@@ -215,8 +221,7 @@ human review remains the oracle for preferences not yet expressed as geometry.
 ## Suggested near-term sequence
 
 ```text
-4.3 gitGraph
-→ 5.x charts (selective)
-→ 6.x agent diagnostics
-→ 7.x distribute
+gallery-driven polish of shipped types
+→ 6.1/6.4 agent diagnostics
+→ 7.1–7.3 release, docs, and visual gallery
 ```
