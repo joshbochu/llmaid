@@ -62,7 +62,12 @@ src/
   parse.rs     Mermaid flowchart subset → IR (Graph: nodes, edges, direction)
   layout.rs    IR → integer flow-grid positions
   route.rs     Layout → complete screen-space paths, arrows, and labels
-  sequence.rs  ordered event/control IR + lifeline/fragment layout → Scene
+  sequence/     sequence engine with a narrow public boundary
+    mod.rs      exports the stable parse / scene / dump API
+    ir.rs       ordered participant, event, activation, and control IR
+    parse.rs    Mermaid sequence syntax → semantic IR
+    layout.rs   integer lifeline/message/fragment geometry → Scene
+    dump.rs     deterministic textual IR dump
   state.rs     flat state semantic IR → boxed geometry → Scene
   class.rs     class/member/relation semantic IR → boxed geometry → Scene
   er.rs        entity/attribute/cardinality semantic IR → boxed geometry → Scene

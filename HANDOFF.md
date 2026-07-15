@@ -26,7 +26,8 @@ without losing glance quality.
 
 - Pipeline: parse → flow layout → route into signed `Scene` → pure canvas render
 - Diagram dispatch: flowcharts retain their established pipeline; the sequence
-  engine owns its semantic IR/layout and joins at the shared `Scene` boundary
+  engine is split into `sequence/{ir,parse,layout,dump}.rs`, owns its semantic
+  IR/layout, and joins at the shared `Scene` boundary
 - Core sequence diagrams: declared/implicit participants and actors, padded
   headers, dotted lifelines, ordered messages/notes/activation events, `->>`
   messages, `-->>` returns, left/right/over notes, balanced activation bars,

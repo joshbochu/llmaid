@@ -6,6 +6,11 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Changed
+- The sequence engine is now organized as `sequence/{ir,parse,layout,dump}.rs`
+  behind the unchanged `sequence::parse`, `sequence::scene`, and
+  `sequence::dump` API. This separates semantic data, Mermaid syntax,
+  geometry, and debugging responsibilities without changing rendered bytes or
+  behavior contracts.
 - Roadmap breadth is deliberately paused after the shipped flowchart,
   sequence, state/class/ER, mindmap, and timeline core. `gitGraph` remains
   available as a tested parked branch (`codex/git-todo-later` at `7f2989b`),

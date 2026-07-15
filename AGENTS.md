@@ -36,12 +36,12 @@ Flowcharts retain the five-stage pipeline; diagram dispatch and other engines
 join only at the shared `Scene` boundary:
 
 ```
-main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ─────────┐
-                     ├→ sequence.rs (events + fragments)         │
-                     ├→ state.rs / class.rs / er.rs → boxed.rs ──┤
-                     ├→ mindmap.rs → tree.rs                     │
-                     └→ timeline.rs → temporal.rs ───────────────┴→ Scene → render.rs
-                                                                  style.rs (glyphs)
+main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ───────────────┐
+                     ├→ sequence/ (parse → IR → layout; dump)          │
+                     ├→ state.rs / class.rs / er.rs → boxed.rs ───────┤
+                     ├→ mindmap.rs → tree.rs                           │
+                     └→ timeline.rs → temporal.rs ─────────────────────┴→ Scene → render.rs
+                                                                        style.rs (glyphs)
 ```
 
 - `diagram.rs` — top-level Mermaid type detection and engine dispatch.
@@ -53,7 +53,9 @@ main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ────�
 - `route.rs` — layout geometry → signed screen-space `Scene`; complete
   orthogonal paths, arrows, and collision-free label positions. Back-edges use
   the perimeter channel.
-- `sequence.rs` — sequence semantic IR + integer lifeline/message layout.
+- `sequence/` — sequence engine split into its public boundary (`mod.rs`),
+  ordered semantic IR, parser, deterministic dump, and integer
+  lifeline/message/fragment layout.
 - `state.rs` / `class.rs` / `er.rs` — independent design-doc semantic IR;
   lower structured boxes/relations through `boxed.rs` into shared geometry.
 - `mindmap.rs` — strict ordered indentation IR, width fallback, and Scene
