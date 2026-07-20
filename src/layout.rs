@@ -203,7 +203,8 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
                 None => node.label.split('\n').map(str::to_string).collect(),
             };
             let text_w = lines.iter().map(|l| l.width()).max().unwrap_or(1).max(1);
-            let w = text_w + 2 * PAD + 2;
+            let shape_width = usize::from(node.shape == crate::scene::Shape::Subroutine) * 2;
+            let w = text_w + 2 * PAD + 2 + shape_width;
             let h = lines.len() + 2;
             let (flen, clen) = if horizontal { (w, h) } else { (h, w) };
             BoxGeom {
@@ -609,8 +610,20 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         } else {
             2
         };
-        let width =
-            channel_min.max(label_zone + 2 * channel_track_count[r] + slack + endpoint_reserve);
+        let crosses_top_level_group_boundary = channel_edges[r].iter().any(|&edge_index| {
+            let edge = &g.edges[edge_index];
+            let from_group = top_level_group(g, edge.from);
+            let to_group = top_level_group(g, edge.to);
+            from_group != to_group && from_group.is_some() && to_group.is_some()
+        });
+        let group_boundary_min = if !horizontal && crosses_top_level_group_boundary {
+            CLUSTER_TITLE_BAND + 2 * CLUSTER_PAD + 1
+        } else {
+            0
+        };
+        let width = channel_min
+            .max(group_boundary_min)
+            .max(label_zone + 2 * channel_track_count[r] + slack + endpoint_reserve);
         channels.push(Channel {
             start: 0,
             width,

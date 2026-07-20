@@ -5,12 +5,14 @@ nodes:
   st stadium "stadium"
   ci circle "circle"
   cy cylinder "cylinder"
+  sr subroutine "subroutine"
   di diamond "diamond"
   hx hexagon "hexagon"
 edges:
   r --> ro
   ro --> st
   st --> ci
-  cy -.-> di
+  cy -.-> sr
+  sr --> di
   di ==> hx
   r --- cy

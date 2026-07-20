@@ -13,6 +13,7 @@ pub enum Shape {
     Stadium,
     Circle,
     Cylinder,
+    Subroutine,
     Diamond,
     Hexagon,
 }
@@ -25,6 +26,7 @@ impl Shape {
             Shape::Stadium => "stadium",
             Shape::Circle => "circle",
             Shape::Cylinder => "cylinder",
+            Shape::Subroutine => "subroutine",
             Shape::Diamond => "diamond",
             Shape::Hexagon => "hexagon",
         }
@@ -214,6 +216,14 @@ pub struct SceneGroup {
     pub subgraph: usize,
     pub rect: Rect,
     pub title: SceneText,
+    pub dividers: Vec<SceneGroupDivider>,
+}
+
+/// A labeled horizontal branch boundary inside a containing group.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SceneGroupDivider {
+    pub y: i32,
+    pub title: SceneText,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -343,6 +353,9 @@ impl Scene {
         for group in &self.groups {
             bounds = bounds.union(group.rect);
             bounds = bounds.union(group.title.bounds());
+            for divider in &group.dividers {
+                bounds = bounds.union(divider.title.bounds());
+            }
         }
         for path in &self.paths {
             for &point in path.points.iter().chain(&path.rounded) {
@@ -387,6 +400,10 @@ impl Scene {
         for group in &mut self.groups {
             group.rect = group.rect.translated(dx, dy);
             group.title.translate(dx, dy);
+            for divider in &mut group.dividers {
+                divider.y += dy;
+                divider.title.translate(dx, dy);
+            }
         }
         for path in &mut self.paths {
             for point in path.points.iter_mut().chain(&mut path.rounded) {

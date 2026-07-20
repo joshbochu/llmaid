@@ -67,8 +67,8 @@ main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ────�
 - `temporal.rs` — reusable semantic-free integer layout for ordered temporal
   ranks on a common spine with measured leading/trailing slots and band ranges.
 - `scene.rs` — shared `Point` / `Rect` / path / text primitives plus structured
-  tables and endpoint decorations; normalizes the finished scene once and
-  derives exact bounds.
+  tables, labeled group dividers, and endpoint decorations; normalizes the
+  finished scene once and derives exact bounds.
 - `render.rs` — pure scene painter + char canvas; box-drawing junctions resolved
   via bitmask lookup
   (`─` meets `│` ⇒ `┼`).

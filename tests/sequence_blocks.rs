@@ -93,7 +93,7 @@ fn malformed_control_blocks_name_the_line_and_expectation() {
 fn nested_control_blocks_render_closed_frames_without_losing_labels() {
     let parsed = diagram::parse(BLOCKS).unwrap();
     let scene = diagram::scene(&parsed, 100);
-    assert_eq!(scene.groups.len(), 4, "loop, two alt branches, and opt");
+    assert_eq!(scene.groups.len(), 3, "loop, alt, and opt frames");
     let group = |title: &str| {
         scene
             .groups
@@ -102,32 +102,24 @@ fn nested_control_blocks_render_closed_frames_without_losing_labels() {
             .unwrap_or_else(|| panic!("missing group {title:?}"))
     };
     let alt = group("alt accepted");
-    let else_branch = group("else rejected");
     let opt = group("opt retryable");
+    assert_eq!(alt.dividers.len(), 1, "alt has one else divider");
+    let else_divider = &alt.dividers[0];
+    assert_eq!(else_divider.title.text, "else rejected");
     assert!(
-        alt.rect.contains(llmaid::scene::Point::new(
-            else_branch.rect.x,
-            else_branch.rect.y
-        )) && alt.rect.contains(llmaid::scene::Point::new(
-            else_branch.rect.right() - 1,
-            else_branch.rect.bottom() - 1,
-        )),
-        "else branch should be visibly nested inside alt: {alt:?} {else_branch:?}"
-    );
-    assert!(
-        else_branch
-            .rect
+        alt.rect
             .contains(llmaid::scene::Point::new(opt.rect.x, opt.rect.y))
-            && else_branch.rect.contains(llmaid::scene::Point::new(
+            && alt.rect.contains(llmaid::scene::Point::new(
                 opt.rect.right() - 1,
                 opt.rect.bottom() - 1,
             )),
-        "blocks inside else should nest inside its branch: {else_branch:?} {opt:?}"
+        "the else branch's opt should remain inside alt: {alt:?} {opt:?}"
     );
     assert!(
-        opt.rect.x > else_branch.rect.x && opt.rect.right() < else_branch.rect.right(),
-        "nested opt needs visible horizontal insets: {else_branch:?} {opt:?}"
+        opt.rect.x > alt.rect.x && opt.rect.right() < alt.rect.right(),
+        "nested opt needs visible horizontal insets: {alt:?} {opt:?}"
     );
+    assert!(else_divider.y < opt.rect.y, "opt starts below else divider");
     let first_lifeline = scene.paths[0].points[0].x;
     let last_lifeline = scene.paths[1].points[0].x;
     for frame in &scene.groups {

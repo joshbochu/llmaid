@@ -5,7 +5,19 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 
 ## [Unreleased]
 
+### Fixed
+- Connected sibling flowchart subgraphs reserve enough vertical boundary space,
+  and an incoming edge passes behind the destination title band instead of
+  suppressing the title and failing the runtime scene invariant gate.
+- Flowchart `[[subroutine]]` nodes parse as a dedicated rect-framed shape with
+  deterministic doubled-side hints in Unicode and ASCII.
+
 ### Changed
+- Sequence `alt` controls now render as one containing frame with each `else`
+  boundary on a labeled horizontal divider instead of a second nested frame.
+  The generic `SceneGroup` divider primitive owns the paint geometry, while an
+  exact quality contract protects frame count, divider placement, message
+  ordering, containment, and Unicode/ASCII invariants.
 - The sequence engine is now organized as `sequence/{ir,parse,layout,dump}.rs`
   behind the unchanged `sequence::parse`, `sequence::scene`, and
   `sequence::dump` API. This separates semantic data, Mermaid syntax,
@@ -135,8 +147,9 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 - Nested sequence controls (B20): canonical `loop`, `alt` / `else`, and `opt`
   directives are recorded at exact event boundaries, validated with
   line-specific errors, and rendered as labeled containing frames in Unicode
-  and ASCII. Nested `else` branches and their child blocks have exact
-  containment/inset/lifeline-span contracts plus a focused golden.
+  and ASCII. An `alt` uses one frame with a labeled internal `else` divider;
+  nested child blocks have exact containment/inset/lifeline-span contracts plus
+  a focused golden.
 - Sequence notes and activation (B18): ordered source events; `Note left of`,
   `Note right of`, and `Note over` one/two participants; balanced and nested
   explicit `activate` / `deactivate`; line-specific errors; deterministic

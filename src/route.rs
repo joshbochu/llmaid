@@ -250,6 +250,7 @@ fn route_groups(g: &Graph, boxes: &[SceneBox]) -> Vec<SceneGroup> {
                 subgraph: index,
                 rect,
                 title: SceneText::new(Point::new(title_x, rect.y + 1), title),
+                dividers: Vec::new(),
             })
         })
         .collect()

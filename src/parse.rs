@@ -372,6 +372,7 @@ fn parse_group(g: &mut Graph, cur: &mut Cur, line: usize) -> Result<Vec<usize>, 
 }
 
 const SHAPES: &[(&str, &str, Shape)] = &[
+    ("[[", "]]", Shape::Subroutine),
     ("([", "])", Shape::Stadium),
     ("[(", ")]", Shape::Cylinder),
     ("((", "))", Shape::Circle),

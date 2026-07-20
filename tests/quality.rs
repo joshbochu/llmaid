@@ -1,7 +1,7 @@
 use llmaid::audit;
 use llmaid::scene::{CardinalityMaximum, CardinalityMinimum, EndpointDecorationKind};
 use llmaid::style::Style;
-use llmaid::{class, er, layout, mindmap, parse, render, route, temporal, timeline};
+use llmaid::{class, diagram, er, layout, mindmap, parse, render, route, temporal, timeline};
 use unicode_width::UnicodeWidthStr;
 
 fn audit_source(source: &str) -> audit::GeometryAudit {
@@ -726,4 +726,81 @@ fn path_cells(points: &[llmaid::scene::Point]) -> Vec<llmaid::scene::Point> {
         }
     }
     cells
+}
+
+#[test]
+fn connected_sibling_subgraphs_reserve_one_exact_title_boundary_channel() {
+    let source = "flowchart TD\n  subgraph one\n    A --> B\n  end\n  subgraph two\n    C --> D\n  end\n  B --> C\n";
+    let graph = parse::parse(source).unwrap();
+    let placed = layout::layout(&graph, 100);
+
+    let boundary_edge = graph
+        .edges
+        .iter()
+        .position(|edge| graph.nodes[edge.from].id == "B" && graph.nodes[edge.to].id == "C")
+        .unwrap();
+    let boundary_channel = placed.segs[boundary_edge][0].channel;
+    assert_eq!(
+        placed.channels[boundary_channel].width,
+        layout::CLUSTER_TITLE_BAND + 2 * layout::CLUSTER_PAD + 1
+    );
+
+    let scene = route::route(&graph, &placed);
+    let first = &scene.groups[0];
+    let second = &scene.groups[1];
+    assert_eq!(second.rect.y - first.rect.bottom(), 1);
+    assert_eq!(second.title.at.y, second.rect.y + 1);
+
+    let (rendered, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+    assert!(failures.is_empty(), "{}\n{rendered}", failures.join("\n"));
+    assert!(rendered.lines().any(|line| line.contains("│  two  │")));
+}
+
+#[test]
+fn sequence_alt_uses_one_frame_and_one_exact_else_divider() {
+    let parsed = diagram::parse(
+        "sequenceDiagram\n  participant A\n  participant B\n  alt success\n    A->>B: yes\n  else failure\n    B-->>A: no\n  end\n",
+    )
+    .unwrap();
+    let scene = diagram::scene(&parsed, 100);
+
+    assert_eq!(scene.groups.len(), 1, "alt owns one containing frame");
+    let frame = &scene.groups[0];
+    assert_eq!(frame.title.text, "alt success");
+    assert_eq!(frame.dividers.len(), 1, "else is a divider, not a frame");
+
+    let divider = &frame.dividers[0];
+    assert_eq!(divider.title.text, "else failure");
+    assert_eq!(divider.title.at.y, divider.y);
+    assert_eq!(divider.title.at.x, frame.rect.x + 3);
+    assert!(divider.y > frame.title.at.y);
+    assert!(divider.y < frame.rect.bottom() - 1);
+
+    let first_message_y = scene.edges[0].label.as_ref().unwrap().at.y;
+    let second_message_y = scene.edges[1].label.as_ref().unwrap().at.y;
+    assert!(first_message_y < divider.y && divider.y < second_message_y);
+
+    let (rendered, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+    assert!(failures.is_empty(), "{}\n{rendered}", failures.join("\n"));
+    let divider_line = rendered
+        .lines()
+        .find(|line| line.contains("else failure"))
+        .expect("visible else divider");
+    assert!(
+        divider_line.starts_with("├─ else failure "),
+        "{divider_line}"
+    );
+    assert!(divider_line.ends_with('┤'), "{divider_line}");
+
+    let (ascii, failures) = render::render_scene_with_checks(&scene, Style { ascii: true });
+    assert!(failures.is_empty(), "{}\n{ascii}", failures.join("\n"));
+    let ascii_divider = ascii
+        .lines()
+        .find(|line| line.contains("else failure"))
+        .expect("visible ASCII else divider");
+    assert!(
+        ascii_divider.starts_with("+- else failure "),
+        "{ascii_divider}"
+    );
+    assert!(ascii_divider.ends_with('+'), "{ascii_divider}");
 }

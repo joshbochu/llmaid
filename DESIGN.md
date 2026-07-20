@@ -165,6 +165,11 @@ one visible connector cell, and paired ER marks retain a connector cell between
 them. Type-specific engines choose the semantics; the renderer only orients and
 paints the glyphs.
 
+Structured `SceneGroup` content supplies containing frames and optional labeled
+horizontal dividers. Sequence `alt` owns one closed group while `else` lowers to
+an internal divider, keeping branch semantics compact without teaching the
+renderer about sequence syntax.
+
 Box-drawing junction resolution (e.g. `─` meeting `│` becomes `┼`) via bitmask
 lookup, so crossings and tees always render as the correct glyph.
 

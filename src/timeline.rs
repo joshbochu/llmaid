@@ -408,6 +408,7 @@ fn lower(
             subgraph: section,
             rect: placed.band_rects[section],
             title: SceneText::new(placed.band_title_points[section], value.label.clone()),
+            dividers: Vec::new(),
         })
         .collect();
     let mut scene = Scene {

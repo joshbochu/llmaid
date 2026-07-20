@@ -447,13 +447,20 @@ fn b13_given_non_rect_shapes_then_rect_frame_with_shape_hints() {
     let src = "\
 flowchart LR
   r[rect] --> ro(rounded) --> st([stadium]) --> ci((circle))
-  cy[(cylinder)] --> di{diamond} --> hx{{hexagon}}
+  cy[(cylinder)] --> sr[[subroutine]] --> di{diamond} --> hx{{hexagon}}
 ";
     let (stdout, stderr, code) = run_llmaid(&[], src);
     assert_eq!(code, 0, "{stderr}");
     // All labels present (never truncated / lost to shape drawing).
     for label in [
-        "rect", "rounded", "stadium", "circle", "cylinder", "diamond", "hexagon",
+        "rect",
+        "rounded",
+        "stadium",
+        "circle",
+        "cylinder",
+        "subroutine",
+        "diamond",
+        "hexagon",
     ] {
         assert!(stdout.contains(label), "missing label `{label}`:\n{stdout}");
     }
@@ -471,6 +478,14 @@ flowchart LR
         "cylinder should use a lid on the top edge:\n{stdout}"
     );
     assert!(
+        stdout.lines().any(|line| line.contains("││ subroutine │")),
+        "subroutine should use doubled side hints:\n{stdout}"
+    );
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], src);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+    assert!(ascii.contains("|| subroutine |"), "{ascii}");
+    assert!(
         stdout.contains('╱') && stdout.contains('╲'),
         "hexagon should use faceted corner hints:\n{stdout}"
     );
@@ -479,6 +494,27 @@ flowchart LR
         stdout.contains('│') || stdout.contains('╭') || stdout.contains('┌'),
         "expected rect-framed boxes:\n{stdout}"
     );
+}
+
+#[test]
+fn b15_given_connected_sibling_subgraphs_then_titles_and_frames_render() {
+    let src = "\
+flowchart TD
+  subgraph one
+    A --> B
+  end
+  subgraph two
+    C --> D
+  end
+  B --> C
+";
+    let (stdout, stderr, code) = run_llmaid(&[], src);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stdout.contains(" one ") && stdout.contains(" two "),
+        "{stdout}"
+    );
+    assert!(!stderr.contains("invariant failure"), "{stderr}");
 }
 
 #[test]
@@ -603,6 +639,12 @@ sequenceDiagram
     ] {
         assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
     }
+    assert!(
+        unicode
+            .lines()
+            .any(|line| line.contains("├─ else rejected ")),
+        "else should be a labeled divider inside alt:\n{unicode}"
+    );
     let (repeat, _, code) = run_llmaid(&[], source);
     assert_eq!(code, 0);
     assert_eq!(unicode, repeat);
@@ -611,6 +653,7 @@ sequenceDiagram
     assert_eq!(code, 0, "{stderr}");
     assert!(ascii.is_ascii(), "{ascii}");
     assert!(ascii.contains("else rejected") && ascii.contains("retry"));
+    assert!(ascii.lines().any(|line| line.contains("+- else rejected ")));
 }
 
 #[test]

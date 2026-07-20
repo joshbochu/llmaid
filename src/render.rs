@@ -5,7 +5,8 @@ use crate::parse::Graph;
 use crate::route;
 use crate::scene::{
     CardinalityMaximum, CardinalityMinimum, EdgeKind, EndpointDecoration, EndpointDecorationKind,
-    Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, ScenePath, SceneText, Shape,
+    Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, SceneGroupDivider, ScenePath, SceneText,
+    Shape,
 };
 use crate::style::{E, N, S, Style, W};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -289,6 +290,26 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
             &format!("group {} title", group.subgraph),
             &mut failures,
         );
+        for (index, divider) in group.dividers.iter().enumerate() {
+            if divider.y <= group.rect.y || divider.y >= group.rect.bottom() - 1 {
+                failures.push(format!(
+                    "group {} divider {index} is outside its interior at y={}",
+                    group.subgraph, divider.y
+                ));
+            }
+            if divider.title.at.y != divider.y {
+                failures.push(format!(
+                    "group {} divider {index} title is not on its divider row",
+                    group.subgraph
+                ));
+            }
+            check_text(
+                canvas,
+                &divider.title,
+                &format!("group {} divider {index} title", group.subgraph),
+                &mut failures,
+            );
+        }
     }
 
     for b in &scene.boxes {
@@ -523,6 +544,7 @@ fn draw_scene_group(canvas: &mut Canvas, group: &SceneGroup) {
         group.title.at.x as usize,
         group.title.at.y as usize,
         &group.title.text,
+        &group.dividers,
     );
 }
 
@@ -536,6 +558,7 @@ fn draw_group(
     title_x: usize,
     title_y: usize,
     title: &str,
+    dividers: &[SceneGroupDivider],
 ) {
     if w < 2 || h < 2 {
         return;
@@ -572,21 +595,66 @@ fn draw_group(
     canvas.mark_rounded(x + w - 1, y + h - 1);
 
     // Title on the first *interior* row (not the border stroke), centered.
-    // Only write into empty cells so we never clobber edges/boxes.
+    // The title band owns its cells: an external edge may enter through this
+    // row, but must pass visually behind the title instead of suppressing it.
+    // Layout guarantees that boxes do not occupy the band.
     let tw = title.width();
-    if tw > 0 && h >= 3 && tw <= w.saturating_sub(2) {
-        let mut ok = true;
-        for dx in 0..tw {
-            if !canvas.in_bounds(title_x + dx, title_y)
-                || !matches!(canvas.cells[canvas.idx(title_x + dx, title_y)], Cell::Empty)
-            {
-                ok = false;
-                break;
-            }
+    let title_end = title_x.saturating_add(tw);
+    let owns_band = tw > 0
+        && h >= 3
+        && tw <= w.saturating_sub(2)
+        && title_x > x
+        && title_end < x + w
+        && canvas.in_bounds(title_x, title_y)
+        && canvas.in_bounds(title_end.saturating_sub(1), title_y)
+        && (title_x..title_end).all(|xx| {
+            matches!(
+                canvas.cells[canvas.idx(xx, title_y)],
+                Cell::Empty | Cell::Line { .. }
+            )
+        });
+    if owns_band {
+        canvas.put_text(title_x, title_y, title);
+    }
+
+    for divider in dividers {
+        draw_group_divider(canvas, x, y, w, h, divider);
+    }
+}
+
+fn draw_group_divider(
+    canvas: &mut Canvas,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    divider: &SceneGroupDivider,
+) {
+    let Ok(divider_y) = usize::try_from(divider.y) else {
+        return;
+    };
+    if divider_y <= y || divider_y >= y + h - 1 {
+        return;
+    }
+
+    let kind = EdgeKind::Solid;
+    let right = x + w - 1;
+    let title_x = divider.title.at.x.max(0) as usize;
+    let title_width = divider.title.text.width();
+    let title_end = title_x.saturating_add(title_width);
+    let title_fits =
+        divider.title.at.y == divider.y && title_width > 0 && title_x > x + 1 && title_end < right;
+
+    canvas.add_line_bits(x, divider_y, N | E | S, kind);
+    canvas.add_line_bits(right, divider_y, N | S | W, kind);
+    for xx in x + 1..right {
+        let reserved_for_title = title_fits && xx >= title_x.saturating_sub(1) && xx <= title_end;
+        if !reserved_for_title {
+            canvas.add_line_bits(xx, divider_y, E | W, kind);
         }
-        if ok {
-            canvas.put_text(title_x, title_y, title);
-        }
+    }
+    if title_fits {
+        canvas.put_text(title_x, divider_y, &divider.title.text);
     }
 }
 
@@ -850,6 +918,12 @@ fn apply_shape_hints(
     let mid_y = y + h / 2;
     match shape {
         Shape::Rect | Shape::Rounded => {}
+        Shape::Subroutine => {
+            for yy in y + 1..y + h - 1 {
+                canvas.put_text_char(x + 1, yy, if style.ascii { '|' } else { '│' });
+                canvas.put_text_char(x + w - 2, yy, if style.ascii { '|' } else { '│' });
+            }
+        }
         Shape::Stadium | Shape::Circle => {
             canvas.put_text_char(x, mid_y, '(');
             canvas.put_text_char(x + w - 1, mid_y, ')');

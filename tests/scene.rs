@@ -26,6 +26,7 @@ fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
             subgraph: 0,
             rect: Rect::new(-6, -4, 9, 7),
             title: SceneText::new(Point::new(-3, -3), "group"),
+            dividers: Vec::new(),
         }],
         paths: vec![],
         edges: vec![RoutedEdge {

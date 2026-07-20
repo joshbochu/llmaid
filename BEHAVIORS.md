@@ -56,8 +56,9 @@ structural coverage lives beside its engine tests. Decisions behind these:
 - **B12** Given parallel edges (B3), when rendered in any direction, then each
   retains a distinct path, arrow, and collision-free label lane.
 - **B13** Given non-rect shapes, when rendered, then boxes are rect-framed with
-  shape-hint glyphs (◇ corners, rounded caps, cylinder lid) — grid alignment
-  is never risked for shape fidelity (termiflow's failure mode).
+  shape-hint glyphs (◇ corners, rounded caps, cylinder lid, doubled subroutine
+  sides) — grid alignment is never risked for shape fidelity (termiflow's failure
+  mode).
 - **B14** Given any rendered frame, then invariants hold: no truncated labels,
   all borders closed, every edge reaches both endpoints, no character
   overwrites label text. Enforced per scene/path/label via
@@ -87,10 +88,12 @@ structural coverage lives beside its engine tests. Decisions behind these:
   expectation.
 - **B20** Given balanced, arbitrarily nested `loop`, `alt` / `else`, and `opt`
   sequence control blocks, when rendered, then source event boundaries are
-  preserved and labeled closed frames visibly contain their branches and all
-  participant lifelines. Unicode and `--ascii` output are deterministic and
-  never truncate labels; malformed, unmatched, duplicate-`else`, and unclosed
-  directives name the source line and expectation.
+  preserved, labeled closed frames visibly contain their branches and all
+  participant lifelines, and each `else` boundary is a labeled horizontal
+  divider inside its single containing `alt` frame rather than a nested frame.
+  Unicode and `--ascii` output are deterministic and never truncate labels;
+  malformed, unmatched, duplicate-`else`, and unclosed directives name the
+  source line and expectation.
 
 ## Design-document diagrams
 

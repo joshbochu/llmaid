@@ -4,8 +4,8 @@ use unicode_width::UnicodeWidthStr;
 
 use super::ir::*;
 use crate::scene::{
-    Arrow, ArrowHead, EdgeKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, ScenePath,
-    SceneText, Shape,
+    Arrow, ArrowHead, EdgeKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup,
+    SceneGroupDivider, ScenePath, SceneText, Shape,
 };
 
 /// Lay out the sequence subset directly into the shared terminal scene.
@@ -410,11 +410,7 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
     for (control, &row) in sequence.controls.iter().zip(&control_rows) {
         match &control.kind {
             ControlKind::Start(kind, label) => {
-                let branch_depth = open_fragments
-                    .iter()
-                    .filter(|fragment| fragment.else_branch.is_some())
-                    .count();
-                let depth = open_fragments.len() + branch_depth;
+                let depth = open_fragments.len();
                 open_fragments.push(OpenFragment {
                     kind: *kind,
                     title: format!("{} {label}", kind.keyword()),
@@ -442,18 +438,8 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
                     frame.segment_start,
                     row,
                     &frame.title,
+                    frame.else_branch,
                 );
-                if let Some((title, start)) = frame.else_branch {
-                    push_fragment_group(
-                        &mut groups,
-                        frame_left,
-                        base_right,
-                        frame.depth + 1,
-                        start,
-                        row - 1,
-                        &title,
-                    );
-                }
             }
         }
     }
@@ -477,16 +463,31 @@ fn push_fragment_group(
     top: i32,
     bottom: i32,
     title: &str,
+    divider: Option<(String, i32)>,
 ) {
     let x = base_left + depth as i32 * 2;
     // Use a shallow right inset: enough to keep nested corners legible, while
     // retaining the header-sized margin around the destination lifeline.
     let natural_right = (base_right - depth as i32).max(x + 2);
-    let right = natural_right.max(x + title.width() as i32 + 4);
+    let divider_right = divider
+        .as_ref()
+        .map(|(label, _)| x + label.width() as i32 + 5)
+        .unwrap_or(x + 2);
+    let right = natural_right
+        .max(x + title.width() as i32 + 4)
+        .max(divider_right);
+    let dividers = divider
+        .into_iter()
+        .map(|(label, y)| SceneGroupDivider {
+            y,
+            title: SceneText::new(Point::new(x + 3, y), label),
+        })
+        .collect();
     groups.push(SceneGroup {
         subgraph: groups.len(),
         rect: Rect::new(x, top, right - x, bottom - top + 1),
         title: SceneText::new(Point::new(x + 2, top + 1), title),
+        dividers,
     });
 }
 
