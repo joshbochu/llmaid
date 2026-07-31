@@ -357,3 +357,47 @@ sequenceDiagram
         assert!(output.contains(text), "missing {text:?}:\n{output}");
     }
 }
+
+#[test]
+fn width_pressure_compacts_and_wraps_sequence_labels_at_word_boundaries() {
+    let source = "\
+sequenceDiagram
+  participant C as Developer Client
+  participant S as Application Service
+  C->>S: compile DeveloperTool request
+";
+    let parsed = diagram::parse(source).unwrap();
+    let comfortable = diagram::scene(&parsed, 200);
+    let narrow = diagram::scene(&parsed, 20);
+
+    assert!(
+        narrow.bounds().w < comfortable.bounds().w,
+        "{:?} should compact below {:?}",
+        narrow.bounds(),
+        comfortable.bounds()
+    );
+    assert!(
+        narrow.boxes.iter().any(|box_| box_.lines.len() > 1),
+        "participant labels did not wrap"
+    );
+    let message = narrow.edges[0].label.as_ref().expect("message label");
+    assert!(message.text.contains('\n'), "{message:?}");
+    assert!(
+        message.text.contains("DeveloperTool"),
+        "developer token was split: {message:?}"
+    );
+
+    let (rendered, failures) = render::render_scene_with_checks(&narrow, Style { ascii: false });
+    assert!(failures.is_empty(), "{failures:#?}\n{rendered}");
+    for word in [
+        "Developer",
+        "Client",
+        "Application",
+        "Service",
+        "compile",
+        "DeveloperTool",
+        "request",
+    ] {
+        assert!(rendered.contains(word), "missing {word:?}:\n{rendered}");
+    }
+}

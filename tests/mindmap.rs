@@ -118,17 +118,45 @@ fn width_pressure_wraps_before_using_the_documented_over_width_fallback() {
     let narrow = mindmap::scene(&diagram, 24);
     assert!(narrow.boxes.iter().any(|node| node.lines.len() > 1));
     let rendered = render::render_scene(&narrow, Style { ascii: false });
-    assert!(!rendered.contains('…'), "{rendered}");
     for word in ["very", "long", "root", "label", "child", "several", "words"] {
         assert!(rendered.contains(word), "missing {word:?}\n{rendered}");
     }
 }
 
 #[test]
-fn zero_width_sequences_fail_explicitly_instead_of_corrupting_a_frame() {
-    for source in ["mindmap\n  cafe\u{301}\n", "mindmap\n  👨\u{200d}💻\n"] {
-        let error = mindmap::parse(source).unwrap_err();
-        assert_eq!(error.line, 2);
-        assert!(error.msg.contains("zero-width Unicode sequence"), "{error}");
+fn width_pressure_never_turns_developer_tokens_into_letter_columns() {
+    let source = "mindmap\n  DeveloperRepository\n    ParsePipeline\n      Vec<DeveloperTool>\n";
+    let diagram = mindmap::parse(source).unwrap();
+    let narrow = mindmap::scene(&diagram, 12);
+
+    for (box_, node) in narrow.boxes.iter().zip(&diagram.nodes) {
+        assert_eq!(
+            box_.lines.as_slice(),
+            std::slice::from_ref(&node.label),
+            "whitespace-free token was split: {:?}",
+            node.label
+        );
+    }
+    assert!(
+        narrow.bounds().w > 12,
+        "intrinsic tokens should use the readable over-width fallback"
+    );
+}
+
+#[test]
+fn combining_marks_and_zwj_emoji_render_as_intact_graphemes() {
+    for (source, expected) in [
+        ("mindmap\n  cafe\u{301}\n", "cafe\u{301}"),
+        ("mindmap\n  👨\u{200d}💻\n", "👨\u{200d}💻"),
+    ] {
+        let diagram = mindmap::parse(source).unwrap();
+        let scene = mindmap::scene(&diagram, 100);
+        let (rendered, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+        assert!(failures.is_empty(), "{failures:#?}\n{rendered}");
+        assert!(rendered.contains(expected), "{rendered}");
+        assert!(
+            rendered.contains('╭') && rendered.contains('╯'),
+            "{rendered}"
+        );
     }
 }

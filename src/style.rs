@@ -22,8 +22,16 @@ impl Style {
     pub fn line(self, bits: u8, rounded: bool, kind: EdgeKind) -> char {
         if self.ascii {
             return match bits {
-                b if b == (N | S) || b == N || b == S => '|',
-                b if b == (E | W) || b == E || b == W => '-',
+                b if b == (N | S) || b == N || b == S => match kind {
+                    EdgeKind::Solid => '|',
+                    EdgeKind::Dotted => ':',
+                    EdgeKind::Thick => '#',
+                },
+                b if b == (E | W) || b == E || b == W => match kind {
+                    EdgeKind::Solid => '-',
+                    EdgeKind::Dotted => '.',
+                    EdgeKind::Thick => '=',
+                },
                 _ => '+',
             };
         }

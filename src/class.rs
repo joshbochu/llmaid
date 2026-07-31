@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::boxed::{BoxDiagram, BoxNode, EdgeEnd, NodeId, annotate_endpoint, decorate_endpoint};
-use crate::parse::{Dir, ParseError, Warning};
+use crate::parse::{Dir, ParseError, Warning, validate_terminal_text};
 use crate::scene::{EdgeKind, EndpointDecorationKind, Scene, SceneTable, Shape};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +94,7 @@ impl ClassDiagram {
 }
 
 pub fn parse(src: &str) -> Result<ClassDiagram, ParseError> {
+    crate::parse::validate_terminal_source(src)?;
     let mut diagram = ClassDiagram::default();
     let mut seen_header = false;
     let mut open_class: Option<(usize, usize)> = None;
@@ -119,6 +120,7 @@ pub fn parse(src: &str) -> Result<ClassDiagram, ParseError> {
             } else if line.contains('{') || line.contains('}') {
                 return Err(error(line_number, "expected a class member or closing `}`"));
             } else {
+                validate_terminal_text(line, line_number)?;
                 diagram.classes[class_index].members.push(line.to_string());
             }
             continue;
@@ -216,6 +218,7 @@ fn parse_relation(
             if label.is_empty() {
                 return Err(error(line_number, "expected a relation label after `:`"));
             }
+            validate_terminal_text(label, line_number)?;
             (head.trim(), Some(label.to_string()))
         }
         None => (line, None),
@@ -288,6 +291,9 @@ fn parse_endpoint(
             line,
             "expected class ids on both sides of the relation",
         ));
+    }
+    if let Some(value) = &multiplicity {
+        validate_terminal_text(value, line)?;
     }
     Ok((id, multiplicity))
 }
@@ -406,8 +412,9 @@ pub fn scene(diagram: &ClassDiagram, width: usize) -> Scene {
     }
 
     // Structured compartments cannot be meaningfully word-wrapped as plain
-    // labels. Preserve their columns and allow B9's final over-width fallback.
-    let mut scene = boxed.scene(width.max(10_000));
+    // labels. Preserve their columns, but still compact optional relationship
+    // spacing before accepting B9's final over-width fallback.
+    let mut scene = boxed.scene_preserving_labels(width);
     for (box_, table) in scene.boxes.iter_mut().zip(tables) {
         box_.lines.clear();
         box_.table = Some(table);

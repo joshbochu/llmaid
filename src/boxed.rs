@@ -149,6 +149,17 @@ impl BoxDiagram {
         route::route(&graph, &placed)
     }
 
+    /// Runs compact spacing under pressure while preserving node line widths.
+    ///
+    /// Structured tables use placeholder labels for geometry and replace them
+    /// with aligned cells after routing, so ordinary word wrapping would make
+    /// their final paint wider than the box that was measured.
+    pub fn scene_preserving_labels(&self, max_width: usize) -> Scene {
+        let graph = self.as_graph();
+        let placed = layout::layout_preserving_labels(&graph, max_width);
+        route::route(&graph, &placed)
+    }
+
     fn as_graph(&self) -> Graph {
         let mut graph = Graph::default();
         graph.dir = Some(self.direction);

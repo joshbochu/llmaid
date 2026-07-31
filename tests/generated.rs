@@ -37,7 +37,7 @@ fn source(nodes: usize, mask: usize, direction: &str) -> String {
 }
 
 #[test]
-fn widened_fork_does_not_swallow_an_unrelated_long_edge_lane() {
+fn external_fork_track_does_not_swallow_an_unrelated_long_edge_lane() {
     let source = "\
 flowchart LR
 N0[node 0]
@@ -100,11 +100,6 @@ fn exhaustive_small_dags_satisfy_scene_and_geometry_invariants() {
                         .all(|edge| edge.points.len() >= 2 && edge.arrow.is_some()),
                     "incomplete routed edge\n{source}\n{rendered}"
                 );
-                assert!(
-                    !rendered.contains('…'),
-                    "truncated output\n{source}\n{rendered}"
-                );
-
                 // Re-running the whole integer pipeline must be byte-identical.
                 let placed_again = layout::layout(&graph, 100);
                 assert_eq!(

@@ -1,12 +1,12 @@
 //! Behavior-driven tests. One test per contract in BEHAVIORS.md, named
 //! `b<N>_given_..._then_...`. Parser behaviors call the library; CLI
-//! behaviors (B6–B13) run the real binary; B14/B16 scene invariants also run
-//! across every golden in `tests/golden.rs`.
+//! behaviors run the real binary; B14/B16 scene invariants also run across
+//! every golden in `tests/golden.rs`.
 
 use llmaid::layout;
-use llmaid::parse::{Shape, parse};
+use llmaid::parse::{EdgeKind, Shape, parse};
 use llmaid::render;
-use llmaid::style::Style;
+use llmaid::style::{E, N, S, Style, W};
 use std::process::{Command, Stdio};
 
 // ---------- Parsing ----------
@@ -261,23 +261,28 @@ fn b9_given_over_width_then_degrade_without_truncation_or_failure() {
 flowchart LR
   a[source alpha] -->|scan tokens| b[Vec of Token]
   b -->|parse tree| c[Expr AST node]
-  c -->|eval result| d[Value output]
+  c -->|eval result| d[Vec<DeveloperTool> output]
 ";
     let (stdout, stderr, code) = run_llmaid(&["--width", "36"], src);
     assert_eq!(code, 0, "must not fail on overflow: {stderr}");
-    assert!(
-        !stdout.contains('…') && !stdout.contains("..."),
-        "must never truncate labels:\n{stdout}"
-    );
-    // Edge labels are short enough to stay intact; node labels may wrap mid-word
-    // under extreme pressure — require full text as a char subsequence (B9).
+    // Edge labels and whitespace-free developer tokens stay intact. Multiword
+    // node labels may wrap, but only at their word boundaries.
     for needle in ["scan tokens", "parse tree", "eval result"] {
         assert!(
             stdout.contains(needle),
             "edge label `{needle}` missing under width pressure:\n{stdout}"
         );
     }
-    for needle in ["sourcealpha", "VecofToken", "ExprASTnode", "Valueoutput"] {
+    assert!(
+        stdout.contains("Vec<DeveloperTool>"),
+        "identifier was split under width pressure:\n{stdout}"
+    );
+    for needle in [
+        "sourcealpha",
+        "VecofToken",
+        "ExprASTnode",
+        "VecDeveloperTooloutput",
+    ] {
         assert!(
             alnum_subsequence(&stdout, needle),
             "node label `{needle}` not fully present (wrapped or otherwise):\n{stdout}"
@@ -308,7 +313,7 @@ fn b10_given_label_fits_then_stays_one_line() {
 /// other characters). Used when labels wrap across lines under B9 pressure.
 fn alnum_subsequence(hay: &str, needle: &str) -> bool {
     let mut it = hay.chars().filter(|c| c.is_alphanumeric());
-    for want in needle.chars() {
+    for want in needle.chars().filter(|c| c.is_alphanumeric()) {
         loop {
             match it.next() {
                 Some(c) if c == want => break,
@@ -506,14 +511,17 @@ sequenceDiagram
     let (tight, stderr, code) = run_llmaid(&["--width", "12"], source);
     assert_eq!(code, 0, "{stderr}");
     for text in ["Application API", "request", "response"] {
-        assert!(tight.contains(text), "truncated {text:?}:\n{tight}");
+        assert!(
+            alnum_subsequence(&tight, text),
+            "truncated {text:?}:\n{tight}"
+        );
     }
 
     let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
     assert_eq!(code, 0, "{stderr}");
     assert!(ascii.is_ascii(), "{ascii}");
-    assert!(ascii.contains(">|"), "ASCII call cue missing:\n{ascii}");
-    assert!(ascii.contains("|<--"), "ASCII return cue missing:\n{ascii}");
+    assert!(ascii.contains(">:"), "ASCII call cue missing:\n{ascii}");
+    assert!(ascii.contains(":<--"), "ASCII return cue missing:\n{ascii}");
     assert!(ascii.contains("request") && ascii.contains("response"));
 }
 
@@ -542,7 +550,10 @@ sequenceDiagram
     let (tight, stderr, code) = run_llmaid(&["--width", "12"], source);
     assert_eq!(code, 0, "{stderr}");
     for text in ["Caller", "Service", "HTTPS request", "request", "response"] {
-        assert!(tight.contains(text), "truncated {text:?}:\n{tight}");
+        assert!(
+            alnum_subsequence(&tight, text),
+            "truncated {text:?}:\n{tight}"
+        );
     }
 
     let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
@@ -606,11 +617,47 @@ sequenceDiagram
     let (repeat, _, code) = run_llmaid(&[], source);
     assert_eq!(code, 0);
     assert_eq!(unicode, repeat);
+    assert_eq!(unicode.matches("else rejected").count(), 1);
+    assert!(
+        unicode
+            .lines()
+            .any(|line| line.contains("├─ else rejected ─") && line.contains('┤')),
+        "else must render as a labeled branch separator, not a nested frame:\n{unicode}"
+    );
+
+    let (tight, stderr, code) = run_llmaid(&["--width", "20"], source);
+    assert_eq!(code, 0, "{stderr}");
+    for label in [
+        "loop retry",
+        "alt accepted",
+        "else rejected",
+        "opt retryable",
+        "request",
+        "success",
+        "retry",
+    ] {
+        assert!(
+            alnum_subsequence(&tight, label),
+            "truncated {label:?}:\n{tight}"
+        );
+    }
+    assert!(
+        tight
+            .lines()
+            .any(|line| line.contains("├─ else rejected ─")),
+        "tight layout lost its branch separator:\n{tight}"
+    );
 
     let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
     assert_eq!(code, 0, "{stderr}");
     assert!(ascii.is_ascii(), "{ascii}");
-    assert!(ascii.contains("else rejected") && ascii.contains("retry"));
+    assert!(
+        ascii
+            .lines()
+            .any(|line| line.contains("+- else rejected -")),
+        "{ascii}"
+    );
+    assert!(ascii.contains("retry"));
 }
 
 #[test]
@@ -648,7 +695,7 @@ stateDiagram-v2
     let (_, stderr, code) = run_llmaid(&[], "stateDiagram\nstate Outer {\n");
     assert_eq!(code, 64);
     assert!(
-        stderr.contains("line 2") && stderr.contains("flat state"),
+        stderr.contains("<stdin>:2:") && stderr.contains("flat state"),
         "{stderr}"
     );
 }
@@ -692,7 +739,7 @@ classDiagram
     let (_, stderr, code) = run_llmaid(&[], "classDiagram\nA ??? B\n");
     assert_eq!(code, 64);
     assert!(
-        stderr.contains("line 2") && stderr.contains("relation operator"),
+        stderr.contains("<stdin>:2:") && stderr.contains("relation operator"),
         "{stderr}"
     );
 }
@@ -737,7 +784,7 @@ erDiagram
     let (_, stderr, code) = run_llmaid(&[], "erDiagram\nA ||--o{ B\n");
     assert_eq!(code, 64);
     assert!(
-        stderr.contains("line 2") && stderr.contains("expected `:`"),
+        stderr.contains("<stdin>:2:") && stderr.contains("expected `:`"),
         "{stderr}"
     );
 }
@@ -810,7 +857,7 @@ mindmap
     assert_eq!(code, 64);
     assert_eq!(stdout, "");
     assert!(
-        stderr.contains("line 3") && stderr.contains("missing parent"),
+        stderr.contains("<stdin>:3:") && stderr.contains("missing parent"),
         "{stderr}"
     );
 }
@@ -871,7 +918,261 @@ timeline
     assert_eq!(code, 64);
     assert_eq!(stdout, "");
     assert!(
-        stderr.contains("line 2") && stderr.contains("period before event"),
+        stderr.contains("<stdin>:2:") && stderr.contains("period before event"),
         "{stderr}"
     );
+}
+
+#[test]
+fn b27_given_known_unsupported_document_then_error_names_type_and_header_line() {
+    for (source, line, header) in [
+        ("%% generated\n\ngitGraph\n  commit\n", 3, "gitGraph"),
+        ("pie title Adoption\n  \"Dogs\" : 4\n", 1, "pie"),
+        ("gantt\n  title Release\n", 1, "gantt"),
+    ] {
+        let (stdout, stderr, code) = run_llmaid(&[], source);
+        assert_eq!(code, 64, "for {header}: {stderr}");
+        assert_eq!(stdout, "", "for {header}");
+        assert!(
+            stderr.contains(&format!("<stdin>:{line}: error:"))
+                && stderr.contains(&format!("diagram type `{header}` is not supported"))
+                && stderr.contains(&format!("{line} | {header}")),
+            "for {header}:\n{stderr}"
+        );
+    }
+
+    // A known type name remains legal as a node id in an intentionally
+    // headerless flowchart when it is used as a flowchart statement.
+    let (stdout, stderr, code) = run_llmaid(&[], "gitGraph --> result\n");
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stdout.contains("gitGraph") && stdout.contains("result"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn b28_given_cli_source_or_width_mistakes_then_usage_fails_before_reading() {
+    let source = "flowchart LR\nA --> B\n";
+    let (stdout, stderr, code) = run_llmaid(&["--width", "0"], source);
+    assert_eq!(code, 64);
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("--width must be at least 1"), "{stderr}");
+
+    let (stdout, stderr, code) = run_llmaid(&["-"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains('A') && stdout.contains('B'), "{stdout}");
+
+    for args in [["-", "other.mmd"], ["other.mmd", "-"], ["-", "-"]] {
+        let (stdout, stderr, code) = run_llmaid(&args, "");
+        assert_eq!(code, 64, "for {args:?}: {stderr}");
+        assert_eq!(stdout, "", "for {args:?}");
+        assert!(
+            stderr.contains("more than one input source"),
+            "for {args:?}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn b29_given_parse_error_then_diagnostic_names_source_and_shows_excerpt() {
+    let path = std::env::temp_dir().join(format!(
+        "llmaid-behavior-diagnostic-{}.mmd",
+        std::process::id()
+    ));
+    std::fs::write(&path, "flowchart LR\n  A[unclosed\n").unwrap();
+
+    let (stdout, stderr, code) = run_llmaid(&[path.to_str().unwrap()], "");
+    let _ = std::fs::remove_file(&path);
+
+    assert_eq!(code, 64);
+    assert_eq!(stdout, "");
+    assert!(
+        stderr.contains(&format!("{}:2: error:", path.display())),
+        "{stderr}"
+    );
+    assert!(stderr.contains("expected closing `]`"), "{stderr}");
+    assert!(stderr.contains("2 |   A[unclosed"), "{stderr}");
+}
+
+#[test]
+fn b30_given_downstream_closes_stdout_then_broken_pipe_exits_successfully() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_llmaid"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    // Closing the read end before llmaid writes deterministically produces
+    // EPIPE without relying on `head` timing or pipe-buffer capacity.
+    drop(child.stdout.take().unwrap());
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"flowchart LR\nA --> B\n")
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
+fn b31_given_ascii_mode_then_structure_is_ascii_and_edge_styles_stay_distinct() {
+    let style = Style { ascii: true };
+    assert_eq!(style.line(N | S, false, EdgeKind::Solid), '|');
+    assert_eq!(style.line(N | S, false, EdgeKind::Dotted), ':');
+    assert_eq!(style.line(N | S, false, EdgeKind::Thick), '#');
+    assert_eq!(style.line(E | W, false, EdgeKind::Solid), '-');
+    assert_eq!(style.line(E | W, false, EdgeKind::Dotted), '.');
+    assert_eq!(style.line(E | W, false, EdgeKind::Thick), '=');
+
+    let source = "flowchart LR\nA[界] --> B\nB -.-> C\nC ==> D\n";
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        ascii.contains('界'),
+        "labels must remain unchanged:\n{ascii}"
+    );
+    assert!(ascii.contains('.'), "dotted edge style missing:\n{ascii}");
+    assert!(ascii.contains('='), "thick edge style missing:\n{ascii}");
+
+    let (help, stderr, code) = run_llmaid(&["--help"], "");
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        help.contains("ASCII structural glyphs") && help.contains("label text is preserved"),
+        "{help}"
+    );
+}
+
+#[test]
+fn b32_given_terminal_text_then_graphemes_breaks_and_controls_are_safe() {
+    let safe_documents = [
+        "flowchart LR\nA[cafe\u{301} .\u{301}] --> B[👩\u{200d}💻 Wait…]\n",
+        "sequenceDiagram\nparticipant A as cafe\u{301} .\u{301}\nparticipant B as 👩\u{200d}💻 Wait…\nA->>B: ready\n",
+        "stateDiagram-v2\ndirection LR\nstate \"cafe\u{301} .\u{301}\" as A\nstate \"👩\u{200d}💻 Wait…\" as B\nA --> B\n",
+        "classDiagram\nclass A {\n  +cafe\u{301}().\u{301}\n}\nA --> B : 👩\u{200d}💻 Wait…\n",
+        "erDiagram\nA[cafe\u{301} .\u{301}] {\n  string id PK \"👩\u{200d}💻 Wait…\"\n}\n",
+        "mindmap\n  cafe\u{301} .\u{301}\n    👩\u{200d}💻 Wait…\n",
+        "timeline\n  cafe\u{301} .\u{301} : 👩\u{200d}💻 Wait…\n",
+    ];
+    for source in safe_documents {
+        let (stdout, stderr, code) = run_llmaid(&[], source);
+        assert_eq!(code, 0, "{source:?}\n{stderr}");
+        assert!(stdout.contains("cafe\u{301}"), "{source:?}\n{stdout}");
+        assert!(stdout.contains(".\u{301}"), "{source:?}\n{stdout}");
+        assert!(stdout.contains("👩\u{200d}💻"), "{source:?}\n{stdout}");
+        assert!(stdout.contains("Wait…"), "{source:?}\n{stdout}");
+        assert!(!stderr.contains("invariant failure"), "{stderr}");
+    }
+
+    let (multiline, stderr, code) = run_llmaid(&[], "flowchart LR\nA -->|one<br/>two| B\n");
+    assert_eq!(code, 0, "{stderr}");
+    let rows: Vec<&str> = multiline.lines().collect();
+    assert!(rows.iter().any(|row| row.contains("one")), "{multiline}");
+    assert!(rows.iter().any(|row| row.contains("two")), "{multiline}");
+    assert_ne!(
+        rows.iter().position(|row| row.contains("one")),
+        rows.iter().position(|row| row.contains("two")),
+        "{multiline}"
+    );
+
+    let unsafe_documents = [
+        "flowchart LR\nA[bad\u{1b}[31m]\n",
+        "sequenceDiagram\nA->>B: bad\u{1b}[31m\n",
+        "stateDiagram-v2\nstate \"bad\u{1b}\" as A\n",
+        "classDiagram\nclass A\u{1b}\n",
+        "erDiagram\nA[bad\u{1b}]\n",
+        "mindmap\n  bad\u{1b}\n",
+        "timeline\n  bad\u{1b} : event\n",
+    ];
+    for source in unsafe_documents {
+        let error = llmaid::diagram::parse(source).unwrap_err();
+        assert_eq!(error.line, 2, "{source:?}: {error}");
+        assert!(error.msg.contains("terminal control U+001B"), "{error}");
+        assert!(!error.msg.contains('\u{1b}'), "{error:?}");
+    }
+
+    for (control, expected) in [
+        ('\u{1b}', "U+001B"),
+        ('\t', "spaces, not tabs"),
+        ('\r', "U+000D"),
+        ('\0', "U+0000"),
+    ] {
+        let source = format!("flowchart LR\nA[bad{control}text]\n");
+        let (stdout, stderr, code) = run_llmaid(&[], &source);
+        assert_eq!(code, 64, "{stderr}");
+        assert_eq!(stdout, "");
+        assert!(stderr.contains(expected), "{stderr:?}");
+        assert!(!stderr.contains(control), "{stderr:?}");
+    }
+
+    for invisible in ['\u{301}', '\u{fe0f}', '\u{200b}'] {
+        let source = format!("flowchart LR\nA[{invisible}]\n");
+        let (stdout, stderr, code) = run_llmaid(&[], &source);
+        assert_eq!(code, 64, "{stderr}");
+        assert_eq!(stdout, "");
+        assert!(
+            stderr.contains("<stdin>:2: error:") && stderr.contains("zero-column Unicode grapheme"),
+            "{stderr:?}"
+        );
+        assert!(!stderr.contains(invisible), "{stderr:?}");
+    }
+
+    let parsed_zero_column_documents = [
+        "flowchart LR\nA[\u{301}]\n",
+        "flowchart LR\nsubgraph S [\u{301}]\nA\nend\n",
+        "flowchart LR\nA -->|\u{301}| B\n",
+        "sequenceDiagram\nA->>B: \u{301}\n",
+        "stateDiagram-v2\nstate \"\u{301}\" as A\n",
+        "classDiagram\nA --> B : \u{301}\n",
+        "erDiagram\nA[\u{301}]\n",
+        "mindmap\n  \u{301}\n",
+        "timeline\n  period : \u{301}\n",
+    ];
+    for source in parsed_zero_column_documents {
+        let error = llmaid::diagram::parse(source).unwrap_err();
+        assert_eq!(error.line, 2, "{source:?}: {error}");
+        assert!(
+            error.msg.contains("zero-column Unicode grapheme"),
+            "{error}"
+        );
+    }
+
+    let (stdout, stderr, code) = run_llmaid(&["--audit=json"], "flowchart LR\nA[bad\u{1b}text]\n");
+    assert_eq!(code, 64, "{stderr}");
+    assert_eq!(stdout, "");
+    assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
+
+    let (stdout, stderr, code) = run_llmaid(&[], "flowchart LR\r\nA --> B\r\n");
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains('A') && stdout.contains('B'), "{stdout}");
+}
+
+#[test]
+fn b33_given_audit_quality_or_fit_residual_then_v1_names_an_exact_witness() {
+    let source = "flowchart LR\nA[averylongunbreakabletoken]\n";
+    let (first, stderr, code) = run_llmaid(&["--audit=json", "--width", "8"], source);
+
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stderr, "");
+    assert!(
+        first.starts_with("{\"schema\":\"llmaid.audit.v1\""),
+        "{first}"
+    );
+    assert!(first.contains(concat!(
+        "\"name\":\"width_target_exceeded\",",
+        "\"message\":\"rendered width 29 exceeds target width 8 by 21 columns\",",
+        "\"witness\":{\"target_width\":8,\"rendered_width\":29,",
+        "\"overflow_columns\":21}"
+    )));
+    assert!(!first.contains("\"score\""), "{first}");
+
+    let (second, stderr, code) = run_llmaid(&["--audit=json", "--width", "8"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(first, second, "named audit diagnostics must be byte-stable");
 }

@@ -7,6 +7,8 @@
 use std::collections::HashMap;
 
 pub use crate::scene::{EdgeKind, Shape};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dir {
@@ -187,6 +189,7 @@ const IGNORED_DIRECTIVES: &[&str] = &[
 ];
 
 pub fn parse(src: &str) -> Result<Graph, ParseError> {
+    validate_terminal_source(src)?;
     let mut g = Graph::default();
     let mut seen_header = false;
     let mut warned_no_header = false;
@@ -246,6 +249,7 @@ pub fn parse(src: &str) -> Result<Graph, ParseError> {
                 }
                 let rest = stmt["subgraph".len()..].trim();
                 let (id, title) = parse_subgraph_header(rest);
+                validate_terminal_text(&title, line_no)?;
                 g.open_subgraph(id, title);
                 continue;
             }
@@ -284,6 +288,64 @@ pub fn parse(src: &str) -> Result<Graph, ParseError> {
     }
 
     Ok(g)
+}
+
+/// Reject source controls before any parser can copy them into terminal text.
+///
+/// Newlines and conventional CRLF line endings are syntax. Every other
+/// control scalar is rejected with its original source line so audit mode,
+/// normal rendering, and parser diagnostics share the same safety boundary.
+/// In particular, a tab must be replaced with spaces instead of reaching a
+/// label, while a bare carriage return cannot move the terminal cursor.
+pub(crate) fn validate_terminal_source(src: &str) -> Result<(), ParseError> {
+    let mut line = 1;
+    let mut chars = src.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\n' => line += 1,
+            '\r' if chars.peek() == Some(&'\n') => {}
+            '\t' => {
+                return Err(ParseError {
+                    line,
+                    msg: "tab control is not supported; use spaces, not tabs".to_string(),
+                });
+            }
+            ch if ch.is_control() => {
+                return Err(ParseError {
+                    line,
+                    msg: format!(
+                        "terminal control U+{:04X} is not supported; remove it or use visible text",
+                        ch as u32
+                    ),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate text after Mermaid syntax delimiters have been removed.
+///
+/// Combining marks and joiners are valid when they belong to a visible
+/// extended grapheme. A standalone grapheme that occupies no terminal column
+/// cannot be represented or checked on the canvas, so report it as a
+/// source-level input error instead of allowing a later render invariant
+/// failure. Doing this on parsed labels avoids mistaking visible punctuation
+/// such as `.` plus a combining mark for Mermaid syntax.
+pub(crate) fn validate_terminal_text(text: &str, line: usize) -> Result<(), ParseError> {
+    if text
+        .split('\n')
+        .flat_map(|row| row.graphemes(true))
+        .any(|grapheme| grapheme.width() == 0)
+    {
+        return Err(ParseError {
+            line,
+            msg: "zero-column Unicode grapheme is not supported; attach combining marks to a visible base character or remove invisible formatting".to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Parse `subgraph` header rest into `(id, title)`.
@@ -338,7 +400,7 @@ fn parse_statement(g: &mut Graph, stmt: &str, line: usize) -> Result<(), ParseEr
                 line,
                 msg: "unterminated edge label: expected closing `|`".to_string(),
             })?;
-            label = Some(clean_label(&text));
+            label = Some(clean_terminal_label(&text, line)?);
         }
         cur.skip_ws();
         let next = parse_group(g, &mut cur, line)?;
@@ -396,7 +458,7 @@ fn parse_node(g: &mut Graph, cur: &mut Cur, line: usize) -> Result<usize, ParseE
                 line,
                 msg: format!("node `{id}`: unterminated `{open}` — expected closing `{close}`"),
             })?;
-            return Ok(g.add_node(&id, Some((shape, clean_label(&raw))), line));
+            return Ok(g.add_node(&id, Some((shape, clean_terminal_label(&raw, line)?)), line));
         }
     }
     Ok(g.add_node(&id, None, line))
@@ -422,7 +484,11 @@ fn parse_edge_op(
             .ok_or_else(|| unterminated_edge(line, "-.", ".->"))?;
         cur.take_while(|c| c == '-' || c == '.');
         let arrow = cur.eat('>');
-        return Ok((EdgeKind::Dotted, arrow, Some(clean_label(&text))));
+        return Ok((
+            EdgeKind::Dotted,
+            arrow,
+            Some(clean_terminal_label(&text, line)?),
+        ));
     }
 
     if cur.starts_with("==") {
@@ -438,7 +504,11 @@ fn parse_edge_op(
             .ok_or_else(|| unterminated_edge(line, "==", "==>"))?;
         cur.take_while(|c| c == '=');
         let arrow = cur.eat('>');
-        return Ok((EdgeKind::Thick, arrow, Some(clean_label(&text))));
+        return Ok((
+            EdgeKind::Thick,
+            arrow,
+            Some(clean_terminal_label(&text, line)?),
+        ));
     }
 
     if cur.starts_with("--") {
@@ -454,7 +524,11 @@ fn parse_edge_op(
             .ok_or_else(|| unterminated_edge(line, "--", "-->"))?;
         cur.take_while(|c| c == '-');
         let arrow = cur.eat('>');
-        return Ok((EdgeKind::Solid, arrow, Some(clean_label(&text))));
+        return Ok((
+            EdgeKind::Solid,
+            arrow,
+            Some(clean_terminal_label(&text, line)?),
+        ));
     }
 
     Err(ParseError {
@@ -493,6 +567,12 @@ pub(crate) fn clean_label(raw: &str) -> String {
         }
     }
     out.lines().map(str::trim).collect::<Vec<_>>().join("\n")
+}
+
+pub(crate) fn clean_terminal_label(raw: &str, line: usize) -> Result<String, ParseError> {
+    let label = clean_label(raw);
+    validate_terminal_text(&label, line)?;
+    Ok(label)
 }
 
 /// If a `<br>` / `<br/>` / `<br />` tag starts at `i`, return the index past it.
@@ -556,7 +636,7 @@ pub fn dump(g: &Graph) -> String {
         let label = e
             .label
             .as_ref()
-            .map(|l| format!("|{l}|"))
+            .map(|l| format!("|{}|", l.replace('\n', "\\n")))
             .unwrap_or_default();
         out.push_str(&format!(
             "  {} {}{} {}\n",

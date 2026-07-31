@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::boxed::{BoxDiagram, BoxNode, NodeId};
-use crate::parse::{Dir, ParseError, Warning};
+use crate::parse::{Dir, ParseError, Warning, validate_terminal_text};
 use crate::scene::{Scene, Shape};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +73,7 @@ impl StateDiagram {
 }
 
 pub fn parse(src: &str) -> Result<StateDiagram, ParseError> {
+    crate::parse::validate_terminal_source(src)?;
     let mut diagram = StateDiagram::default();
     let mut seen_header = false;
     let mut seen_direction = false;
@@ -196,6 +197,7 @@ fn parse_declaration(
         (body, body.to_string())
     };
     require_id(id, line_number, "state identifier")?;
+    validate_terminal_text(&label, line_number)?;
     diagram.declare(id, label, line_number);
     Ok(())
 }
@@ -211,6 +213,7 @@ fn parse_transition(
             if label.is_empty() {
                 return Err(error(line_number, "expected a transition label after `:`"));
             }
+            validate_terminal_text(label, line_number)?;
             (head.trim(), Some(label.to_string()))
         }
         None => (line, None),

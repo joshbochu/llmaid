@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D26.
+`CHANGELOG.md` D9–D33.
 
 ## Parsing
 
@@ -41,15 +41,44 @@ structural coverage lives beside its engine tests. Decisions behind these:
   instead of a rendered diagram. It names the diagram type, normalized bounds,
   element counts, deterministic violations, exact witnesses where available,
   and flowchart geometry metrics; diagnostics remain on stderr.
+- **B27** Given a known but unsupported Mermaid document header (for example
+  `gitGraph`, `gantt`, or `pie`), when parsed, then llmaid fails on that header
+  line and names the unsupported type plus a supported rewrite direction; it
+  never silently reinterprets that document as a headerless flowchart.
+  Recognized type names used inside actual headerless flowchart statements
+  remain ordinary node IDs.
+- **B28** Given CLI input-source or width mistakes, when arguments are parsed,
+  then `--width 0` and every combination of multiple FILE/`-` sources fail
+  with exit 64 before input is read; one explicit `-` reads stdin normally.
+- **B29** Given malformed input from a file or stdin, when parsing fails, then
+  the human diagnostic names the source and line, states the repairable
+  expectation, and shows that source line as an excerpt. stdout stays empty.
+- **B30** Given a successful render whose downstream stdout reader closes
+  early, when the buffered write receives `BrokenPipe`, then llmaid exits 0
+  without a panic or diagnostic; normal non-pipeline stdout failures remain
+  I/O errors.
+- **B31** Given `--ascii`, when structure is rendered, then structural glyphs
+  use ASCII while labels remain byte-for-byte user text. Solid, dotted, and
+  thick straight segments remain visually distinct (`-|`, `.:`, and `=#`
+  respectively) rather than collapsing to one line style.
+- **B33** Given `--audit=json`, when a rendered width exceeds its requested
+  target or an exact flowchart topology residual is nonzero, then the existing
+  `llmaid.audit.v1` violation vector names each relationship in stable order
+  and supplies a structured witness with the exact width or doubled-cell
+  value. Descriptive bend/wire totals remain metrics rather than being
+  mislabeled as avoidable failures, and no scalar quality score is introduced.
 
 ## Layout & rendering
 
 - **B9** Given a diagram wider than the width budget, when rendered, then
-  degradation is: compact gaps → wrap labels → render over-width anyway. Never
-  truncate a label, never fail on overflow.
+  degradation is: compact gaps → wrap whole words at a readable line width →
+  render over-width anyway. Whitespace-free tokens such as identifiers stay
+  intact, even when that makes overflow unavoidable. The selected fallback
+  minimizes overflow without using narrower-than-eight-column text or wrapping
+  that buys no width. Never truncate a label, never fail on overflow.
 - **B10** Given a label that fits, when rendered, then it stays on one line;
   wrapping happens only under width pressure (B9), never at an arbitrary
-  box-width cap.
+  box-width cap. Of the readable layouts that fit, the least-wrapped one wins.
 - **B11** Given a self-loop (`eval --> eval`) or cycle back edge, when
   rendered, then a tight loop or perimeter route returns to the target with
   its arrow and label preserved.
@@ -59,13 +88,27 @@ structural coverage lives beside its engine tests. Decisions behind these:
   shape-hint glyphs (◇ corners, rounded caps, cylinder lid) — grid alignment
   is never risked for shape fidelity (termiflow's failure mode).
 - **B14** Given any rendered frame, then invariants hold: no truncated labels,
-  all borders closed, every edge reaches both endpoints, no character
-  overwrites label text. Enforced per scene/path/label via
+  every cell of every border retains its required horizontal or vertical
+  stroke, every edge reaches both endpoints, and no grapheme or wide-cell
+  continuation is overwritten. A connector crossing a frame merges direction
+  bits so both strokes remain continuous; an unrelated line orientation never
+  counts as a closed border. Enforced per scene/path/label via
   `render_scene_with_checks` + `.txt` goldens
   in `tests/golden.rs` (doubles as the fuzz oracle).
 - **B16** Given any routed edge, then its interior never intersects or rides
   the border of a non-endpoint node. Enforced from exact `Scene` geometry for
   every golden; nested and long-edge merges are explicit regression cases.
+- **B32** Given labels containing combining marks, emoji ZWJ sequences,
+  legitimate ellipses, or `<br>` line breaks, when any shipped engine renders
+  them, then extended grapheme clusters occupy their measured terminal cells,
+  user-authored ellipses remain text, and each explicit line owns a separate
+  geometry row. C0/C1 controls, tabs, and bare carriage returns fail on their
+  source line before render or audit; CRLF remains a normal line ending.
+  A parsed label made from a standalone zero-column grapheme also fails on its
+  source line, while a combining mark attached to any visible base—including
+  visible punctuation—remains valid.
+  Programmatic `Scene` construction has the same checked-render safety
+  backstop, and unchecked painting never forwards a terminal control byte.
 
 ## Sequence diagrams
 
@@ -88,9 +131,13 @@ structural coverage lives beside its engine tests. Decisions behind these:
 - **B20** Given balanced, arbitrarily nested `loop`, `alt` / `else`, and `opt`
   sequence control blocks, when rendered, then source event boundaries are
   preserved and labeled closed frames visibly contain their branches and all
-  participant lifelines. Unicode and `--ascii` output are deterministic and
-  never truncate labels; malformed, unmatched, duplicate-`else`, and unclosed
-  directives name the source line and expectation.
+  participant lifelines. An `alt` / `else` pair uses one containing `alt`
+  frame with a labeled, full-width horizontal branch separator; `else` never
+  becomes a redundant nested frame, and controls nested in either branch keep
+  a visible inset inside the shared frame. Unicode and `--ascii` output are
+  deterministic and never truncate labels; malformed, unmatched,
+  duplicate-`else`, and unclosed directives name the source line and
+  expectation.
 
 ## Design-document diagrams
 
@@ -133,9 +180,10 @@ structural coverage lives beside its engine tests. Decisions behind these:
   boxed tree with arrowless shared trunks. Unicode and `--ascii` structure are
   deterministic; labels follow B9/B10 and never truncate; `--audit=json`
   reports the mindmap type and exact level count. Malformed indentation,
-  missing parents, multiple roots, deferred advanced syntax, and terminal-
-  unsafe zero-width sequences fail with the source line and a repairable
-  expectation instead of producing an ambiguous or corrupt frame.
+  missing parents, multiple roots, deferred advanced syntax, and terminal
+  controls fail with the source line and a repairable expectation instead of
+  producing an ambiguous or corrupt frame. Extended grapheme clusters follow
+  B32.
 
 ## Planning diagrams
 
@@ -148,5 +196,6 @@ structural coverage lives beside its engine tests. Decisions behind these:
   B9/B10 and never truncate; `--audit=json` reports semantic period/event
   counts and chronological period ranks. Events without a current period,
   empty periods/events/sections, malformed `:` syntax, late/duplicate titles,
-  empty named sections, deferred directions, and terminal-unsafe zero-width
-  sequences fail with the source line and a repairable expectation.
+  empty named sections, deferred directions, and terminal controls fail with
+  the source line and a repairable expectation. Extended grapheme clusters
+  follow B32.

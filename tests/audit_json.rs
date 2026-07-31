@@ -60,7 +60,13 @@ fn audit_json_uses_width_and_keeps_warnings_on_stderr() {
         !stdout.contains('╭'),
         "audit mode must not mix in a diagram"
     );
-    assert!(stderr.contains("warning: line 2"), "{stderr}");
+    assert!(stdout.contains(concat!(
+        "\"name\":\"width_target_exceeded\",",
+        "\"message\":\"rendered width 17 exceeds target width 12 by 5 columns\",",
+        "\"witness\":{\"target_width\":12,\"rendered_width\":17,",
+        "\"overflow_columns\":5}"
+    )));
+    assert!(stderr.contains("<stdin>:2: warning:"), "{stderr}");
 }
 
 #[test]
@@ -139,6 +145,33 @@ fn violation_has_a_stable_name_and_exact_normalized_witness() {
             "\"message\":\"edge 0 intersects non-endpoint box 2 at (5,1)\",",
             "\"witness\":{\"edge\":0,\"node\":2,\"at\":{\"x\":5,\"y\":1}}}"
         )),
+        "{json}"
+    );
+}
+
+#[test]
+fn topology_residual_has_a_stable_name_and_exact_metric_witness() {
+    use llmaid::{layout, parse, route};
+
+    let graph = parse::parse("flowchart LR\nA --> B\n").unwrap();
+    let mut placed = layout::layout(&graph, 100);
+    let scene = route::route(&graph, &placed);
+
+    // Deliberately perturb only the measured target center. This proves the
+    // audit names an exact topology relationship without blessing any
+    // currently accepted gallery imperfection as a permanent fixture.
+    placed.boxes[1].c += 2;
+    let json = llmaid::audit::flowchart_json(&graph, &placed, &scene);
+
+    assert!(json.contains(concat!(
+        "\"name\":\"mono_centerline_misalignment\",",
+        "\"message\":\"mono_centerline_residual2 has 4 avoidable doubled-cell units\",",
+        "\"witness\":{\"metric\":\"mono_centerline_residual2\",\"value\":4}"
+    )));
+    assert_eq!(
+        json.matches("\"name\":\"mono_centerline_misalignment\"")
+            .count(),
+        1,
         "{json}"
     );
 }

@@ -1,7 +1,7 @@
 //! Mermaid sequence syntax parsing and validation.
 
 use super::ir::*;
-use crate::parse::{ParseError, Warning};
+use crate::parse::{ParseError, Warning, validate_terminal_text};
 
 impl SequenceDiagram {
     fn participant(
@@ -42,6 +42,7 @@ impl SequenceDiagram {
 }
 
 pub fn parse(src: &str) -> Result<SequenceDiagram, ParseError> {
+    crate::parse::validate_terminal_source(src)?;
     let mut sequence = SequenceDiagram::default();
     let mut seen_header = false;
     let mut active: Vec<Vec<usize>> = Vec::new();
@@ -134,6 +135,7 @@ fn parse_fragment_start(
             msg: format!("expected a label after `{keyword}`"),
         });
     }
+    validate_terminal_text(label, line_number)?;
     let kind = match keyword {
         "loop" => FragmentKind::Loop,
         "alt" => FragmentKind::Alt,
@@ -162,6 +164,7 @@ fn parse_fragment_else(
             msg: "expected a label after `else`".to_string(),
         });
     }
+    validate_terminal_text(label, line_number)?;
     let Some((kind, _, seen_else)) = fragments.last_mut() else {
         return Err(ParseError {
             line: line_number,
@@ -239,6 +242,7 @@ fn parse_participant(
             msg: "expected a participant label after `as`".to_string(),
         });
     }
+    validate_terminal_text(&label, line_number)?;
     let kind = if keyword == "actor" {
         ParticipantKind::Actor
     } else {
@@ -279,6 +283,7 @@ fn parse_note(
             msg: "expected a note label after `:`".to_string(),
         });
     }
+    validate_terminal_text(text, line_number)?;
 
     let ids: Vec<&str> = target.split(',').map(str::trim).collect();
     let expected_count = if placement == "over" { 1..=2 } else { 1..=1 };
@@ -403,6 +408,7 @@ fn parse_message(
             msg: "expected a message label after `:`".to_string(),
         });
     }
+    validate_terminal_text(label, line_number)?;
 
     let from = sequence.participant(from, None, line_number);
     let to = sequence.participant(to, None, line_number);

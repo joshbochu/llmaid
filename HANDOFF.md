@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-11 — breadth paused after Phase 4.2; polish is next.
+Last updated: 2026-07-31 — breadth remains paused; quality hardening is current.
 
 ## What this project is
 
@@ -17,12 +17,13 @@ without losing glance quality.
 2. `DESIGN.md` — v1 design thesis and architecture  
 3. `ROADMAP.md` — phased plan (what to build next)  
 4. `MATRIX.md` — capability × tool coverage checklist  
-5. `BEHAVIORS.md` — shipped contracts B1–B26
-6. `CHANGELOG.md` — decisions D1–D26
+5. `BEHAVIORS.md` — shipped contracts B1–B33
+6. `CHANGELOG.md` — decisions D1–D33
 
 ## Current state
 
-**Contracts B1–B26 + Phase 0–3 core + Phase 4.1–4.2 + Phase 6.2–6.3/6.5 are landed.**
+**Contracts B1–B33 + Phase 0–4 current scope + Phase 6.1 hardening,
+completed Phase 6.2–6.3/6.5, and the first Phase 7 quality gates are landed.**
 
 - Pipeline: parse → flow layout → route into signed `Scene` → pure canvas render
 - Diagram dispatch: flowcharts retain their established pipeline; the sequence
@@ -39,7 +40,8 @@ without losing glance quality.
 - Core mindmaps: `mindmap` dispatch, one two-space-indented root, plain
   descendants, stable sibling order, canonical `root((label))` label support,
   and distinct line-specific errors for malformed indentation, missing parents,
-  multiple roots, deferred syntax, and zero-width terminal sequences
+  multiple roots, deferred syntax, and terminal controls; shared text painting
+  preserves combining marks and emoji ZWJ graphemes
 - Reusable tree geometry: independent integer-grid ordered-tree layout with
   left-to-right depth columns, exact parent/child-span centering, shared
   arrowless trunks, Unicode measurement, width fallback, and shared-Scene output
@@ -68,15 +70,19 @@ without losing glance quality.
 - Sequence visual grammar: calls end with a filled arrow at the destination
   lifeline (`────▶┊`); returns begin at the destination with a thin arrow
   (`┊←────`); active messages attach to the nearest bar boundary; ASCII uses
-  `-->|` and `|<--`
+  `-->:` and `:<--`, retaining dotted lifelines
 - `Scene` owns complete paths, arrows, label positions, normalization, and exact bounds
 - **Subgraphs:** titled frames around members (B15); interior title band +
   spacious pad; nested parent tracked
 - Edge labels: padded on-shaft (` scan `); TB/BT labels beside vertical runs
+- Multiline flow edge labels reserve their complete geometry in every
+  direction and across forward, parallel, merge, feedback, and self-loop lanes
 - Directions: LR/RL/TB/BT with goldens
-- CLI: `--ascii`, `--width N` (default 100), `--strict`, `--audit=json`;
-  normal rendering is invariant-checked and exits 70 without stdout on an
-  internal geometry failure
+- CLI: `--ascii` changes structural glyphs but not labels; `--width N` (target,
+  default 100), `--strict`, `--audit=json`; input selection is exactly one
+  FILE/`-`; parse errors include source lines; unsupported Mermaid headers fail
+  directly; closed stdout pipes exit cleanly; normal rendering is
+  invariant-checked and exits 70 without stdout on an internal geometry failure
 - Tests: behavior + IR/render goldens + B14/B16 scene invariants + exact
   topology-aware quality contracts (`tests/quality.rs`)
 - Quality audit: `cargo run -q --example symmetry` reports hard failures,
@@ -84,7 +90,8 @@ without losing glance quality.
 - CLI audit: `--audit=json` emits byte-stable `llmaid.audit.v1` for every
   shipped type with normalized bounds/counts and named invariant violations;
   mindmaps report exact level counts, timelines report semantic period/event
-  counts plus chronological ranks, and flowcharts add the geometry metric vector
+  counts plus chronological ranks, and flowcharts add the geometry metric
+  vector plus exact named quality/fit witnesses
 - Generated coverage: all 71 non-empty forward DAGs on 2–4 nodes render in all
   four directions (284 cases); opposite directions have exact audit signatures
 - Generated design coverage: 40 state/class/ER direction renders verify
@@ -100,14 +107,15 @@ without losing glance quality.
   forks, merges, eligible diamonds, group boundaries, and ordered tree spans
   have exact tests; goldens do not prove arbitrary unclassified topologies beautiful. See
   `DESIGN.md` "Quality guarantee model."
-- Vertical routing widens lone distinct-peer junction boxes to preserve straight
-  attachment shafts; grouped external children start after internal content;
-  labeled rank gaps place their label on the exact middle row
-- Horizontal acyclic, non-reconverging forks may grow across child rows; box
-  labels are centered vertically after routing-driven growth
+- Eligible distinct-peer forks/merges keep natural-size boxes and use centered
+  shared external tracks; vertical channels reserve only measured geometry
+- Group frames retain visible clearance, merge crossing line bits into their
+  borders, and keep titles clear of entering/exiting routes
+- Width fallback wraps whole words with an eight-column readability floor;
+  developer identifiers and structured class/ER columns remain intact
 - Equal-width vertical chains resolve odd/even text parity with a deterministic
   right bias toward the shared arrow column; flipped chains choose width parity
-  from the terminal/top label; root forks keep a two-cell port margin
+  from the terminal/top label
 - Visual review: `./scripts/review-gallery.py --serve` opens the browser carousel workflow.
   Arrow keys move between cases, Enter marks OK, and Space marks No and focuses
   notes. Browser saves are case-scoped and `.llmaid-review.json` is agent-facing
@@ -115,14 +123,14 @@ without losing glance quality.
   painter preserves terminal widths for CJK and emoji. Use the same script's
   terminal slideshow for the final font/glyph-fidelity check on flagged cases.
 - Regenerate goldens: `UPDATE_GOLDEN=1 cargo test`
+- Release hygiene: `README.md`, Rust 1.88 metadata, and Linux/macOS/Windows CI
+  are present; package metadata declares the repository's MIT license
 
 ## Next steps (from ROADMAP)
 
-1. Gallery-driven polish of shipped flowchart, sequence, design-doc, mindmap,
-   and timeline output; turn accepted preferences into exact contracts
+1. Choose the first release channel
 2. Remaining agent diagnostics, especially machine-readable parser errors
-3. Distribution: choose a first release channel, version the CLI, and publish
-   per-type examples plus the checked-in visual gallery
+3. Version the CLI and publish per-type examples plus the checked-in gallery
 
 `gitGraph` and its complete tested vertical slice are parked on
 `codex/git-todo-later` at commit `7f2989b`. Phase 5 charts and boards are also
@@ -132,10 +140,10 @@ Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 
 ### Suggested next pickup
 
-Run the browser gallery across every shipped case, record only actionable
-visual notes, then handle one topology at a time: reproduce it as an exact
-geometry predicate, add the failing quality test, improve the renderer, and
-accept the new golden only after terminal review.
+Choose the first release channel. Keep future rendering polish
+topology-specific: reproduce the case as an exact geometry predicate, add the
+failing quality test, improve the renderer, and accept a new golden only after
+terminal review.
 
 ## Quality bar
 

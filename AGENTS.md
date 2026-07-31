@@ -4,7 +4,7 @@ Mermaid in, clean deterministic terminal diagrams out. A single fast Rust
 binary that coding agents use to compose diagrams into their output (agents
 create/self-debug; humans look at the visuals).
 
-Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B26),
+Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B33),
 `ROADMAP.md` for phased work, `MATRIX.md` for capability coverage vs other
 tools. Log decisions in `CHANGELOG.md`. Mid-stream? `HANDOFF.md`.
 
@@ -79,15 +79,17 @@ main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ────�
 1. **Determinism**: same input + flags ⇒ byte-identical output. All iteration
    orders and tie-breaks must be stable (declaration order, never HashMap order —
    use Vec/IndexMap-style patterns).
-2. **Labels never truncate.** Boxes grow; long labels wrap. No `…`, ever.
+2. **Labels never truncate.** Boxes grow; long labels wrap. Never insert `…`
+   as a truncation marker; a user-authored ellipsis remains legitimate text.
 3. **Integer coordinates everywhere.** No floats in layout/route/render.
 4. **Fast**: < 10ms typical render; `cargo test` < 5s.
 5. **Agent-friendly errors**: parse errors name the line and the expectation.
 
 ## Conventions
 
-- Dependencies: currently only `unicode-width`. Adding any dependency is a
-  logged decision in `CHANGELOG.md` — default answer is no.
+- Dependencies: `unicode-width` and `unicode-segmentation` provide terminal
+  measurement and grapheme boundaries. Adding any dependency is a logged
+  decision in `CHANGELOG.md` — default answer is no.
 - CLI: std-only arg parsing in `main.rs` (decision: no clap). Flag surface is
   intentionally tiny; new flags need a strong reason.
 - Behavior changes: any new promised behavior gets a numbered entry in

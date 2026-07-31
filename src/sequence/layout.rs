@@ -4,26 +4,139 @@ use unicode_width::UnicodeWidthStr;
 
 use super::ir::*;
 use crate::scene::{
-    Arrow, ArrowHead, EdgeKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, ScenePath,
-    SceneText, Shape,
+    Arrow, ArrowHead, EdgeKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup,
+    SceneGroupSeparator, ScenePath, SceneText, Shape,
+};
+use crate::wrapping::{self, MIN_READABLE_COLUMNS};
+
+#[derive(Clone, Copy)]
+struct Fit {
+    compact: bool,
+    label_columns: Option<usize>,
+}
+
+const NORMAL: Fit = Fit {
+    compact: false,
+    label_columns: None,
+};
+const COMPACT: Fit = Fit {
+    compact: true,
+    label_columns: None,
 };
 
-/// Lay out the sequence subset directly into the shared terminal scene.
-/// Width is accepted at the engine boundary; the first subset uses B9's final
-/// overflow step rather than truncating or rejecting intrinsically wide input.
-pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
+struct FragmentFrame<'a> {
+    base_left: i32,
+    base_right: i32,
+    depth: usize,
+    top: i32,
+    bottom: i32,
+    title: &'a str,
+    separator: Option<(String, i32)>,
+}
+
+/// Lay out sequence content with the shared B9 degradation ladder.
+pub fn scene(sequence: &SequenceDiagram, max_width: usize) -> Scene {
     if sequence.participants.is_empty() {
         return Scene::default();
     }
 
+    let normal = lower(sequence, NORMAL);
+    if scene_width(&normal) <= max_width {
+        return normal;
+    }
+    let compact = lower(sequence, COMPACT);
+    let compact_width = scene_width(&compact);
+    if compact_width <= max_width {
+        return compact;
+    }
+
+    let widest_label = sequence
+        .participants
+        .iter()
+        .map(|participant| wrapping::max_line_width(&participant.label))
+        .chain(sequence.events.iter().filter_map(|event| match event {
+            SequenceEvent::Message(message) => Some(wrapping::max_line_width(&message.label)),
+            SequenceEvent::Note(note) => Some(wrapping::max_line_width(&note.text)),
+            SequenceEvent::Activation(_) => None,
+        }))
+        .max()
+        .unwrap_or(0);
+    if widest_label <= MIN_READABLE_COLUMNS {
+        return compact;
+    }
+
+    let narrowest = lower(
+        sequence,
+        Fit {
+            compact: true,
+            label_columns: Some(MIN_READABLE_COLUMNS),
+        },
+    );
+    let narrowest_width = scene_width(&narrowest);
+    if narrowest_width > max_width {
+        return if narrowest_width < compact_width {
+            narrowest
+        } else {
+            compact
+        };
+    }
+
+    let mut best = narrowest;
+    let mut low = MIN_READABLE_COLUMNS + 1;
+    let mut high = widest_label.saturating_sub(1);
+    while low <= high {
+        let columns = low + (high - low) / 2;
+        let candidate = lower(
+            sequence,
+            Fit {
+                compact: true,
+                label_columns: Some(columns),
+            },
+        );
+        if scene_width(&candidate) <= max_width {
+            best = candidate;
+            low = columns + 1;
+        } else {
+            high = columns.saturating_sub(1);
+        }
+    }
+    best
+}
+
+fn scene_width(scene: &Scene) -> usize {
+    scene.bounds().w.max(0) as usize
+}
+
+fn lower(sequence: &SequenceDiagram, fit: Fit) -> Scene {
+    let participant_lines: Vec<Vec<String>> = sequence
+        .participants
+        .iter()
+        .map(|participant| label_lines(&participant.label, fit))
+        .collect();
+    let event_lines: Vec<Option<Vec<String>>> = sequence
+        .events
+        .iter()
+        .map(|event| match event {
+            SequenceEvent::Message(message) => Some(label_lines(&message.label, fit)),
+            SequenceEvent::Note(note) => Some(label_lines(&note.text, fit)),
+            SequenceEvent::Activation(_) => None,
+        })
+        .collect();
     let widths: Vec<i32> = sequence
         .participants
         .iter()
-        .map(|participant| participant.label.width() as i32 + 4)
+        .enumerate()
+        .map(|(participant, _)| line_width(&participant_lines[participant]) + 4)
         .collect();
+    let header_height = participant_lines
+        .iter()
+        .map(|lines| lines.len() as i32 + 2)
+        .max()
+        .unwrap_or(3);
+    let column_gap = if fit.compact { 3 } else { 6 };
     let mut gaps: Vec<i32> = widths
         .windows(2)
-        .map(|pair| (pair[0] + 1) / 2 + pair[1] / 2 + 6)
+        .map(|pair| (pair[0] + 1) / 2 + pair[1] / 2 + column_gap)
         .collect();
 
     let mut activation_depths = vec![0usize; sequence.participants.len()];
@@ -43,7 +156,7 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
         }
     }
 
-    for event in &sequence.events {
+    for (event_index, event) in sequence.events.iter().enumerate() {
         match event {
             SequenceEvent::Message(message) => {
                 let low = message.from.min(message.to);
@@ -52,13 +165,14 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
                     continue;
                 }
                 let current: i32 = gaps[low..high].iter().sum();
-                let required = message.label.width() as i32 + 6;
+                let required = line_width(event_lines[event_index].as_ref().unwrap())
+                    + if fit.compact { 4 } else { 6 };
                 if required > current {
                     gaps[high - 1] += required - current;
                 }
             }
             SequenceEvent::Note(note) => {
-                let note_width = note.text.width() as i32 + 4;
+                let note_width = line_width(event_lines[event_index].as_ref().unwrap()) + 4;
                 let gap = match note.position {
                     NotePosition::LeftOf(participant) if participant > 0 => Some(participant - 1),
                     NotePosition::RightOf(participant)
@@ -75,8 +189,11 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
                         }
                         NotePosition::Over(_, _) => unreachable!(),
                     };
-                    gaps[gap] = gaps[gap]
-                        .max(note_width + 4 + max_activation_depths[participant] as i32 * 2);
+                    gaps[gap] = gaps[gap].max(
+                        note_width
+                            + if fit.compact { 3 } else { 4 }
+                            + max_activation_depths[participant] as i32 * 2,
+                    );
                 }
             }
             SequenceEvent::Activation(_) => {}
@@ -92,15 +209,20 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
     // that row and their shafts use the next one; note boxes own three rows.
     // This keeps the core message cadence unchanged while packing adjacent
     // notes without empty event rows.
-    let mut next_top = 4;
-    let mut last_content_bottom = 2;
-    let mut lifeline_bottom = 5;
+    let mut next_top = header_height + 1;
+    let mut last_content_bottom = header_height - 1;
+    let mut lifeline_bottom = header_height + 2;
     let mut active_rows: Vec<Vec<i32>> = vec![Vec::new(); sequence.participants.len()];
     let mut event_rows = Vec::with_capacity(sequence.events.len());
     let mut control_rows = Vec::with_capacity(sequence.controls.len());
     let mut control_index = 0;
     let mut fragment_rows = Vec::new();
-    for event_index in 0..=sequence.events.len() {
+    let events_with_end = sequence
+        .events
+        .iter()
+        .map(Some)
+        .chain(std::iter::once(None));
+    for (event_index, event) in events_with_end.enumerate() {
         while control_index < sequence.controls.len()
             && sequence.controls[control_index].at == event_index
         {
@@ -134,24 +256,26 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
             control_rows.push(row);
             control_index += 1;
         }
-        let Some(event) = sequence.events.get(event_index) else {
+        let Some(event) = event else {
             break;
         };
         let row = match event {
             SequenceEvent::Message(message) => {
-                let row = next_top + 1;
+                let label_height = event_lines[event_index].as_ref().unwrap().len() as i32;
+                let row = next_top + label_height;
                 let self_loop = message.from == message.to;
                 let bottom = row + if self_loop { 2 } else { 0 };
                 last_content_bottom = bottom;
-                next_top += if self_loop { 5 } else { 3 };
+                next_top = row + if self_loop { 4 } else { 2 };
                 lifeline_bottom = lifeline_bottom.max(bottom + 1);
                 row
             }
             SequenceEvent::Note(_) => {
                 let row = next_top;
-                last_content_bottom = row + 2;
-                next_top = row + 3;
-                lifeline_bottom = lifeline_bottom.max(row + 3);
+                let height = event_lines[event_index].as_ref().unwrap().len() as i32 + 2;
+                last_content_bottom = row + height - 1;
+                next_top = row + height;
+                lifeline_bottom = lifeline_bottom.max(next_top);
                 row
             }
             SequenceEvent::Activation(activation) => match activation.kind {
@@ -178,10 +302,15 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
         .participants
         .iter()
         .enumerate()
-        .map(|(index, participant)| SceneBox {
+        .map(|(index, _)| SceneBox {
             node: index,
-            rect: Rect::new(centers[index] - widths[index] / 2, 0, widths[index], 3),
-            lines: vec![participant.label.clone()],
+            rect: Rect::new(
+                centers[index] - widths[index] / 2,
+                0,
+                widths[index],
+                header_height,
+            ),
+            lines: participant_lines[index].clone(),
             shape: Shape::Rect,
             table: None,
         })
@@ -189,7 +318,7 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
     let mut next_box_id = sequence.participants.len();
     let mut note_boxes = Vec::new();
     let mut active_note_depths = vec![0usize; sequence.participants.len()];
-    for (event, &y) in sequence.events.iter().zip(&event_rows) {
+    for (event_index, (event, &y)) in sequence.events.iter().zip(&event_rows).enumerate() {
         if let SequenceEvent::Activation(activation) = event {
             match activation.kind {
                 ActivationKind::Activate => active_note_depths[activation.participant] += 1,
@@ -200,7 +329,9 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
         let SequenceEvent::Note(note) = event else {
             continue;
         };
-        let text_width = note.text.width() as i32;
+        let lines = event_lines[event_index].as_ref().unwrap();
+        let text_width = line_width(lines);
+        let height = lines.len() as i32 + 2;
         let (x, width) = match note.position {
             NotePosition::LeftOf(participant) => {
                 let width = text_width + 4;
@@ -229,8 +360,8 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
         };
         note_boxes.push(SceneBox {
             node: next_box_id,
-            rect: Rect::new(x, y, width, 3),
-            lines: vec![note.text.clone()],
+            rect: Rect::new(x, y, width, height),
+            lines: lines.clone(),
             shape: Shape::Rect,
             table: None,
         });
@@ -284,7 +415,10 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
         .enumerate()
         .map(|(index, &center)| ScenePath {
             path: index,
-            points: vec![Point::new(center, 2), Point::new(center, lifeline_bottom)],
+            points: vec![
+                Point::new(center, header_height - 1),
+                Point::new(center, lifeline_bottom),
+            ],
             rounded: Vec::new(),
             kind: EdgeKind::Dotted,
         })
@@ -292,7 +426,7 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
 
     let mut edges = Vec::new();
     let mut active_depths = vec![0; sequence.participants.len()];
-    for (event, &y) in sequence.events.iter().zip(&event_rows) {
+    for (event_index, (event, &y)) in sequence.events.iter().zip(&event_rows).enumerate() {
         if let SequenceEvent::Activation(activation) = event {
             match activation.kind {
                 ActivationKind::Activate => active_depths[activation.participant] += 1,
@@ -318,7 +452,8 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
             active_attachment(raw_target_x, active_depths[message.to], -direction)
         };
         let (points, rounded, arrow) = if self_message {
-            let loop_x = source_x + message.label.width() as i32 + 5;
+            let label_width = line_width(event_lines[event_index].as_ref().unwrap());
+            let loop_x = source_x + label_width + 5;
             let arrow_at = Point::new(source_x + 1, y + 2);
             (
                 vec![
@@ -355,17 +490,22 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
                 },
             )
         };
+        let lines = event_lines[event_index].as_ref().unwrap();
+        let label_width = line_width(lines);
         let label_x = if self_message {
             source_x + 2
         } else {
-            (source_x + target_x - message.label.width() as i32) / 2
+            (source_x + target_x - label_width) / 2
         };
         let edge = RoutedEdge {
             edge: edges.len(),
             points,
             rounded,
             kind: message.kind.scene_kind(),
-            label: Some(SceneText::new(Point::new(label_x, y - 1), &message.label)),
+            label: Some(SceneText::new(
+                Point::new(label_x, y - lines.len() as i32),
+                lines.join("\n"),
+            )),
             arrow: Some(arrow),
         };
         edges.push(edge);
@@ -376,7 +516,7 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
         title: String,
         segment_start: i32,
         depth: usize,
-        else_branch: Option<(String, i32)>,
+        separator: Option<(String, i32)>,
     }
     let base_left = sequence
         .participants
@@ -410,17 +550,13 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
     for (control, &row) in sequence.controls.iter().zip(&control_rows) {
         match &control.kind {
             ControlKind::Start(kind, label) => {
-                let branch_depth = open_fragments
-                    .iter()
-                    .filter(|fragment| fragment.else_branch.is_some())
-                    .count();
-                let depth = open_fragments.len() + branch_depth;
+                let depth = open_fragments.len();
                 open_fragments.push(OpenFragment {
                     kind: *kind,
                     title: format!("{} {label}", kind.keyword()),
                     segment_start: row,
                     depth,
-                    else_branch: None,
+                    separator: None,
                 });
             }
             ControlKind::Else(label) => {
@@ -428,7 +564,7 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
                     .last_mut()
                     .expect("parser guarantees else is inside alt");
                 debug_assert_eq!(frame.kind, FragmentKind::Alt);
-                frame.else_branch = Some((format!("else {label}"), row));
+                frame.separator = Some((format!("else {label}"), row));
             }
             ControlKind::End => {
                 let frame = open_fragments
@@ -436,24 +572,16 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
                     .expect("parser guarantees balanced control blocks");
                 push_fragment_group(
                     &mut groups,
-                    frame_left,
-                    base_right,
-                    frame.depth,
-                    frame.segment_start,
-                    row,
-                    &frame.title,
-                );
-                if let Some((title, start)) = frame.else_branch {
-                    push_fragment_group(
-                        &mut groups,
-                        frame_left,
+                    FragmentFrame {
+                        base_left: frame_left,
                         base_right,
-                        frame.depth + 1,
-                        start,
-                        row - 1,
-                        &title,
-                    );
-                }
+                        depth: frame.depth,
+                        top: frame.segment_start,
+                        bottom: row,
+                        title: &frame.title,
+                        separator: frame.separator,
+                    },
+                );
             }
         }
     }
@@ -469,24 +597,40 @@ pub fn scene(sequence: &SequenceDiagram, _width: usize) -> Scene {
     }
 }
 
-fn push_fragment_group(
-    groups: &mut Vec<SceneGroup>,
-    base_left: i32,
-    base_right: i32,
-    depth: usize,
-    top: i32,
-    bottom: i32,
-    title: &str,
-) {
-    let x = base_left + depth as i32 * 2;
+fn label_lines(label: &str, fit: Fit) -> Vec<String> {
+    match fit.label_columns {
+        Some(columns) => wrapping::wrap_words(label, columns),
+        None => label.split('\n').map(str::to_string).collect(),
+    }
+}
+
+fn line_width(lines: &[String]) -> i32 {
+    lines
+        .iter()
+        .map(|line| line.width() as i32)
+        .max()
+        .unwrap_or(0)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_fragment_group(groups: &mut Vec<SceneGroup>, frame: FragmentFrame<'_>) {
+    let x = frame.base_left + frame.depth as i32 * 2;
     // Use a shallow right inset: enough to keep nested corners legible, while
     // retaining the header-sized margin around the destination lifeline.
-    let natural_right = (base_right - depth as i32).max(x + 2);
-    let right = natural_right.max(x + title.width() as i32 + 4);
+    let natural_right = (frame.base_right - frame.depth as i32).max(x + 2);
+    let right = natural_right.max(x + frame.title.width() as i32 + 4);
     groups.push(SceneGroup {
         subgraph: groups.len(),
-        rect: Rect::new(x, top, right - x, bottom - top + 1),
-        title: SceneText::new(Point::new(x + 2, top + 1), title),
+        rect: Rect::new(x, frame.top, right - x, frame.bottom - frame.top + 1),
+        title: SceneText::new(Point::new(x + 2, frame.top + 1), frame.title),
+        separators: frame
+            .separator
+            .into_iter()
+            .map(|(label, y)| SceneGroupSeparator {
+                y,
+                label: SceneText::new(Point::new(x + 2, y), format!(" {label} ")),
+            })
+            .collect(),
     });
 }
 

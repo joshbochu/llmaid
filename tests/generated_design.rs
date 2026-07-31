@@ -21,11 +21,6 @@ fn assert_scene_contract(scene: &Scene, context: &str, visible: &[&str]) {
         "{}\n{context}\n{unicode}",
         unicode_failures.join("; ")
     );
-    assert!(
-        !unicode.contains('…'),
-        "truncated output\n{context}\n{unicode}"
-    );
-
     let again = render::render_scene(scene, Style { ascii: false });
     assert_eq!(
         unicode, again,
@@ -42,11 +37,6 @@ fn assert_scene_contract(scene: &Scene, context: &str, visible: &[&str]) {
         ascii.is_ascii(),
         "non-ASCII glyph in ASCII mode\n{context}\n{ascii}"
     );
-    assert!(
-        !ascii.contains("..."),
-        "ellipsis in ASCII output\n{context}\n{ascii}"
-    );
-
     for expected in visible {
         assert!(
             unicode.contains(expected),

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::boxed::{BoxDiagram, BoxNode, EdgeEnd, NodeId, decorate_endpoint};
-use crate::parse::{Dir, ParseError, Warning};
+use crate::parse::{Dir, ParseError, Warning, validate_terminal_text};
 use crate::scene::{
     CardinalityMaximum, CardinalityMinimum, EdgeKind, EndpointDecorationKind, Scene, SceneTable,
     Shape,
@@ -130,6 +130,7 @@ impl ErDiagram {
 }
 
 pub fn parse(src: &str) -> Result<ErDiagram, ParseError> {
+    crate::parse::validate_terminal_source(src)?;
     let mut diagram = ErDiagram::default();
     let mut seen_header = false;
     let mut open_entity: Option<(usize, usize)> = None;
@@ -248,7 +249,9 @@ fn parse_entity(
                 "expected a closing `\"` for the entity alias",
             ));
         }
-        (id, Some(unquote(label).to_string()))
+        let label = unquote(label);
+        validate_terminal_text(label, line_number)?;
+        (id, Some(label.to_string()))
     } else {
         (head, None)
     };
@@ -290,7 +293,9 @@ fn parse_attribute(line: &str, line_number: usize) -> Result<Attribute, ParseErr
                 "expected a closing `\"` for the attribute comment",
             ));
         }
-        (key_text, Some(quoted[1..quoted.len() - 1].to_string()))
+        let comment = &quoted[1..quoted.len() - 1];
+        validate_terminal_text(comment, line_number)?;
+        (key_text, Some(comment.to_string()))
     } else {
         (rest, None)
     };
@@ -353,6 +358,7 @@ fn parse_relationship(
             "expected a relationship label after `:`",
         ));
     }
+    validate_terminal_text(label, line_number)?;
     let mut tokens = head.split_whitespace();
     let from_id = tokens.next().unwrap_or("");
     let operator = tokens.next().unwrap_or("");
@@ -538,9 +544,10 @@ pub fn scene(diagram: &ErDiagram, width: usize) -> Scene {
         }
     }
 
-    // Attribute columns remain intact under narrow budgets; the documented B9
-    // fallback permits over-width output rather than corrupting table structure.
-    let mut scene = boxed.scene(width.max(10_000));
+    // Attribute columns remain intact under narrow budgets. Relationship
+    // channels still compact before the documented over-width fallback rather
+    // than corrupting table structure with plain-label wrapping.
+    let mut scene = boxed.scene_preserving_labels(width);
     for (box_, table) in scene.boxes.iter_mut().zip(tables) {
         box_.lines.clear();
         box_.table = Some(table);

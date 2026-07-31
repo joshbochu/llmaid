@@ -53,7 +53,6 @@ fn all_170_small_period_event_and_section_structures_are_clean_ordered_and_deter
                         "{}\n{source}\n{first}",
                         failures.join("; ")
                     );
-                    assert!(!first.contains('…'), "{source}\n{first}");
                     assert_eq!(
                         first,
                         render::render_scene(&scene, Style { ascii }),
@@ -96,7 +95,6 @@ fn stress_timelines_cover_depth_breadth_unicode_long_labels_and_tight_widths() {
                     "{}\nwidth={width}\n{source}\n{rendered}",
                     failures.join("; ")
                 );
-                assert!(!rendered.contains('…'), "{source}\n{rendered}");
                 for label in diagram.labels() {
                     let wanted: String = label.chars().filter(|ch| ch.is_alphanumeric()).collect();
                     assert!(

@@ -47,7 +47,6 @@ fn generated_depth_breadth_and_unicode_trees_are_deterministic_and_valid() {
                     "{}\n{source}\n{rendered}",
                     failures.join("; ")
                 );
-                assert!(!rendered.contains('…'), "{source}\n{rendered}");
                 if ascii {
                     for drawing in ['╭', '╮', '╰', '╯', '─', '│', '├', '┤', '┬', '┴', '┼']
                     {

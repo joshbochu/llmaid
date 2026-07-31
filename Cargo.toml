@@ -2,6 +2,15 @@
 name = "llmaid"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
+description = "Clean, deterministic terminal rendering for focused Mermaid diagrams"
+license = "MIT"
+repository = "https://github.com/joshbochu/llmaid"
+homepage = "https://github.com/joshbochu/llmaid"
+readme = "README.md"
+keywords = ["mermaid", "terminal", "diagram", "cli", "developer-tools"]
+categories = ["command-line-utilities", "visualization"]
 
 [dependencies]
+unicode-segmentation = "1.12.0"
 unicode-width = "0.2.2"

@@ -120,14 +120,16 @@ fn forced_breaks_and_comments_preserve_continuation_order_without_calendar_seman
 }
 
 #[test]
-fn zero_width_sequences_fail_before_they_can_corrupt_terminal_geometry() {
-    for source in [
-        "timeline\n  cafe\u{301} : event\n",
-        "timeline\n  Q1 : 👨\u{200d}💻\n",
+fn combining_marks_and_zwj_emoji_render_as_intact_graphemes() {
+    for (source, expected) in [
+        ("timeline\n  cafe\u{301} : event\n", "cafe\u{301}"),
+        ("timeline\n  Q1 : 👨\u{200d}💻\n", "👨\u{200d}💻"),
     ] {
-        let error = timeline::parse(source).unwrap_err();
-        assert_eq!(error.line, 2);
-        assert!(error.msg.contains("zero-width Unicode sequence"), "{error}");
+        let timeline = timeline::parse(source).unwrap();
+        let scene = timeline::scene(&timeline, 100);
+        let (rendered, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+        assert!(failures.is_empty(), "{failures:#?}\n{rendered}");
+        assert!(rendered.contains(expected), "{rendered}");
     }
 }
 
@@ -144,7 +146,6 @@ fn scene_is_deterministic_checked_ascii_pure_and_never_truncates() {
     for ascii in [false, true] {
         let (rendered, failures) = render::render_scene_with_checks(&scene, Style { ascii });
         assert!(failures.is_empty(), "{}\n{rendered}", failures.join("; "));
-        assert!(!rendered.contains('…'), "{rendered}");
         if ascii {
             assert!(rendered.is_ascii(), "{rendered}");
         }
@@ -167,4 +168,22 @@ fn width_pressure_wraps_periods_and_events_before_over_width_fallback() {
     for word in ["period", "several", "words", "event", "label"] {
         assert!(rendered.contains(word), "missing {word:?}\n{rendered}");
     }
+}
+
+#[test]
+fn width_pressure_preserves_long_identifiers_as_single_tokens() {
+    let source =
+        "timeline\n  A descriptive period : Prepare release : SupercalifragilisticIdentifier\n";
+    let timeline = timeline::parse(source).unwrap();
+    let narrow = timeline::scene(&timeline, 20);
+    let rendered = render::render_scene(&narrow, Style { ascii: false });
+
+    assert!(
+        rendered.contains("SupercalifragilisticIdentifier"),
+        "identifier was hard-split:\n{rendered}"
+    );
+    assert!(
+        narrow.bounds().w > 20,
+        "intrinsic token should use the readable over-width fallback"
+    );
 }
