@@ -38,6 +38,11 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ### Documentation
 - The README now documents crates.io installation, upgrade/reinstallation,
   removal, and the Cargo binary location.
+- The inspection guide now explains the verification architecture for humans
+  as well as agents: its parser-to-Scene-to-evaluator data flow, quantitative
+  contracts, decision policy, worked examples, trust boundaries, and the roles
+  of mutation tests and gallery review. `AGENTS.md` carries the condensed
+  operating policy so future coding-agent sessions inherit it immediately.
 - The design now states the semantic quality guarantee model and why raw grid
   coordinates are evidence rather than a fixed-placement oracle; agent,
   roadmap, handoff, behavior, and capability docs cover the inspection loop.

@@ -72,7 +72,8 @@ logs, and agent responses.
 Known Mermaid document types outside those slices fail directly instead of
 being silently reinterpreted. See [MATRIX.md](MATRIX.md) for the exact coverage
 boundary, [BEHAVIORS.md](BEHAVIORS.md) for user-facing contracts, and
-[INSPECTION.md](INSPECTION.md) for the agent self-verification workflow.
+[INSPECTION.md](INSPECTION.md) for the human-readable verification design,
+agent decision policy, schema, worked examples, and extension workflow.
 
 ## Rendering guarantees
 
@@ -100,6 +101,11 @@ nonzero `summary.quality_failed_checks`, and treat `unclassified` as a request
 for human review or a new topology-specific predicate—not as proof of quality.
 Budget failures are reported separately because labels are allowed to exceed a
 target width rather than truncate.
+
+The complete rationale and trust model—including how semantic parsing, the
+shared final Scene, independent evaluation, exact raster rows, reviewed
+goldens, generated cases, and damage mutations work together—is documented in
+[INSPECTION.md](INSPECTION.md).
 
 `--audit=json` remains the smaller, backward-compatible `llmaid.audit.v1`
 geometry and fit report. It is useful for existing consumers; its bytes and
