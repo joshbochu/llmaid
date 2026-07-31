@@ -495,7 +495,9 @@ fn lower(sequence: &SequenceDiagram, fit: Fit) -> Scene {
         let label_x = if self_message {
             source_x + 2
         } else {
-            (source_x + target_x - label_width) / 2
+            // Center the occupied cell extent, whose doubled center is
+            // `2 * x + width - 1`, between the two attachment cells.
+            (source_x + target_x - (label_width - 1)) / 2
         };
         let edge = RoutedEdge {
             edge: edges.len(),

@@ -203,7 +203,13 @@ fn run_llmaid(args: &[&str], stdin: &str) -> (String, String, i32) {
         .take()
         .unwrap()
         .write_all(stdin.as_bytes())
-        .unwrap();
+        .unwrap_or_else(|error| {
+            assert_eq!(
+                error.kind(),
+                std::io::ErrorKind::BrokenPipe,
+                "failed to write llmaid stdin"
+            );
+        });
     let out = child.wait_with_output().unwrap();
     (
         String::from_utf8(out.stdout).unwrap(),
@@ -1175,4 +1181,60 @@ fn b33_given_audit_quality_or_fit_residual_then_v1_names_an_exact_witness() {
     let (second, stderr, code) = run_llmaid(&["--audit=json", "--width", "8"], source);
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(first, second, "named audit diagnostics must be byte-stable");
+}
+
+#[test]
+fn b34_given_inspect_json_then_semantic_geometry_checks_and_canvas_are_stable() {
+    let source = "flowchart LR\nA[Input] --> B[Output]\n";
+    let (first, stderr, code) = run_llmaid(&["--inspect=json"], source);
+
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stderr, "");
+    assert!(
+        first.starts_with("{\"schema\":\"llmaid.inspect.v1\""),
+        "{first}"
+    );
+    assert!(first.contains("\"element\":\"node:A\""), "{first}");
+    assert!(
+        first.contains("\"source\":\"node:A\",\"target\":\"node:B\""),
+        "{first}"
+    );
+    assert!(
+        first.contains(concat!(
+            "\"id\":\"flow.mono_centerline\",",
+            "\"class\":\"preference\",\"status\":\"pass\""
+        )),
+        "{first}"
+    );
+    assert!(first.contains("\"quality_failed_checks\":0"), "{first}");
+    assert!(first.contains("\"canvas\":{"), "{first}");
+    assert!(first.contains("\"rows\":[\"╭"), "{first}");
+
+    let (second, stderr, code) = run_llmaid(&["--inspect=json"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(first, second, "inspection JSON must be byte-deterministic");
+
+    let (ascii, stderr, code) = run_llmaid(&["--inspect=json", "--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.contains("\"style\":\"ascii\""), "{ascii}");
+    assert!(!ascii.contains('╭'), "{ascii}");
+
+    let (stdout, stderr, code) = run_llmaid(&["--audit=json", "--inspect=json"], source);
+    assert_eq!(code, 64, "{stderr}");
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("mutually exclusive"), "{stderr}");
+
+    let (stdout, stderr, code) = run_llmaid(&["--inspect=yaml"], source);
+    assert_eq!(code, 64, "{stderr}");
+    assert_eq!(stdout, "");
+    assert!(
+        stderr.contains("--inspect supports only `json`"),
+        "{stderr}"
+    );
+
+    let (empty, stderr, code) = run_llmaid(&["--inspect=json"], "");
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stderr.contains("nothing to render"), "{stderr}");
+    assert!(empty.contains("\"bounds\":{\"x\":0,\"y\":0,\"width\":0,\"height\":0}"));
+    assert!(empty.contains("\"canvas\":{\"width\":0,\"height\":0,\"rows\":[]}"));
 }

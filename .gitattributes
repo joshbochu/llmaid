@@ -3,3 +3,4 @@
 tests/cases/*.mmd text eol=lf
 tests/cases/*.ir text eol=lf
 tests/cases/*.txt text eol=lf
+tests/fixtures/*.json text eol=lf

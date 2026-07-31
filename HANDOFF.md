@@ -1,6 +1,6 @@
 # Handoff — llmaid
 
-Last updated: 2026-07-31 — breadth remains paused; quality hardening is current.
+Last updated: 2026-07-31 — semantic self-verification is landed; breadth remains paused.
 
 ## What this project is
 
@@ -13,17 +13,18 @@ without losing glance quality.
 
 ## Read order
 
-1. `AGENTS.md` — commands, modules, invariants, conventions  
-2. `DESIGN.md` — v1 design thesis and architecture  
-3. `ROADMAP.md` — phased plan (what to build next)  
-4. `MATRIX.md` — capability × tool coverage checklist  
-5. `BEHAVIORS.md` — shipped contracts B1–B33
-6. `CHANGELOG.md` — decisions D1–D33
+1. `AGENTS.md` — commands, modules, invariants, conventions
+2. `DESIGN.md` — v1 design thesis and architecture
+3. `INSPECTION.md` — agent self-verification schema and workflow
+4. `ROADMAP.md` — phased plan (what to build next)
+5. `MATRIX.md` — capability × tool coverage checklist
+6. `BEHAVIORS.md` — shipped contracts B1–B34
+7. `CHANGELOG.md` — decisions D1–D34
 
 ## Current state
 
-**Contracts B1–B33 + Phase 0–4 current scope + Phase 6.1 hardening,
-completed Phase 6.2–6.3/6.5, and the first Phase 7 quality gates are landed.**
+**Contracts B1–B34 + Phase 0–4 current scope + Phase 6.1 hardening,
+completed Phase 6.2–6.3/6.5/6.7, and the first Phase 7 quality gates are landed.**
 
 - Pipeline: parse → flow layout → route into signed `Scene` → pure canvas render
 - Diagram dispatch: flowcharts retain their established pipeline; the sequence
@@ -71,6 +72,8 @@ completed Phase 6.2–6.3/6.5, and the first Phase 7 quality gates are landed.**
   lifeline (`────▶┊`); returns begin at the destination with a thin arrow
   (`┊←────`); active messages attach to the nearest bar boundary; ASCII uses
   `-->:` and `:<--`, retaining dotted lifelines
+- Sequence message labels use the occupied-cell center formula, eliminating a
+  systematic one-cell left bias found by the independent semantic inspector
 - `Scene` owns complete paths, arrows, label positions, normalization, and exact bounds
 - **Subgraphs:** titled frames around members (B15); interior title band +
   spacious pad; nested parent tracked
@@ -79,7 +82,7 @@ completed Phase 6.2–6.3/6.5, and the first Phase 7 quality gates are landed.**
   direction and across forward, parallel, merge, feedback, and self-loop lanes
 - Directions: LR/RL/TB/BT with goldens
 - CLI: `--ascii` changes structural glyphs but not labels; `--width N` (target,
-  default 100), `--strict`, `--audit=json`; input selection is exactly one
+  default 100), `--strict`, `--audit=json`, `--inspect=json`; input selection is exactly one
   FILE/`-`; parse errors include source lines; unsupported Mermaid headers fail
   directly; closed stdout pipes exit cleanly; normal rendering is
   invariant-checked and exits 70 without stdout on an internal geometry failure
@@ -92,6 +95,15 @@ completed Phase 6.2–6.3/6.5, and the first Phase 7 quality gates are landed.**
   mindmaps report exact level counts, timelines report semantic period/event
   counts plus chronological ranks, and flowcharts add the geometry metric
   vector plus exact named quality/fit witnesses
+- Semantic inspection: `--inspect=json` emits byte-stable
+  `llmaid.inspect.v1` from the final normalized Scene. It includes semantic
+  element identities and geometry, exact raster rows, invariant/preference/
+  budget classes, applicability and status, per-element failure witnesses, and
+  explicit unclassified compositions. `llmaid.audit.v1` remains unchanged.
+- Quality gates: `tests/inspection.rs` requires every applicable invariant and
+  preference to pass over all reviewed goldens; generated suites gate semantic
+  invariants across broad topology spaces; mutation tests prove shifted or
+  damaged final geometry is detected independently of layout intermediates
 - Generated coverage: all 71 non-empty forward DAGs on 2–4 nodes render in all
   four directions (284 cases); opposite directions have exact audit signatures
 - Generated design coverage: 40 state/class/ER direction renders verify

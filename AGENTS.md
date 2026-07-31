@@ -4,9 +4,10 @@ Mermaid in, clean deterministic terminal diagrams out. A single fast Rust
 binary that coding agents use to compose diagrams into their output (agents
 create/self-debug; humans look at the visuals).
 
-Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B33),
+Read `DESIGN.md` for the v1 design, `BEHAVIORS.md` for contracts (B1–B34),
 `ROADMAP.md` for phased work, `MATRIX.md` for capability coverage vs other
-tools. Log decisions in `CHANGELOG.md`. Mid-stream? `HANDOFF.md`.
+tools, and `INSPECTION.md` for the self-verification contract. Log decisions
+in `CHANGELOG.md`. Mid-stream? `HANDOFF.md`.
 
 ## Commands
 
@@ -14,6 +15,7 @@ tools. Log decisions in `CHANGELOG.md`. Mid-stream? `HANDOFF.md`.
 cargo run -q -- diagram.mmd      # render a file
 echo "graph LR; A-->B" | cargo run -q    # render stdin
 cargo run -q -- --audit=json diagram.mmd # stable machine geometry report
+cargo run -q -- --inspect=json diagram.mmd # semantic geometry + quality checks + canvas
 cargo test                       # golden snapshots + invariants (< 5s budget)
 cargo build --release            # optimized binary at target/release/llmaid
 
@@ -27,6 +29,7 @@ cargo build --release            # optimized binary at target/release/llmaid
 ./scripts/contact-sheet.py --html -o /tmp/llmaid-gallery.html
 python3 -m unittest scripts/test_review_gallery.py
 cargo run -q --example symmetry  # exact geometry-quality audit (all goldens)
+cargo test --test inspection     # reviewed-gallery semantic quality gate
 UPDATE_GOLDEN=1 cargo test        # regen tests/cases/*.{ir,txt} after intentional changes
 ```
 
@@ -69,6 +72,12 @@ main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ────�
 - `scene.rs` — shared `Point` / `Rect` / path / text primitives plus structured
   tables and endpoint decorations; normalizes the finished scene once and
   derives exact bounds.
+- `quality.rs` — independent semantic checks over the final normalized Scene;
+  reports invariants, preferences, budgets, applicability, exact witnesses,
+  and deliberately unclassified compositions without a scalar score.
+- `inspect.rs` — stable `llmaid.inspect.v1` serializer for semantic geometry,
+  quality reports, and the exact raster rows; `audit.rs` remains the compact
+  backward-compatible geometry summary.
 - `render.rs` — pure scene painter + char canvas; box-drawing junctions resolved
   via bitmask lookup
   (`─` meets `│` ⇒ `┼`).
@@ -109,5 +118,5 @@ main.rs → diagram.rs ┬→ parse.rs → layout.rs → route.rs ────�
 - When output quality is in question, render the reference diagrams in
   `tests/cases/` and eyeball them — aesthetics are a spec here, not a nice-to-have.
   Use `review-gallery.py --serve` for bulk browser annotations, then confirm
-  suspicious cases with its terminal slideshow. Its local `.llmaid-review.json`
+  suspicious cases with its terminal slideshow and `--inspect=json`. Its local `.llmaid-review.json`
   contains only flagged cases and their notes, without changing committed goldens.

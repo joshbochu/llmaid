@@ -2,7 +2,7 @@ use std::fmt;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
-use llmaid::{audit, diagram, render, style::Style};
+use llmaid::{audit, diagram, inspect, render, style::Style};
 use unicode_width::UnicodeWidthChar;
 
 const USAGE: &str = "\
@@ -11,7 +11,7 @@ llmaid — Mermaid diagrams rendered for the terminal
 Usage: llmaid [OPTIONS] [FILE]
        cat diagram.mmd | llmaid
 
-Reads Mermaid from FILE (or stdin) and writes the diagram or audit to stdout.
+Reads Mermaid from FILE (or stdin) and writes the diagram or machine report to stdout.
 
 Options:
   --ascii        ASCII structural glyphs; label text is preserved unchanged
@@ -19,6 +19,7 @@ Options:
                  so identical input+flags give identical bytes everywhere)
   --strict       treat warnings (ignored directives, missing header) as errors
   --audit=json   write a stable machine-readable geometry audit instead of a diagram
+  --inspect=json write semantic geometry, raster rows, and typed quality checks as JSON
   -h, --help     print this help
   -V, --version  print version
 ";
@@ -30,6 +31,7 @@ struct Opts {
     width: Option<usize>,
     strict: bool,
     audit_json: bool,
+    inspect_json: bool,
 }
 
 enum Action {
@@ -46,6 +48,7 @@ fn parse_args() -> Result<Action, String> {
         width: None,
         strict: false,
         audit_json: false,
+        inspect_json: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -55,6 +58,7 @@ fn parse_args() -> Result<Action, String> {
             "--ascii" => opts.ascii = true,
             "--strict" => opts.strict = true,
             "--audit=json" => opts.audit_json = true,
+            "--inspect=json" => opts.inspect_json = true,
             "--width" => {
                 let value = args
                     .next()
@@ -73,6 +77,9 @@ fn parse_args() -> Result<Action, String> {
             _ if arg.starts_with("--audit=") => {
                 return Err("--audit supports only `json` (use `--audit=json`)".to_string());
             }
+            _ if arg.starts_with("--inspect=") => {
+                return Err("--inspect supports only `json` (use `--inspect=json`)".to_string());
+            }
             _ if arg.starts_with('-') => {
                 return Err(format!(
                     "unknown option `{}` (see --help)",
@@ -83,6 +90,9 @@ fn parse_args() -> Result<Action, String> {
                 set_input(&mut opts, Some(arg))?;
             }
         }
+    }
+    if opts.audit_json && opts.inspect_json {
+        return Err("--audit=json and --inspect=json are mutually exclusive".to_string());
     }
     Ok(Action::Run(opts))
 }
@@ -205,7 +215,7 @@ fn main() -> ExitCode {
         diagnostic(format_args!(
             "llmaid: {source_name}: warning: nothing to render (input has no nodes)"
         ));
-        if !opts.audit_json {
+        if !opts.audit_json && !opts.inspect_json {
             return ExitCode::SUCCESS;
         }
     }
@@ -218,6 +228,14 @@ fn main() -> ExitCode {
         return stdout_exit(write_stdout(&audit::json(&diagram, width)));
     }
 
+    if opts.inspect_json {
+        return stdout_exit(write_stdout(&inspect::json(
+            &diagram,
+            width,
+            Style { ascii: opts.ascii },
+        )));
+    }
+
     let scene = diagram::scene(&diagram, width);
     match render::render_scene_checked(&scene, Style { ascii: opts.ascii }) {
         Ok(output) => stdout_exit(write_stdout(&output)),
@@ -226,7 +244,7 @@ fn main() -> ExitCode {
                 diagnostic(format_args!("llmaid: invariant failure: {failure}"));
             }
             diagnostic(format_args!(
-                "llmaid: diagram not written; inspect with `--audit=json`"
+                "llmaid: diagram not written; inspect with `--inspect=json`"
             ));
             ExitCode::from(70)
         }

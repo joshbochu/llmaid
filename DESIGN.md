@@ -80,6 +80,9 @@ src/
   temporal.rs  reusable deterministic integer layout for temporal ranks/bands
   scene.rs     Signed Point/Rect/Path/Text primitives + exact bounds
   render.rs    Scene → grid canvas → styled box-drawing output
+  quality.rs   semantic IR + final normalized Scene → typed relational checks
+  inspect.rs   semantic geometry + checks + raster → llmaid.inspect.v1
+  audit.rs     compact backward-compatible geometry → llmaid.audit.v1
   style.rs     Charsets: unicode (default) / ascii
 ```
 
@@ -208,6 +211,7 @@ llmaid [FILE|-]            read Mermaid from FILE or stdin, write to stdout
                            terminal-detected, so output is byte-deterministic)
   --strict                 warnings become errors
   --audit=json             stable machine geometry report instead of a diagram
+  --inspect=json           semantic geometry, checks, and raster rows as JSON
   --version / --help
 ```
 
@@ -222,16 +226,16 @@ when it reduces actual overflow; otherwise the compact unwrapped result wins.
 Sequence headers, messages, and notes use the same ladder. Structured class/ER
 tables keep their columns but still compact relationship channels. Labels wrap
 only under width pressure.
-Empty graphs exit 0 (empty stdout, stderr warning; audit mode emits a zero
-report). stdout carries only the selected artifact—diagram or audit JSON—and
-all diagnostics go to stderr. Parse diagnostics use `source:line`, state the
+Empty graphs exit 0 (empty stdout, stderr warning; either machine mode emits a
+zero report). stdout carries only the selected artifact—diagram, audit JSON,
+or inspection JSON—and all diagnostics go to stderr. Parse diagnostics use `source:line`, state the
 repairable expectation, and include the offending source line. Known
 unsupported Mermaid document headers fail directly instead of being
 reinterpreted as headerless flowcharts.
 
 ## Testing
 
-- **Behavior contracts**: `BEHAVIORS.md` (B1–B33) indexes the promised
+- **Behavior contracts**: `BEHAVIORS.md` (B1–B34) indexes the promised
   behaviors; each has a given/when/then test in `tests/behavior.rs`
   (CLI contracts exercise the real binary).
 - **Golden snapshots**: `tests/cases/*.mmd` → `tests/cases/*.txt`, byte-compared.
@@ -263,6 +267,15 @@ reinterpreted as headerless flowcharts.
   used. Sequence scenes share the generic bounds/count/invariant envelope;
   timelines report semantic period+event nodes, event counts, and chronological
   period ranks.
+- **Semantic inspection** (`--inspect=json`) evaluates the final normalized
+  `Scene`, independently of each layout engine's intermediate coordinates. Its
+  stable `llmaid.inspect.v1` document exposes semantic element identities,
+  boxes, groups, paths, edges, endpoint decorations, texts, exact raster rows,
+  and typed checks with applicability, status, per-element witnesses, and
+  deliberately unclassified compositions. `tests/inspection.rs` requires all
+  applicable invariants and preferences to pass over the reviewed gallery;
+  generated corpora apply the invariant subset broadly, and mutation tests
+  prove the independent evaluator detects damaged final geometry.
 - **Junction routing** keeps content-sized boxes and branches on a shared
   external track for eligible distinct-peer forks and merges. Vertical rank
   channels reserve only the rows visible geometry needs; horizontal and
@@ -296,42 +309,52 @@ reinterpreted as headerless flowcharts.
 ### Quality guarantee model
 
 The integer grid is the measurement space, not by itself an aesthetic
-guarantee. Quality comes from a four-stage loop:
+guarantee. Quality comes from a semantic, independently measured loop:
 
 ```text
-graph topology
+diagram IR
     -> constraint-based layout
-    -> rendered Scene
-    -> independent geometry audit
-    -> exact pass or named violations
+    -> final normalized Scene
+    -> independent semantic predicates + checked raster
+    -> pass / fail / not-applicable + exact witnesses
 ```
 
 The guarantees have deliberately different scopes:
 
 1. Determinism, integer coordinates, and non-truncation are engine-wide
-   properties. Scene correctness invariants are exercised for every golden
-   frame.
-2. Alignment and symmetry are topology-aware. The layout applies reusable
-   rules to recognized relationships (chains, forks, merges, eligible
-   diamonds, group boundaries, and ordered tree parent-child spans), while
-   `tests/quality.rs` checks exact doubled-cell relations such as equal widths,
-   common centerlines, midpoint labels, mirrored branches, straight shafts,
-   tree attachment centers, visible padding, and port clearance.
-3. Goldens prove representative compositions and prevent regressions. They do
-   not prove that an arbitrary, previously unclassified topology is beautiful.
-   The audit intentionally declines to grade inapplicable relationships rather
-   than assigning a misleading global beauty score.
-4. Human review discovers preferences that have not yet been formalized. An
+   properties. `scene.integrity` independently checks the actual final Scene
+   and raster rather than trusting layout-owned bookkeeping.
+2. Semantic fidelity and aesthetic preferences are relational. Diagram IR
+   supplies identity and intent; the normalized final Scene supplies measured
+   coordinates. Checks cover declared endpoints, structured compartments,
+   group containment, chronology, parent-child spans, chains, forks, merges,
+   eligible diamonds, message/lifeline alignment, connector padding, and
+   similar relationships using exact integer or doubled-cell witnesses.
+3. Every check has a class (`invariant`, `preference`, or `budget`), an
+   applicability count, and a `pass`, `fail`, or `not_applicable` status. A
+   composition without a sound predicate is recorded as `unclassified`; it is
+   never silently counted as a success. Budget overflow remains visible but is
+   distinct from fidelity failure because B9 permits honest over-width output.
+4. Reviewed goldens prove representative compositions and prevent regressions.
+   `tests/inspection.rs` gates all applicable invariants and preferences over
+   that corpus. Broad generated corpora gate invariants and exercise the
+   classifier without pretending every arbitrary topology has a formal beauty
+   definition.
+5. Human review discovers preferences that have not yet been formalized. An
    accepted preference becomes a minimal fixture plus a failing named geometry
    contract before the layout rule changes; the golden is updated only after
    the generalized rule passes the whole corpus.
 
-The audit exposes every currently defined nonzero topology residual and width
-overflow as a machine-readable named violation with an exact witness. New
+`--inspect=json` exposes this model directly, including the raw normalized grid
+and exact canvas rows for forensic use. A fixed expected-placement grid is not
+the primary oracle: it would reject harmless translations or equally valid
+spacing choices and would duplicate snapshots at coordinate level. Relational
+predicates say what must remain true while leaving layout freedom. New
 preferences still enter through a topology-specific predicate and minimized
 fixture before receiving a diagnostic name. This can guarantee every
-preference that has an exact geometric definition; subjective beauty still
-requires the review loop.
+preference with an exact geometric definition; subjective beauty and terminal
+font fidelity still require the review loop. `--audit=json` remains the compact
+backward-compatible metric report for existing consumers.
 
 ## Milestones
 

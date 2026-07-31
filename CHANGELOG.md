@@ -5,9 +5,59 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 
 ## [Unreleased]
 
+### Added
+- Semantic final-render inspection (B34): `--inspect=json` emits stable,
+  dependency-free `llmaid.inspect.v1` for every shipped diagram type. The
+  report combines semantic element identities with normalized final-Scene
+  boxes, groups, paths, edges, decorations, texts, and exact raster rows. Each
+  check has an invariant/preference/budget class, explicit applicability and
+  pass/fail/not-applicable status, plus semantic elements and exact integer
+  witnesses on failure. Compositions without a sound predicate are listed as
+  `unclassified`; no global beauty score is introduced. The existing
+  `llmaid.audit.v1` schema and clean-report bytes remain separate and unchanged.
+- An independent cross-engine quality evaluator over the final Scene, with
+  endpoint/containment/structure checks and topology-specific preferences for
+  flowcharts, sequences, state/class/ER diagrams, mindmaps, and timelines.
+  Mutation tests prove it detects shifted or damaged final geometry without
+  consulting layout intermediates. The 35-case reviewed gallery gates every
+  applicable invariant and preference, while all generated corpora now gate
+  semantic invariants across their broader input spaces.
+
+### Changed
+- Runtime invariant failures now direct agents to the richer
+  `--inspect=json` report. `--audit=json` and `--inspect=json` are explicitly
+  mutually exclusive machine-output modes.
+
+### Fixed
+- Sequence message labels now center their occupied cell extent between the
+  actual attachment cells instead of subtracting the full width and biasing
+  labels one column left. Four sequence goldens record the improved centering.
+- The timeline connector-padding predicate counts cells strictly between text
+  and attachment, avoiding an asymmetric false failure for leading labels.
+
 ### Documentation
 - The README now documents crates.io installation, upgrade/reinstallation,
   removal, and the Cargo binary location.
+- The design now states the semantic quality guarantee model and why raw grid
+  coordinates are evidence rather than a fixed-placement oracle; agent,
+  roadmap, handoff, behavior, and capability docs cover the inspection loop.
+
+### Decisions
+
+- **D34 — Inspect semantic relations on the final Scene; do not grade a fixed
+  placement grid.** Diagram IR supplies stable semantic identity and intent,
+  while the normalized final Scene and checked raster supply independently
+  measured evidence. Exact predicates describe relationships that matter—such
+  as endpoint attachment, containment, chronology, centering, symmetry,
+  padding, and structured compartments—without requiring every valid render to
+  occupy one absolute coordinate template. `llmaid.inspect.v1` therefore
+  exposes both raw grid/canvas data and typed checks with applicability,
+  semantic witnesses, and explicit unclassified compositions. Reviewed
+  goldens gate invariants plus preferences; broad generated corpora gate
+  invariants; mutation tests verify evaluator independence. The richer schema
+  is separate from byte-compatible `llmaid.audit.v1`. Rejected: fixed-grid or
+  pixel snapshots as the primary oracle, self-checks over layout-owned
+  intermediate values, an LLM-only visual judge, and a scalar beauty score.
 
 ## [0.1.0] - 2026-07-31
 

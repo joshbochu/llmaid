@@ -36,7 +36,7 @@ Agents speak Mermaid; we own primitives behind the door.
 | 3 | Design-doc types (state / class / ER) | **done** (core + visual fidelity) |
 | 4 | Hierarchy & planning (mindmap / timeline) | **done for current scope** |
 | 5 | Charts & boards (selective) | **parked** |
-| 6 | Agent self-debug loop | **in progress** (6.2–6.3 and 6.5 done) |
+| 6 | Agent self-debug loop | **in progress** (6.2–6.3, 6.5, and 6.7 done) |
 | 7 | Distribution & product | **in progress** (README/CI/package metadata/license done; channel pending) |
 
 ---
@@ -155,13 +155,15 @@ and maintenance cost.
 | 6.2 | Machine-readable geometry audit | **done** — stable v1 JSON; named violations, exact witnesses, every shipped type |
 | 6.3 | Generated + metamorphic topology tests | **done** — 71 DAGs + 40 design-doc direction renders + 197 ordered tree shapes + 170 timeline structures |
 | 6.4 | Optional machine-readable parser diagnostics | e.g. `--error-format=json` |
-| 6.5 | Invariant failures as actionable stderr | **done** — checked runtime render, exit 70, audit hint |
+| 6.5 | Invariant failures as actionable stderr | **done** — checked runtime render, exit 70, inspection hint |
 | 6.6 | Optional JSON IR **input** (same engines) | Tools/compilers; Mermaid remains primary |
+| 6.7 | Semantic final-Scene inspection | **done** — stable `llmaid.inspect.v1`; typed applicability/status/witnesses, semantic geometry, raster rows, reviewed-gallery preference gate, generated invariant gates, and mutation tests |
 
 **Exit:** an agent can render any input, inspect exact structural violations,
 and fix failures in one retry without a human reading either the parser or the
 diagram. Generated topology coverage guards combinations absent from goldens;
-human review remains the oracle for preferences not yet expressed as geometry.
+unclassified compositions and subjective preferences remain explicit inputs
+to the human review loop rather than inferred machine passes.
 
 ---
 

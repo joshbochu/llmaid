@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D33.
+`CHANGELOG.md` D9–D34.
 
 ## Parsing
 
@@ -67,6 +67,14 @@ structural coverage lives beside its engine tests. Decisions behind these:
   and supplies a structured witness with the exact width or doubled-cell
   value. Descriptive bend/wire totals remain metrics rather than being
   mislabeled as avoidable failures, and no scalar quality score is introduced.
+- **B34** Given `--inspect=json`, when any supported diagram is inspected,
+  then stdout is a byte-stable `llmaid.inspect.v1` JSON document containing
+  normalized semantic scene geometry, exact raster rows, and typed invariant,
+  preference, and budget checks. Every check states its applicability and
+  status; failures name semantic elements and exact witnesses; compositions
+  without a sound predicate are listed as `unclassified` rather than treated
+  as passes. `--audit=json` remains byte-compatible `llmaid.audit.v1`, and the
+  two machine-output modes are mutually exclusive.
 
 ## Layout & rendering
 
@@ -170,7 +178,7 @@ structural coverage lives beside its engine tests. Decisions behind these:
 - **B24** Given a scene with a renderer invariant failure, when the runtime
   checked-render path runs, then no diagram is returned as successful and each
   exact failure is available for actionable stderr diagnostics. The CLI exits
-  70, keeps stdout empty, and points agents to `--audit=json` for inspection.
+  70, keeps stdout empty, and points agents to `--inspect=json` for inspection.
 
 ## Hierarchy diagrams
 

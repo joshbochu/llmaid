@@ -2,7 +2,7 @@
 │ Client │      │ Application API │
 ╰────┬───╯      ╰────────┬────────╯
      ┊                   ┊
-     ┊     request       ┊
+     ┊      request      ┊
      ├──────────────────▶┊
      ┊                   ┊
      ┊     response      ┊
