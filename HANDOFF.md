@@ -128,9 +128,9 @@ completed Phase 6.2–6.3/6.5, and the first Phase 7 quality gates are landed.**
 
 ## Next steps (from ROADMAP)
 
-1. Choose the first release channel
-2. Remaining agent diagnostics, especially machine-readable parser errors
-3. Version the CLI and publish per-type examples plus the checked-in gallery
+1. Remaining agent diagnostics, especially machine-readable parser errors
+2. Publish per-type examples plus the checked-in visual gallery
+3. Evaluate additional release channels only after crates.io usage shows demand
 
 `gitGraph` and its complete tested vertical slice are parked on
 `codex/git-todo-later` at commit `7f2989b`. Phase 5 charts and boards are also
@@ -140,10 +140,10 @@ Track detail in `ROADMAP.md`; tick coverage in `MATRIX.md`.
 
 ### Suggested next pickup
 
-Choose the first release channel. Keep future rendering polish
-topology-specific: reproduce the case as an exact geometry predicate, add the
-failing quality test, improve the renderer, and accept a new golden only after
-terminal review.
+Publish per-type examples plus the checked-in visual gallery. Keep future
+rendering polish topology-specific: reproduce the case as an exact geometry
+predicate, add the failing quality test, improve the renderer, and accept a new
+golden only after terminal review.
 
 ## Quality bar
 
