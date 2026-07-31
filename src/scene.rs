@@ -124,8 +124,25 @@ impl SceneText {
         }
     }
 
+    pub fn width(&self) -> usize {
+        self.text
+            .split('\n')
+            .map(UnicodeWidthStr::width)
+            .max()
+            .unwrap_or(0)
+    }
+
+    pub fn height(&self) -> usize {
+        self.text.split('\n').count()
+    }
+
     fn bounds(&self) -> Rect {
-        Rect::new(self.at.x, self.at.y, self.text.width() as i32, 1)
+        Rect::new(
+            self.at.x,
+            self.at.y,
+            self.width() as i32,
+            self.height() as i32,
+        )
     }
 
     fn translate(&mut self, dx: i32, dy: i32) {
@@ -214,6 +231,17 @@ pub struct SceneGroup {
     pub subgraph: usize,
     pub rect: Rect,
     pub title: SceneText,
+    /// Labeled horizontal subdivisions contained by this frame. Sequence
+    /// `alt` branches use these without teaching the renderer diagram syntax.
+    pub separators: Vec<SceneGroupSeparator>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SceneGroupSeparator {
+    /// Absolute row of the horizontal stroke. The label occupies cells on the
+    /// same row, leaving the stroke visible on both sides.
+    pub y: i32,
+    pub label: SceneText,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -343,6 +371,9 @@ impl Scene {
         for group in &self.groups {
             bounds = bounds.union(group.rect);
             bounds = bounds.union(group.title.bounds());
+            for separator in &group.separators {
+                bounds = bounds.union(separator.label.bounds());
+            }
         }
         for path in &self.paths {
             for &point in path.points.iter().chain(&path.rounded) {
@@ -387,6 +418,10 @@ impl Scene {
         for group in &mut self.groups {
             group.rect = group.rect.translated(dx, dy);
             group.title.translate(dx, dy);
+            for separator in &mut group.separators {
+                separator.y += dy;
+                separator.label.translate(dx, dy);
+            }
         }
         for path in &mut self.paths {
             for point in path.points.iter_mut().chain(&mut path.rounded) {

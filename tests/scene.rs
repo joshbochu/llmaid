@@ -4,7 +4,7 @@ use llmaid::parse::{self, EdgeKind, Shape};
 use llmaid::render;
 use llmaid::route;
 use llmaid::scene::{
-    Arrow, ArrowHead, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, SceneText,
+    Arrow, ArrowHead, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, ScenePath, SceneText,
 };
 use llmaid::style::Style;
 use std::fs;
@@ -26,6 +26,7 @@ fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
             subgraph: 0,
             rect: Rect::new(-6, -4, 9, 7),
             title: SceneText::new(Point::new(-3, -3), "group"),
+            separators: vec![],
         }],
         paths: vec![],
         edges: vec![RoutedEdge {
@@ -45,6 +46,120 @@ fn scene_bounds_include_geometry_paths_arrows_and_wide_text() {
     };
 
     assert_eq!(scene.bounds(), Rect::new(-6, -4, 16, 7));
+}
+
+#[test]
+fn grapheme_runs_and_multiline_scene_text_have_exact_cells_and_bounds() {
+    let scene = Scene {
+        texts: vec![SceneText::new(Point::new(0, 0), "e\u{301}\n👩\u{200d}💻")],
+        ..Scene::default()
+    };
+
+    assert_eq!(scene.bounds(), Rect::new(0, 0, 2, 2));
+    let (output, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+    assert!(failures.is_empty(), "{failures:#?}\n{output}");
+    assert_eq!(output, "e\u{301}\n👩\u{200d}💻\n");
+}
+
+#[test]
+fn checked_render_rejects_controls_without_forwarding_them_to_the_terminal() {
+    let scene = Scene {
+        texts: vec![SceneText::new(Point::new(0, 0), "safe\u{1b}[31m")],
+        ..Scene::default()
+    };
+
+    let (output, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+    assert!(!output.contains('\u{1b}'), "{output:?}");
+    assert!(
+        failures
+            .iter()
+            .any(|failure| failure.contains("terminal control U+001B")),
+        "{failures:#?}"
+    );
+    assert!(render::render_scene_checked(&scene, Style { ascii: false }).is_err());
+}
+
+#[test]
+fn border_invariant_checks_side_cells_not_only_corners() {
+    let scene = Scene {
+        boxes: vec![SceneBox {
+            node: 4,
+            rect: Rect::new(0, 0, 5, 3),
+            lines: vec![],
+            shape: Shape::Rect,
+            table: None,
+        }],
+        texts: vec![SceneText::new(Point::new(4, 1), "X")],
+        ..Scene::default()
+    };
+
+    let (_, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+    assert!(
+        failures.iter().any(|failure| {
+            failure.contains("box 4")
+                && failure.contains("right border")
+                && failure.contains("(4,1)")
+        }),
+        "{failures:#?}"
+    );
+}
+
+#[test]
+fn group_frame_crossings_merge_both_stroke_orientations_on_every_side() {
+    let scene = Scene {
+        groups: vec![SceneGroup {
+            subgraph: 0,
+            rect: Rect::new(3, 2, 11, 7),
+            title: SceneText::new(Point::new(4, 3), "G"),
+            separators: vec![],
+        }],
+        paths: vec![
+            // Top and bottom crossings.
+            ScenePath {
+                path: 0,
+                points: vec![Point::new(7, 0), Point::new(7, 4)],
+                rounded: vec![],
+                kind: EdgeKind::Solid,
+            },
+            ScenePath {
+                path: 1,
+                points: vec![Point::new(9, 6), Point::new(9, 10)],
+                rounded: vec![],
+                kind: EdgeKind::Solid,
+            },
+            // Left and right crossings.
+            ScenePath {
+                path: 2,
+                points: vec![Point::new(0, 5), Point::new(5, 5)],
+                rounded: vec![],
+                kind: EdgeKind::Solid,
+            },
+            ScenePath {
+                path: 3,
+                points: vec![Point::new(11, 6), Point::new(16, 6)],
+                rounded: vec![],
+                kind: EdgeKind::Solid,
+            },
+        ],
+        ..Scene::default()
+    };
+
+    for (ascii, crossing) in [(false, '┼'), (true, '+')] {
+        let (output, failures) = render::render_scene_with_checks(&scene, Style { ascii });
+        assert!(failures.is_empty(), "{}\n{output}", failures.join("\n"));
+        let rows: Vec<Vec<char>> = output.lines().map(|line| line.chars().collect()).collect();
+        for point in [
+            Point::new(7, 2),
+            Point::new(9, 8),
+            Point::new(3, 5),
+            Point::new(13, 6),
+        ] {
+            assert_eq!(
+                rows[point.y as usize][point.x as usize], crossing,
+                "crossing {point:?} lost one stroke orientation:\n{output}"
+            );
+        }
+    }
 }
 
 #[test]

@@ -37,17 +37,19 @@ Mermaid `flowchart` / `graph`, directions `LR` `RL` `TB` `BT`:
 - Edges: `-->` `---` `-.->`  `==>`, labels via `-->|text|` and `-- text -->`
 - Fork/merge (multiple out/in edges), cycles/back-edges, self-loops
 - Node declaration and reference, `&` fan-out (`A --> B & C`)
-- Unicode default, `--ascii` fallback (`+-|>`), `--width N` fit
+- Unicode default, `--ascii` structural fallback (labels unchanged),
+  `--width N` fit target
 
 Subgraphs are supported (Phase 1). The core sequence slice supports
 participants/actors (including implicit participants), lifelines, `->>`
 messages, `-->>` returns, left/right/over notes, and balanced explicit
 activation bars. Balanced nested `loop`, `alt` / `else`, and `opt` control
-blocks render as labeled frames. Phase 3 adds flat state diagrams, core class
-diagrams, and core ER diagrams through separate semantic IRs and a shared
-typed-box geometry adapter. Phase 4.1 adds a core `mindmap` slice with one
-ordered indentation-defined hierarchy of plain labels. Phase 4.2 adds a core
-`timeline` slice with an optional title, ordered periods and continuation
+blocks render as labeled frames; `else` is a labeled horizontal subdivision
+inside its single containing `alt` frame. Phase 3 adds flat state diagrams,
+core class diagrams, and core ER diagrams through separate semantic IRs and a
+shared typed-box geometry adapter. Phase 4.1 adds a core `mindmap` slice with
+one ordered indentation-defined hierarchy of plain labels. Phase 4.2 adds a
+core `timeline` slice with an optional title, ordered periods and continuation
 events, and named containing sections on one vertical chronological spine.
 Icons, custom classes,
 Markdown, general mindmap shapes, and styling directives remain expansion work
@@ -62,7 +64,12 @@ src/
   parse.rs     Mermaid flowchart subset → IR (Graph: nodes, edges, direction)
   layout.rs    IR → integer flow-grid positions
   route.rs     Layout → complete screen-space paths, arrows, and labels
-  sequence.rs  ordered event/control IR + lifeline/fragment layout → Scene
+  sequence/     sequence engine with a narrow public boundary
+    mod.rs      exports the stable parse / scene / dump API
+    ir.rs       ordered participant, event, activation, and control IR
+    parse.rs    Mermaid sequence syntax → semantic IR
+    layout.rs   integer lifeline/message/fragment geometry → Scene
+    dump.rs     deterministic textual IR dump
   state.rs     flat state semantic IR → boxed geometry → Scene
   class.rs     class/member/relation semantic IR → boxed geometry → Scene
   er.rs        entity/attribute/cardinality semantic IR → boxed geometry → Scene
@@ -139,18 +146,25 @@ unequal label widths. It performs no date parsing, duration calculation, or
 calendar arithmetic.
 
 `timeline.rs` owns Mermaid semantics and the B9 width ladder: unwrapped normal
-spacing, unwrapped compact spacing, stable two-column wrapping, then natural
-over-width output for intrinsically wide titles, sections, or labels. Timeline
-labels remain plain terminal text with one visible blank cell between text and
-connector; named sections reuse generic rounded `SceneGroup` frames. This keeps
-the familiar compact changelog rail while making period/event ownership and
-section containment exact.
+spacing, unwrapped compact spacing, stable two-column whole-word wrapping, then
+natural over-width output for intrinsically wide titles, sections, or labels.
+Timeline labels remain plain terminal text with one visible blank cell between
+text and connector; named sections reuse generic rounded `SceneGroup` frames.
+This keeps the familiar compact changelog rail while making period/event
+ownership and section containment exact.
 
 ### Renderer
 
 A diagram engine emits a signed screen-space `Scene`, which is normalized once
 to `(0, 0)` and measured from its exact bounds. The renderer only paints scene
 primitives onto a `Canvas` of cells; it owns no routing policy.
+
+Text cells store complete extended grapheme clusters plus their measured
+continuation cells. `unicode-segmentation` supplies cluster boundaries and
+`unicode-width` supplies terminal columns, so combining accents and emoji ZWJ
+sequences are never approximated as one cell per scalar. `SceneText` newlines
+are explicit geometry rows; control scalars are rejected before parsing can
+copy them into output and are omitted by the painter as a final safety backstop.
 
 Structured `SceneTable` content supplies class compartments and ER attribute
 grids. Paint-level endpoint decorations carry UML diamonds/arrows/triangles and
@@ -160,8 +174,17 @@ one visible connector cell, and paired ER marks retain a connector cell between
 them. Type-specific engines choose the semantics; the renderer only orients and
 paints the glyphs.
 
-Box-drawing junction resolution (e.g. `─` meeting `│` becomes `┼`) via bitmask
-lookup, so crossings and tees always render as the correct glyph.
+`SceneGroup` frames may carry labeled horizontal separators. Sequence layout
+uses that generic primitive for `alt` / `else` branches, keeping control
+semantics out of the painter while making the entire divider stroke, label,
+and frame intersection available to shared invariant checks.
+
+Box-drawing junction resolution (e.g. `─` meeting `│` becomes `┼`) uses a
+bitmask union, so crossings and tees always retain both strokes. Frame checks
+verify each border cell's required side/corner directions rather than accepting
+an unrelated line merely because it occupies the same cell. Group titles are
+placed after edge geometry chooses its cells, using the nearest deterministic
+clear span inside the frame.
 
 ## Aesthetic spec (the defaults)
 
@@ -179,34 +202,44 @@ lookup, so crossings and tees always render as the correct glyph.
 ## CLI
 
 ```
-llmaid [FILE]              read Mermaid from FILE or stdin, write to stdout
-  --ascii                  pure ASCII charset
-  --width <N>              max output width (default: fixed 100 — never
+llmaid [FILE|-]            read Mermaid from FILE or stdin, write to stdout
+  --ascii                  ASCII structural glyphs; labels stay unchanged
+  --width <N>              target output width (default: fixed 100 — never
                            terminal-detected, so output is byte-deterministic)
   --strict                 warnings become errors
   --audit=json             stable machine geometry report instead of a diagram
   --version / --help
 ```
 
-Exit codes: 0 ok, 1 render error, 64 usage/parse error.
+Exit codes: 0 ok (including a downstream closed pipe), 64 usage/parse error,
+70 internal render-invariant failure, 74 stdout I/O error.
 
 Width overflow ladder (never truncate, never fail): compact inter-node gaps →
-wrap labels → render over-width anyway. Labels wrap only under width pressure.
+wrap whole words → render over-width anyway. Wrapping has an eight-column
+readability floor; whitespace-free tokens remain intact, and the largest
+wrapping cap that fits wins. If no readable wrapped result fits, it is used only
+when it reduces actual overflow; otherwise the compact unwrapped result wins.
+Sequence headers, messages, and notes use the same ladder. Structured class/ER
+tables keep their columns but still compact relationship channels. Labels wrap
+only under width pressure.
 Empty graphs exit 0 (empty stdout, stderr warning; audit mode emits a zero
 report). stdout carries only the selected artifact—diagram or audit JSON—and
-all diagnostics go to stderr.
+all diagnostics go to stderr. Parse diagnostics use `source:line`, state the
+repairable expectation, and include the offending source line. Known
+unsupported Mermaid document headers fail directly instead of being
+reinterpreted as headerless flowcharts.
 
 ## Testing
 
-- **Behavior contracts**: `BEHAVIORS.md` (B1–B26) indexes the promised
+- **Behavior contracts**: `BEHAVIORS.md` (B1–B33) indexes the promised
   behaviors; each has a given/when/then test in `tests/behavior.rs`
   (CLI contracts exercise the real binary).
 - **Golden snapshots**: `tests/cases/*.mmd` → `tests/cases/*.txt`, byte-compared.
   Seed set: LR pipeline with edge labels, fork/merge, diamond decision,
   cycle/back-edge, self-loop, CJK + emoji labels, every shape, TB deep chain.
 - **Invariant checks** on every rendered frame (also run as fuzz oracle):
-  no truncated labels, box borders closed, every edge reaches its endpoints,
-  no character overwrites text, and no edge crosses a non-endpoint box.
+  exact grapheme and wide-continuation cells, every border cell closed, every
+  edge reaching its endpoints, and no edge crossing a non-endpoint box.
 - **Geometry quality contracts** use doubled integer centers to measure exact
   rank, chain, fork, merge, and eligible-diamond relationships without parity
   loss. Hard violations and individual residuals remain a vector; aesthetics
@@ -224,19 +257,24 @@ all diagnostics go to stderr.
   padding, and collision contracts live in `tests/quality.rs`.
 - **Machine audit** (`--audit=json`) exposes normalized named violations and
   witnesses plus the existing exact flowchart metric vector through a stable,
-  dependency-free `llmaid.audit.v1` schema. Sequence scenes share the generic
-  bounds/count/invariant envelope; timelines report semantic period+event
-  nodes, event counts, and chronological period ranks.
-- **Vertical junction routing** prefers straight shafts over compact boxes. A
-  lone distinct-peer fork/merge may widen across adjacent attachment columns;
-  long-edge dummy lanes snap to a source or target column only when every
-  intermediate box remains clear. If a grouped fork mixes internal and external
-  children, the external child starts one rank later so the rectangular group
-  can close before it. Parallel edges still retain separate lanes.
-- **Horizontal non-reconverging forks** may similarly grow across child rows to
-  keep outgoing shafts straight. Symmetric diamonds retain their shared trunk,
-  and feedback graphs retain perimeter routing. Labels are centered in both
-  axes after any routing-driven box growth.
+  dependency-free `llmaid.audit.v1` schema. Nonzero topology residuals receive
+  deterministic metric witnesses, and every engine reports an exact
+  `width_target_exceeded` witness when B9's permitted over-width fallback is
+  used. Sequence scenes share the generic bounds/count/invariant envelope;
+  timelines report semantic period+event nodes, event counts, and chronological
+  period ranks.
+- **Junction routing** keeps content-sized boxes and branches on a shared
+  external track for eligible distinct-peer forks and merges. Vertical rank
+  channels reserve only the rows visible geometry needs; horizontal and
+  vertical junctions use one centered box port without stretching the box
+  across peer lanes. Long-edge dummy lanes may align to a source or target only
+  when every intermediate box remains clear. Parallel and feedback edges still
+  retain separate lanes.
+- **Group clearance** is cumulative across nested frames. External children
+  start beyond the containing frame with a visible separation cell; crossing
+  paths merge their line bits into the frame instead of erasing its stroke.
+  Symmetric diamonds retain their shared trunk, and feedback graphs retain
+  perimeter routing. Labels remain centered in their natural boxes.
 - **Cell parity** is explicit: equal-width boxes with odd/even label lengths
   cannot all share an exact half-cell center. Normalized vertical chains keep
   equal box widths and choose the right of the two equally near text positions,
@@ -288,12 +326,12 @@ The guarantees have deliberately different scopes:
    contract before the layout rule changes; the golden is updated only after
    the generalized rule passes the whole corpus.
 
-The remaining step toward a stronger guarantee is to expose the audit for any
-input as machine-readable named violations (for example `unequal-chain-width`,
-`off-center-edge`, `asymmetric-fork`, `non-midpoint-label`, `avoidable-bend`,
-`insufficient-port-clearance`, and `box-crossing`) and exercise generated small
-graph topologies. This can guarantee every preference that has an exact
-geometric definition; subjective beauty still requires the review loop.
+The audit exposes every currently defined nonzero topology residual and width
+overflow as a machine-readable named violation with an exact witness. New
+preferences still enter through a topology-specific predicate and minimized
+fixture before receiving a diagnostic name. This can guarantee every
+preference that has an exact geometric definition; subjective beauty still
+requires the review loop.
 
 ## Milestones
 

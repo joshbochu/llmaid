@@ -8,7 +8,8 @@
 //! by declaration index. No HashMap iteration anywhere.
 
 use crate::parse::{Dir, Graph};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use crate::wrapping::{self, MIN_READABLE_COLUMNS};
+use unicode_width::UnicodeWidthStr;
 
 /// Padding inside a box between border and label, in flow-space cross terms
 /// this is only horizontal on screen (label lines are padded when rendered).
@@ -70,6 +71,8 @@ pub struct Channel {
     pub start: usize,
     pub width: usize,
     pub label_zone: usize,
+    /// Flow-axis offset of the label band from `start`.
+    pub label_offset: usize,
 }
 
 impl Channel {
@@ -107,27 +110,92 @@ pub struct Placed {
 /// truncate, never fail).
 pub fn layout(g: &Graph, max_width: usize) -> Placed {
     let normal = layout_fit(g, FIT_NORMAL);
-    if scene_width(g, &normal) <= max_width {
+    let normal_width = scene_width(g, &normal);
+    if normal_width <= max_width {
         return normal;
     }
     let compact = layout_fit(g, FIT_COMPACT);
-    if scene_width(g, &compact) <= max_width {
+    let compact_width = scene_width(g, &compact);
+    if compact_width <= max_width {
         return compact;
     }
-    // Wrap under pressure: target content width from budget and rank count.
-    let nranks = compact.rank_span.len().max(1);
-    let content = max_width
-        .saturating_sub(nranks.saturating_mul(2)) // borders
-        .saturating_sub(nranks.saturating_sub(1).saturating_mul(3)) // min channels
-        / nranks;
-    let label_cols = content.saturating_sub(2 * PAD).max(4);
-    layout_fit(
+    let (unwrapped, unwrapped_width) = if compact_width < normal_width {
+        (compact, compact_width)
+    } else {
+        (normal, normal_width)
+    };
+
+    let widest_label = g
+        .nodes
+        .iter()
+        .map(|node| wrapping::max_line_width(&node.label))
+        .max()
+        .unwrap_or(0);
+    if widest_label <= MIN_READABLE_COLUMNS {
+        return unwrapped;
+    }
+
+    // First establish whether readable wrapping can actually reach the target.
+    // If it cannot, keep whichever result reduces overflow most; a tie keeps
+    // the unwrapped compact layout because wrapping would buy no width.
+    let narrowest = layout_fit(
         g,
         Fit {
             compact: true,
-            label_cols: Some(label_cols),
+            label_cols: Some(MIN_READABLE_COLUMNS),
         },
-    )
+    );
+    let narrowest_width = scene_width(g, &narrowest);
+    if narrowest_width > max_width {
+        return if narrowest_width < unwrapped_width {
+            narrowest
+        } else {
+            unwrapped
+        };
+    }
+
+    // Width is monotonic with the wrapping cap. Find the largest cap that
+    // fits, which preserves the most words per line instead of jumping to an
+    // unnecessarily narrow equal-width cap for every rank.
+    let mut best = narrowest;
+    let mut low = MIN_READABLE_COLUMNS + 1;
+    let mut high = widest_label.saturating_sub(1);
+    while low <= high {
+        let cap = low + (high - low) / 2;
+        let candidate = layout_fit(
+            g,
+            Fit {
+                compact: true,
+                label_cols: Some(cap),
+            },
+        );
+        if scene_width(g, &candidate) <= max_width {
+            best = candidate;
+            low = cap + 1;
+        } else {
+            high = cap.saturating_sub(1);
+        }
+    }
+    best
+}
+
+/// Compact a diagram under width pressure without changing node content.
+///
+/// Structured class/ER tables use this path: their columns must stay intact,
+/// but relation channels should still shed optional spacing before accepting
+/// B9's final over-width fallback.
+pub fn layout_preserving_labels(g: &Graph, max_width: usize) -> Placed {
+    let normal = layout_fit(g, FIT_NORMAL);
+    let normal_width = scene_width(g, &normal);
+    if normal_width <= max_width {
+        return normal;
+    }
+    let compact = layout_fit(g, FIT_COMPACT);
+    if scene_width(g, &compact) < normal_width {
+        compact
+    } else {
+        normal
+    }
 }
 
 fn scene_width(g: &Graph, placed: &Placed) -> usize {
@@ -199,7 +267,7 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         .enumerate()
         .map(|(i, node)| {
             let lines: Vec<String> = match fit.label_cols {
-                Some(cols) => wrap_label(&node.label, cols),
+                Some(cols) => wrapping::wrap_words(&node.label, cols),
                 None => node.label.split('\n').map(str::to_string).collect(),
             };
             let text_w = lines.iter().map(|l| l.width()).max().unwrap_or(1).max(1);
@@ -244,9 +312,9 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         }
     }
 
-    // B12: genuinely parallel edges need distinct ports. Horizontal symmetric
-    // diamonds share a centered trunk. Vertical distinct-peer junctions defer
-    // spatial widening until coordinates are known below.
+    // B12: genuinely parallel edges need distinct ports. Acyclic distinct-peer
+    // forks/merges share one centered trunk and branch in the adjacent channel,
+    // so their boxes remain content-sized in both orientations.
     for (ni, b) in boxes.iter_mut().enumerate() {
         let out_degree = g
             .edges
@@ -284,14 +352,60 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
             })
             .max()
             .unwrap_or(0);
-        let out_shared = out_degree > 1
-            && out_parallel == 1
-            && (!horizontal || is_symmetric_junction(g, &reversed, ni, true));
-        let in_shared = in_degree > 1
-            && in_parallel == 1
-            && (!horizontal || is_symmetric_junction(g, &reversed, ni, false));
-        let out_need = if out_shared { 1 } else { out_degree };
-        let in_need = if in_shared { 1 } else { in_degree };
+        let has_feedback =
+            g.edges.iter().enumerate().any(|(edge_index, edge)| {
+                reversed[edge_index] && (edge.from == ni || edge.to == ni)
+            });
+        let incoming_labels = g.edges.iter().enumerate().any(|(edge_index, edge)| {
+            edge.from != edge.to && !reversed[edge_index] && edge.to == ni && edge.label.is_some()
+        });
+        let out_shared = out_degree > 1 && out_parallel == 1 && !has_feedback;
+        // Horizontal merge labels need separate incoming rows: after the jog
+        // every path shares the same branch, so collapsing their ports would
+        // place multiple labels on top of each other.
+        let in_shared =
+            in_degree > 1 && in_parallel == 1 && !has_feedback && (!horizontal || !incoming_labels);
+        let outgoing_label_height = if horizontal {
+            g.edges
+                .iter()
+                .enumerate()
+                .filter(|(edge_index, edge)| {
+                    edge.from != edge.to && !reversed[*edge_index] && edge.from == ni
+                })
+                .map(|(_, edge)| edge.label.as_deref().map_or(1, edge_label_height))
+                .max()
+                .unwrap_or(1)
+        } else {
+            1
+        };
+        let incoming_label_height = if horizontal {
+            g.edges
+                .iter()
+                .enumerate()
+                .filter(|(edge_index, edge)| {
+                    edge.from != edge.to && !reversed[*edge_index] && edge.to == ni
+                })
+                .map(|(_, edge)| edge.label.as_deref().map_or(1, edge_label_height))
+                .max()
+                .unwrap_or(1)
+        } else {
+            1
+        };
+        let port_span = |degree: usize, label_height: usize| {
+            degree
+                .checked_sub(1)
+                .map_or(0, |between| 1 + between * label_height)
+        };
+        let out_need = if out_shared {
+            1
+        } else {
+            port_span(out_degree, outgoing_label_height)
+        };
+        let in_need = if in_shared {
+            1
+        } else {
+            port_span(in_degree, incoming_label_height)
+        };
         let need = out_need.max(in_need);
         if need > 0 {
             b.clen = b.clen.max(need + 2);
@@ -321,7 +435,7 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     let max_label = g
         .edges
         .iter()
-        .map(|e| e.label.as_deref().map(|l| l.width()).unwrap_or(0))
+        .map(|e| e.label.as_deref().map(edge_label_width).unwrap_or(0))
         .max()
         .unwrap_or(0);
     let base_gap = if fit.compact {
@@ -339,8 +453,6 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         2
     };
     let edge_label_pad = if fit.compact { 1 } else { EDGE_LABEL_PAD };
-    // Vertical: a bit more air between ranks (TB chains inside groups).
-    let channel_min = if fit.compact { 3 } else { 5 };
     let has_self_loop = |ni: usize| self_loops.iter().any(|&ei| g.edges[ei].from == ni);
 
     let slot_clen = |slot: &Slot, boxes: &[BoxGeom]| -> usize {
@@ -418,11 +530,21 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
 
     // Phase 0.4: straighten mono-rank chains so simple A→B columns share a
     // centerline (fewer needless elbows when each rank has one real node).
-    straighten_mono_chains(g, &ranks, &mut boxes, &reversed);
+    straighten_mono_chains(
+        g,
+        &ranks,
+        &slot_cross,
+        &mut boxes,
+        &reversed,
+        base_gap,
+        horizontal,
+        &self_loops,
+    );
 
-    // A lone junction box may widen across adjacent attachment columns. In
-    // horizontal flow this is limited to acyclic, non-reconverging forks so
-    // approved diamond trunks and feedback routing retain their topology.
+    // Keep long-edge dummy shafts on a stable endpoint column. Junction boxes
+    // retain their content-derived size; their incident edges share a centered
+    // port and branch in the adjacent channel instead of stretching the box
+    // across every child/parent lane.
     if !horizontal {
         straighten_vertical_dummy_shafts(
             g,
@@ -432,26 +554,21 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
             &reversed,
             &edge_spans,
         );
-        widen_cross_junction_boxes(
-            g,
-            &ranks,
-            &slot_cross,
-            &mut boxes,
-            &reversed,
-            &edge_spans,
-            false,
-        );
-    } else {
-        widen_cross_junction_boxes(
-            g,
-            &ranks,
-            &slot_cross,
-            &mut boxes,
-            &reversed,
-            &edge_spans,
-            true,
-        );
     }
+    center_lone_junction_boxes(g, &ranks, &slot_cross, &mut boxes, &reversed);
+    // Junction centering can move a merge/fork after its sole downstream or
+    // upstream neighbor was aligned. A second deterministic pass moves only
+    // the non-junction endpoint when its rank has legal space.
+    straighten_mono_chains(
+        g,
+        &ranks,
+        &slot_cross,
+        &mut boxes,
+        &reversed,
+        base_gap,
+        horizontal,
+        &self_loops,
+    );
 
     // Keep slot_cross in sync for reals after straightening (dummies unchanged).
     for (r, rslots) in ranks.iter().enumerate() {
@@ -573,10 +690,11 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     }
 
     // --- Channel widths: label zone + reusable jog tracks.
+    let group_channel_min = group_channel_minimums(g, &rank, nranks, horizontal, flipped);
     let mut channels = Vec::new();
     for r in 0..nranks.saturating_sub(1) {
         let mut label_zone = 0usize;
-        let mut vertical_labels = 0usize;
+        let mut vertical_label_rows = 0usize;
         for &ei in &channel_edges[r] {
             let labeled_here =
                 g.edges[ei].label.is_some() && edge_spans[ei].map(|(rs, _)| rs) == Some(r);
@@ -585,36 +703,53 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
                     // Label lies along the channel (flow axis): need full text width.
                     // +2 for the spaces drawn around the word (` scan `).
                     label_zone = label_zone.max(
-                        g.edges[ei].label.as_deref().unwrap().width() + 2 + 2 * edge_label_pad,
+                        edge_label_width(g.edges[ei].label.as_deref().unwrap())
+                            + 2
+                            + 2 * edge_label_pad,
                     );
                 } else {
-                    // Vertical flow: each label receives its own row beside the
-                    // shaft. Rows are separated by one blank routing row.
-                    vertical_labels += 1;
+                    // Vertical flow: every explicit line receives its own row
+                    // beside the shaft. Labels retain one blank routing row
+                    // between them.
+                    vertical_label_rows +=
+                        edge_label_height(g.edges[ei].label.as_deref().unwrap()) + 1;
                 }
             }
         }
-        if vertical_labels > 0 {
-            label_zone = label_zone.max(2 * vertical_labels - 1);
+        if vertical_label_rows > 0 {
+            label_zone = label_zone.max(vertical_label_rows - 1);
         }
         let endpoint_reserve = channel_edges[r]
             .iter()
             .map(|&edge| g.edges[edge].endpoint_reserve)
             .max()
             .unwrap_or(0);
-        let slack = if fit.compact {
-            2
-        } else if horizontal {
-            3
+        let (mut width, label_offset) = if horizontal {
+            let channel_min = if fit.compact { 3 } else { 5 };
+            let slack = if fit.compact { 2 } else { 3 };
+            (
+                channel_min.max(label_zone + 2 * channel_track_count[r] + slack + endpoint_reserve),
+                0,
+            )
         } else {
-            2
+            // Vertical channels reserve only rows that carry visible geometry:
+            // one row for a straight arrow, two per reusable bend track, then
+            // an optional label band and its final arrow row. Endpoint
+            // decorations retain their explicit extra clearance.
+            let track_rows = 2 * channel_track_count[r];
+            let geometry_rows = if label_zone == 0 {
+                track_rows.max(1)
+            } else {
+                track_rows + label_zone + 1
+            };
+            (geometry_rows + endpoint_reserve, track_rows)
         };
-        let width =
-            channel_min.max(label_zone + 2 * channel_track_count[r] + slack + endpoint_reserve);
+        width = width.max(group_channel_min[r]);
         channels.push(Channel {
             start: 0,
             width,
             label_zone,
+            label_offset,
         });
     }
 
@@ -640,15 +775,9 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     }
     let flow_extent = f;
 
-    for (node, b) in boxes.iter_mut().enumerate() {
+    for b in &mut boxes {
         let (start, width) = rank_span[b.rank];
-        // Siblings inside a symmetric horizontal diamond share a clean leading
-        // edge. Other approved layouts retain their established rank centering.
-        b.f = if horizontal && is_diamond_branch(g, &reversed, node) {
-            start
-        } else {
-            start + (width - b.flen) / 2
-        };
+        b.f = start + (width - b.flen) / 2;
     }
 
     // Fill in segment endpoint flow coords (border cells).
@@ -696,6 +825,96 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
     }
 }
 
+/// Minimum flow-axis gaps needed to keep nested group frames away from
+/// external boxes. Each frame contributes its own padding; adjacent group
+/// boundaries also retain one visibly empty cell.
+fn group_channel_minimums(
+    g: &Graph,
+    rank: &[usize],
+    nranks: usize,
+    horizontal: bool,
+    flipped: bool,
+) -> Vec<usize> {
+    let mut minimums = vec![0usize; nranks.saturating_sub(1)];
+    if g.subgraphs.is_empty() || minimums.is_empty() {
+        return minimums;
+    }
+
+    let mut first = vec![usize::MAX; g.subgraphs.len()];
+    let mut last = vec![0usize; g.subgraphs.len()];
+    for (node, &node_rank) in rank.iter().enumerate() {
+        let Some(mut group) = g
+            .subgraphs
+            .iter()
+            .position(|candidate| candidate.members.contains(&node))
+        else {
+            continue;
+        };
+        loop {
+            first[group] = first[group].min(node_rank);
+            last[group] = last[group].max(node_rank);
+            let Some(parent) = g.subgraphs[group].parent else {
+                break;
+            };
+            group = parent;
+        }
+    }
+
+    let side_pad = CLUSTER_PAD;
+    let titled_top_pad = CLUSTER_PAD + CLUSTER_TITLE_BAND;
+    let (entry_pad, exit_pad) = if horizontal {
+        (side_pad, side_pad)
+    } else if flipped {
+        (side_pad, titled_top_pad)
+    } else {
+        (titled_top_pad, side_pad)
+    };
+
+    let boundary_chain = |mut group: usize, boundary: &[usize], pad: usize, at: usize| -> usize {
+        let mut extent = 0;
+        loop {
+            if boundary[group] == at {
+                extent += pad;
+            }
+            let Some(parent) = g.subgraphs[group].parent else {
+                break;
+            };
+            group = parent;
+        }
+        extent
+    };
+
+    for (channel, minimum) in minimums.iter_mut().enumerate() {
+        let exit_extent = (0..g.subgraphs.len())
+            .filter(|&group| first[group] != usize::MAX && last[group] == channel)
+            .map(|group| boundary_chain(group, &last, exit_pad, channel))
+            .max()
+            .unwrap_or(0);
+        let entry_rank = channel + 1;
+        let entry_extent = (0..g.subgraphs.len())
+            .filter(|&group| first[group] == entry_rank)
+            .map(|group| boundary_chain(group, &first, entry_pad, entry_rank))
+            .max()
+            .unwrap_or(0);
+        if exit_extent > 0 || entry_extent > 0 {
+            *minimum = exit_extent + entry_extent + 1;
+        }
+    }
+    minimums
+}
+
+fn edge_label_width(label: &str) -> usize {
+    label
+        .split('\n')
+        .map(UnicodeWidthStr::width)
+        .max()
+        .unwrap_or(0)
+}
+
+fn edge_label_height(label: &str) -> usize {
+    label.split('\n').count()
+}
+
 fn is_simple_chain(g: &Graph, reversed: &[bool]) -> bool {
     if !g.subgraphs.is_empty() || g.nodes.is_empty() {
         return false;
@@ -714,56 +933,6 @@ fn is_simple_chain(g: &Graph, reversed: &[bool]) -> bool {
     forward_edges + 1 == g.nodes.len()
         && out_degree.iter().all(|&degree| degree <= 1)
         && in_degree.iter().all(|&degree| degree <= 1)
-}
-
-fn is_symmetric_junction(g: &Graph, reversed: &[bool], node: usize, outgoing: bool) -> bool {
-    let mut peers = Vec::new();
-    for (edge_index, edge) in g.edges.iter().enumerate() {
-        if edge.from == edge.to || reversed[edge_index] {
-            continue;
-        }
-        let peer = if outgoing && edge.from == node {
-            Some(edge.to)
-        } else if !outgoing && edge.to == node {
-            Some(edge.from)
-        } else {
-            None
-        };
-        if let Some(peer) = peer
-            && !peers.contains(&peer)
-        {
-            peers.push(peer);
-        }
-    }
-    if peers.len() < 2 {
-        return false;
-    }
-
-    (0..g.nodes.len()).any(|common| {
-        peers.iter().all(|&peer| {
-            g.edges.iter().enumerate().any(|(edge_index, edge)| {
-                edge.from != edge.to
-                    && !reversed[edge_index]
-                    && if outgoing {
-                        edge.from == peer && edge.to == common
-                    } else {
-                        edge.from == common && edge.to == peer
-                    }
-            })
-        })
-    })
-}
-
-fn is_diamond_branch(g: &Graph, reversed: &[bool], node: usize) -> bool {
-    (0..g.nodes.len()).any(|fork| {
-        is_symmetric_junction(g, reversed, fork, true)
-            && g.edges.iter().enumerate().any(|(edge_index, edge)| {
-                edge.from != edge.to
-                    && !reversed[edge_index]
-                    && edge.from == fork
-                    && edge.to == node
-            })
-    })
 }
 
 /// Align an edge when it is each endpoint's only attachment. Coordinate
@@ -813,11 +982,16 @@ fn align_mono_ports(
 /// so the edge can run straight. Skip merges/forks — pulling them onto a
 /// one-parent centerline undoes merge barycenters and can route other edges
 /// through boxes.
+#[allow(clippy::too_many_arguments)]
 fn straighten_mono_chains(
     g: &Graph,
     ranks: &[Vec<Slot>],
+    slot_cross: &[Vec<usize>],
     boxes: &mut [BoxGeom],
     reversed: &[bool],
+    base_gap: usize,
+    horizontal: bool,
+    self_loops: &[usize],
 ) {
     let mut out_deg = vec![0usize; g.nodes.len()];
     let mut in_deg = vec![0usize; g.nodes.len()];
@@ -874,6 +1048,136 @@ fn straighten_mono_chains(
             boxes[bi].c = mid.saturating_sub(boxes[bi].clen / 2);
         }
     }
+
+    // A mono edge can also be exact when neighboring ranks contain unrelated
+    // siblings or long-edge dummy lanes. Prefer moving the downstream
+    // non-junction endpoint, then the upstream endpoint, but only when the
+    // original slot order and spacing remain legal.
+    for (edge_index, edge) in g.edges.iter().enumerate() {
+        if edge.from == edge.to
+            || reversed[edge_index]
+            || out_deg[edge.from] != 1
+            || in_deg[edge.to] != 1
+            || boxes[edge.from].rank + 1 != boxes[edge.to].rank
+        {
+            continue;
+        }
+        let source_reals = ranks[boxes[edge.from].rank]
+            .iter()
+            .filter(|slot| matches!(slot, Slot::Real(_)))
+            .count();
+        let target_reals = ranks[boxes[edge.to].rank]
+            .iter()
+            .filter(|slot| matches!(slot, Slot::Real(_)))
+            .count();
+        if source_reals == 1 && target_reals == 1 {
+            continue;
+        }
+
+        let source_junction = in_deg[edge.from] > 1 || out_deg[edge.from] > 1;
+        let target_junction = in_deg[edge.to] > 1 || out_deg[edge.to] > 1;
+        let candidates = [
+            (!target_junction).then_some((edge.to, edge.from)),
+            (!source_junction).then_some((edge.from, edge.to)),
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            let (moving, anchor) = candidate;
+            let new_cross = aligned_cross_start(&boxes[moving], &boxes[anchor]);
+            if legal_mono_move(
+                g, ranks, slot_cross, boxes, moving, new_cross, base_gap, horizontal, self_loops,
+            ) {
+                boxes[moving].c = new_cross;
+                break;
+            }
+        }
+    }
+}
+
+fn aligned_cross_start(moving: &BoxGeom, anchor: &BoxGeom) -> usize {
+    let anchor_center2 = 2 * anchor.c + anchor.clen - 1;
+    let extent2 = moving.clen - 1;
+    let raw_start2 = anchor_center2.saturating_sub(extent2);
+    let floor = raw_start2 / 2;
+    let ceil = raw_start2.div_ceil(2);
+    [floor, ceil]
+        .into_iter()
+        .min_by_key(|&candidate| {
+            let center2 = 2 * candidate + extent2;
+            (
+                center2.abs_diff(anchor_center2),
+                candidate.abs_diff(moving.c),
+                candidate,
+            )
+        })
+        .unwrap()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn legal_mono_move(
+    g: &Graph,
+    ranks: &[Vec<Slot>],
+    slot_cross: &[Vec<usize>],
+    boxes: &[BoxGeom],
+    node: usize,
+    cross: usize,
+    base_gap: usize,
+    horizontal: bool,
+    self_loops: &[usize],
+) -> bool {
+    let rank = boxes[node].rank;
+    let Some(slot) = ranks[rank]
+        .iter()
+        .position(|candidate| *candidate == Slot::Real(node))
+    else {
+        return false;
+    };
+    let position = |index: usize| match ranks[rank][index] {
+        Slot::Real(other) => boxes[other].c,
+        Slot::Dummy(_) => slot_cross[rank][index],
+    };
+    let extent = |index: usize| match ranks[rank][index] {
+        Slot::Real(other) => boxes[other].clen,
+        Slot::Dummy(_) => 1,
+    };
+
+    if slot > 0 {
+        let previous = &ranks[rank][slot - 1];
+        let previous_extra = match previous {
+            Slot::Real(previous)
+                if horizontal
+                    && self_loops
+                        .iter()
+                        .any(|&edge| g.edges[edge].from == *previous) =>
+            {
+                2
+            }
+            _ => 0,
+        };
+        let minimum = position(slot - 1)
+            + extent(slot - 1)
+            + slot_gap(g, previous, Some(&ranks[rank][slot]), base_gap)
+            + previous_extra;
+        if cross < minimum {
+            return false;
+        }
+    }
+    if slot + 1 < ranks[rank].len() {
+        let gap = slot_gap(
+            g,
+            &ranks[rank][slot],
+            Some(&ranks[rank][slot + 1]),
+            base_gap,
+        );
+        let own_extra = if horizontal && self_loops.iter().any(|&edge| g.edges[edge].from == node) {
+            2
+        } else {
+            0
+        };
+        if cross + boxes[node].clen + gap + own_extra > position(slot + 1) {
+            return false;
+        }
+    }
+    true
 }
 
 fn straighten_vertical_dummy_shafts(
@@ -921,23 +1225,13 @@ fn straighten_vertical_dummy_shafts(
     }
 }
 
-fn widen_cross_junction_boxes(
+fn center_lone_junction_boxes(
     g: &Graph,
     ranks: &[Vec<Slot>],
     slot_cross: &[Vec<usize>],
     boxes: &mut [BoxGeom],
     reversed: &[bool],
-    edge_spans: &[Option<(usize, usize)>],
-    horizontal_forks_only: bool,
 ) {
-    let centers: Vec<usize> = boxes.iter().map(|b| b.c + b.clen / 2).collect();
-    let dummy_cross = |edge: usize, rank: usize| {
-        let slot = ranks[rank]
-            .iter()
-            .position(|candidate| *candidate == Slot::Dummy(edge))
-            .expect("dummy exists for spanned rank");
-        slot_cross[rank][slot]
-    };
     let mut updates = vec![None; boxes.len()];
 
     for node in 0..boxes.len() {
@@ -952,25 +1246,20 @@ fn widen_cross_junction_boxes(
         let has_feedback = g.edges.iter().enumerate().any(|(edge_index, edge)| {
             reversed[edge_index] && (edge.from == node || edge.to == node)
         });
-        if horizontal_forks_only && has_feedback {
+        if has_feedback {
             continue;
         }
 
-        let mut attachments = Vec::new();
-        for outgoing in [true, false] {
-            if horizontal_forks_only && !outgoing {
-                continue;
-            }
-            if horizontal_forks_only && is_symmetric_junction(g, reversed, node, outgoing) {
-                continue;
-            }
-            let mut side = Vec::new();
-            let mut peers = Vec::new();
+        let mut incoming = Vec::new();
+        let mut outgoing_centers = Vec::new();
+        for is_outgoing in [true, false] {
+            let mut peer_centers2 = Vec::new();
+            let mut peers = Vec::<usize>::new();
             for (edge_index, edge) in g.edges.iter().enumerate() {
                 if edge.from == edge.to || reversed[edge_index] {
                     continue;
                 }
-                let is_here = if outgoing {
+                let is_here = if is_outgoing {
                     edge.from == node
                 } else {
                     edge.to == node
@@ -978,161 +1267,57 @@ fn widen_cross_junction_boxes(
                 if !is_here {
                     continue;
                 }
-                let peer = if outgoing { edge.to } else { edge.from };
+                let peer = if is_outgoing { edge.to } else { edge.from };
+                if peers.contains(&peer) {
+                    continue;
+                }
                 peers.push(peer);
-                let (start, end) = edge_spans[edge_index].unwrap();
-                let cross = if outgoing {
-                    if end - start == 1 {
-                        centers[edge.to]
-                    } else {
-                        dummy_cross(edge_index, start + 1)
-                    }
-                } else if end - start == 1 {
-                    centers[edge.from]
+                peer_centers2.push(2 * boxes[peer].c + boxes[peer].clen - 1);
+            }
+            if peers.len() > 1 {
+                if is_outgoing {
+                    outgoing_centers = peer_centers2;
                 } else {
-                    dummy_cross(edge_index, end - 1)
-                };
-                side.push(cross);
-            }
-            let all_distinct = peers
-                .iter()
-                .enumerate()
-                .all(|(index, peer)| !peers[..index].contains(peer));
-            if side.len() > 1 && all_distinct {
-                attachments.extend(side);
+                    incoming = peer_centers2;
+                }
             }
         }
 
-        if attachments.is_empty() {
-            continue;
-        }
-        let minimum = attachments.iter().copied().min().unwrap();
-        let maximum = attachments.iter().copied().max().unwrap();
-        let incoming = g
-            .edges
-            .iter()
-            .enumerate()
-            .filter(|(edge_index, edge)| {
-                edge.from != edge.to && !reversed[*edge_index] && edge.to == node
-            })
-            .count();
-        let mut outgoing_peers = Vec::new();
-        for (edge_index, edge) in g.edges.iter().enumerate() {
-            if edge.from != edge.to
-                && !reversed[edge_index]
-                && edge.from == node
-                && !outgoing_peers.contains(&edge.to)
-            {
-                outgoing_peers.push(edge.to);
-            }
-        }
-        let margin = if !horizontal_forks_only
-            && top_level_group(g, node).is_none()
-            && incoming == 0
-            && outgoing_peers.len() > 1
-        {
-            2
+        let attachments = if !incoming.is_empty() {
+            &incoming
+        } else if !outgoing_centers.is_empty() {
+            &outgoing_centers
         } else {
-            1
+            continue;
         };
+        let desired_center2 =
+            (attachments.iter().sum::<usize>() + attachments.len() / 2) / attachments.len();
         let box_ = &boxes[node];
-        let left = box_.c.min(minimum.saturating_sub(margin));
-        let right = (box_.c + box_.clen - 1).max(maximum + margin);
+        let start2 = desired_center2.saturating_sub(box_.clen - 1);
+        let cross = start2.div_ceil(2);
+        let right = cross + box_.clen - 1;
 
-        // Rank slots were collision-legalized before this quality pass. Do not
-        // widen a junction across an unrelated long-edge dummy: that would
-        // turn its reserved pass-through lane into a non-endpoint box
-        // intersection. Dummies belonging to this node's own incident edges
-        // are attachment lanes and may remain inside the widened box.
+        // A long edge that does not touch this junction owns its dummy lane.
+        // Skip the cosmetic centering move rather than covering that lane.
         let swallows_unrelated_lane = ranks[rank].iter().enumerate().any(|(slot, candidate)| {
             let Slot::Dummy(edge_index) = candidate else {
                 return false;
             };
-            let cross = slot_cross[rank][slot];
+            let lane = slot_cross[rank][slot];
             let edge = &g.edges[*edge_index];
-            edge.from != node && edge.to != node && cross >= left && cross <= right
+            edge.from != node && edge.to != node && lane >= cross && lane <= right
         });
         if swallows_unrelated_lane {
             continue;
         }
-        updates[node] = Some((left, right - left + 1));
+        updates[node] = Some(cross);
     }
 
     for (box_, update) in boxes.iter_mut().zip(updates) {
-        if let Some((cross, length)) = update {
+        if let Some(cross) = update {
             box_.c = cross;
-            box_.clen = length;
         }
     }
-}
-
-/// Width-aware wrap for node labels under B9 pressure. Never truncates; breaks
-/// on spaces when possible, otherwise on grapheme-ish char boundaries.
-fn wrap_label(text: &str, max_cols: usize) -> Vec<String> {
-    let max_cols = max_cols.max(1);
-    let mut out = Vec::new();
-    for para in text.split('\n') {
-        if para.is_empty() {
-            out.push(String::new());
-            continue;
-        }
-        if para.width() <= max_cols {
-            out.push(para.to_string());
-            continue;
-        }
-        let mut cur = String::new();
-        let mut cur_w = 0usize;
-        for word in para.split(' ') {
-            let ww = word.width();
-            if cur.is_empty() {
-                if ww <= max_cols {
-                    cur = word.to_string();
-                    cur_w = ww;
-                } else {
-                    // Hard-break an overlong token.
-                    for ch in word.chars() {
-                        let cw = ch.width().unwrap_or(1).max(1);
-                        if cur_w + cw > max_cols && !cur.is_empty() {
-                            out.push(std::mem::take(&mut cur));
-                            cur_w = 0;
-                        }
-                        cur.push(ch);
-                        cur_w += cw;
-                    }
-                }
-                continue;
-            }
-            if cur_w + 1 + ww <= max_cols {
-                cur.push(' ');
-                cur.push_str(word);
-                cur_w += 1 + ww;
-            } else {
-                out.push(std::mem::take(&mut cur));
-                cur_w = 0;
-                if ww <= max_cols {
-                    cur = word.to_string();
-                    cur_w = ww;
-                } else {
-                    for ch in word.chars() {
-                        let cw = ch.width().unwrap_or(1).max(1);
-                        if cur_w + cw > max_cols && !cur.is_empty() {
-                            out.push(std::mem::take(&mut cur));
-                            cur_w = 0;
-                        }
-                        cur.push(ch);
-                        cur_w += cw;
-                    }
-                }
-            }
-        }
-        if !cur.is_empty() {
-            out.push(cur);
-        }
-    }
-    if out.is_empty() {
-        out.push(String::new());
-    }
-    out
 }
 
 /// DFS in declaration order; an edge to a node on the current stack is a back edge.
@@ -1553,9 +1738,8 @@ fn top_level_group(g: &Graph, node: usize) -> Option<usize> {
 }
 
 /// Assign a port cross-row for each forward edge at its real endpoint.
-/// Horizontal diamond branches share a centered junction port. Vertical
-/// distinct-peer junctions align each port with its adjacent shaft after the
-/// box has widened to cover those columns. Parallel edges retain distinct lanes.
+/// Acyclic distinct-peer forks/merges share the box's centered port and branch
+/// in the adjacent channel. Parallel edges retain distinct lanes.
 fn port_map(
     g: &Graph,
     boxes: &[BoxGeom],
@@ -1612,20 +1796,18 @@ fn port_map(
             && attached
                 .iter()
                 .all(|&(_, _, peer)| attached.iter().filter(|&&(_, _, p)| p == peer).count() == 1);
-        let symmetric_junction = is_symmetric_junction(g, reversed, ni, outgoing);
         let has_feedback =
             g.edges.iter().enumerate().any(|(edge_index, edge)| {
                 reversed[edge_index] && (edge.from == ni || edge.to == ni)
             });
-        let aligned_junction = distinct_junction
-            && (!horizontal || (outgoing && !symmetric_junction && !has_feedback));
-        let centered_junction = distinct_junction && symmetric_junction;
+        let labeled_horizontal_merge = horizontal
+            && !outgoing
+            && attached
+                .iter()
+                .any(|&(edge_index, _, _)| g.edges[edge_index].label.is_some());
+        let centered_junction = distinct_junction && !has_feedback && !labeled_horizontal_merge;
         let interior = b.clen.saturating_sub(2).max(1);
-        for (index, &(ei, other_c, _)) in attached.iter().enumerate() {
-            if aligned_junction {
-                port[ei] = other_c.clamp(b.c + 1, b.c + b.clen.saturating_sub(2));
-                continue;
-            }
+        for (index, &(ei, _, _)) in attached.iter().enumerate() {
             let offset = if centered_junction || attached.len() == 1 {
                 b.clen / 2
             } else {

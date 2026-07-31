@@ -6,6 +6,36 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Changed
+- Flowchart rank channels now reserve rows from visible geometry instead of a
+  blanket five-row minimum: one row for a straight arrow, two per reusable
+  fork/merge track, and only the measured rows needed by labels and endpoint
+  adornments. Distinct-peer junctions keep content-sized boxes and share a
+  centered external track; feedback and labeled horizontal merges retain
+  separate ports where their topology requires them. Group boundaries keep
+  cumulative frame padding plus one visible separation cell. Representative
+  vertical goldens shrink from 35→21 rows (`forkmerge`), 19→13
+  (`nested-merge`), 23→18 (`ignored-directives`), and 19→13
+  (`dir-tb-labels`) while all exact eligible alignment residuals reach zero.
+- Sequence `alt` / `else` now renders as one containing `alt` frame with a
+  labeled full-width branch separator, instead of nesting a second frame for
+  `else`. Controls inside the alternate branch retain one clear inset, and the
+  separator joins both frame sides and every lifeline in Unicode and ASCII.
+- Width fallback now optimizes for readable output rather than forcing every
+  rank toward one tiny cap. Flowchart, mindmap, timeline, and sequence labels
+  wrap only at word boundaries with an eight-column floor; identifiers stay
+  intact and accept honest overflow. Sequence diagrams now compact and wrap
+  under `--width`, while class/ER tables preserve their columns and compact
+  only relationship channels. The default structured-chain goldens shrink from
+  128→116 columns (`class-relations`), 115→109 (`er-basic`), and 112→100
+  (`er-cardinalities`).
+- `--ascii` now means ASCII structural glyphs rather than rewriting user label
+  text. Solid, dotted, and thick straight segments retain distinct ASCII
+  styles, and the help text states the boundary explicitly.
+- The sequence engine is now organized as `sequence/{ir,parse,layout,dump}.rs`
+  behind the unchanged `sequence::parse`, `sequence::scene`, and
+  `sequence::dump` API. This separates semantic data, Mermaid syntax,
+  geometry, and debugging responsibilities without changing rendered bytes or
+  behavior contracts.
 - Roadmap breadth is deliberately paused after the shipped flowchart,
   sequence, state/class/ER, mindmap, and timeline core. `gitGraph` remains
   available as a tested parked branch (`codex/git-todo-later` at `7f2989b`),
@@ -17,6 +47,31 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   case at a time and persists only annotated cases to `.llmaid-review.json`.
 
 ### Fixed
+- CI fixtures now retain canonical LF endings on Windows, preserving exact
+  golden byte comparisons across platforms. CLI subprocess tests also accept
+  the legitimate broken pipe produced when argument validation exits before
+  consuming irrelevant stdin.
+- Group frames now merge their own stroke directions with connectors crossing
+  any side, producing a real tee/crossing instead of a vertical or horizontal
+  hole that merely occupied the same cell. Border invariants require the exact
+  side/corner orientation while allowing legitimate extra crossing bits.
+  Flowchart group titles choose the nearest deterministic clear interior span,
+  so vertical entry/exit paths no longer overwrite centered titles.
+- Terminal text is painted as measured extended grapheme clusters, so
+  combining accents and emoji ZWJ sequences no longer consume a fake extra
+  cell or erase a following border. Explicit line breaks now own separate
+  `SceneText` rows (including flowchart edge labels), while C0/C1 controls,
+  tabs, and bare carriage returns fail with a source line before normal render
+  or audit. Checked rendering rejects unsafe programmatic scene text, the
+  painter never forwards a control scalar, legitimate user ellipses are no
+  longer mistaken for truncation, parsed standalone zero-column graphemes fail
+  without misclassifying combining marks attached to visible punctuation, and
+  border checks cover complete perimeters rather than four corners.
+- Known unsupported Mermaid document headers now fail directly instead of
+  falling through as plausible headerless flowcharts. Parse diagnostics name
+  the file or stdin plus the offending source line; `--width 0` and multiple
+  input sources fail during argument parsing; and a downstream closed pipe is
+  handled as successful pipeline termination instead of a Rust stdout panic.
 - Golden reviewer: mixed-width CJK and emoji use the original Python terminal
   cell painter, avoiding browser fallback-font advances without breaking joined
   sequence lifelines and frame strokes.
@@ -45,23 +100,10 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   shared width parity from the terminal/top label. This makes `top` exactly
   centered with equal visible padding while both BT boxes remain identical;
   even-length labels retain only the unavoidable half-cell residual.
-- Fourth-round gallery review: normalized vertical chains retain identical box
-  widths and use a deterministic right bias when odd/even text parity offers
-  two equally near positions around the arrow column. Root vertical forks keep
-  two interior cells between attachment ports and box corners, giving `AST`
-  more visual breathing room without changing its straight shafts.
-- Third-round gallery review: acyclic, non-reconverging horizontal forks may
-  expand across child rows. `shapes` now has zero bends after `rect`, with the
-  label vertically centered in the expanded box. Approved diamond trunks and
-  feedback graphs are excluded.
-- Second-round gallery review: vertical edge labels now occupy the exact middle
-  row of equal rank gaps. Lone vertical fork/merge boxes widen across distinct
-  attachment columns, and collision-free long-edge dummy lanes remain on a
-  source/target column. This removes every avoidable bend from `forkmerge`,
-  `ignored-directives`, and `nested-merge` while parallel edges keep their
-  separate lanes. A grouped fork with internal and external children staggers
-  the external child one rank later, preserving both straight shafts and the
-  external-node/frame non-intersection contract.
+- Earlier gallery passes established the deterministic vertical-chain parity
+  bias and exact middle-row placement for vertical edge labels. D30 supersedes
+  their routing-driven fork/merge box expansion with natural boxes and shared
+  external tracks while retaining exact eligible alignment.
 - Bulk-review feedback now has exact routing contracts: eligible diamond motifs
   share one centered fork/merge trunk and mirrored jog track; simple vertical
   chains use the widest standard box and one centerline; horizontal bend labels
@@ -80,6 +122,23 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   `diamond` Result, `forkmerge` VM/Value, `edge-labels`.
 
 ### Added
+- A concise product README, explicit Rust 1.88 package metadata, and a
+  cross-platform CI quality gate covering the MSRV, formatting, Clippy, Python
+  gallery tests, and the full Rust suite on Linux, macOS, and Windows.
+  `cargo package` contents and the live README example are verified. The project
+  is MIT licensed; selecting the first release channel remains the distribution
+  decision.
+- Named audit quality and fit diagnostics (B33): nonzero exact flowchart
+  alignment, symmetry, and crossing residuals plus over-width fallback now
+  appear in the existing `llmaid.audit.v1` violation vector with deterministic
+  names and structured metric/width witnesses. The public audit API exposes
+  the same ordered diagnostic vector; descriptive bend and wire totals remain
+  metrics rather than an invented scalar score.
+- Terminal-safe text behavior (B32), with cross-engine grapheme/control
+  coverage, direct canvas regressions, and a `terminal-text` golden covering
+  combining marks, a ZWJ emoji, multiline edge text, and a legitimate ellipsis.
+- `unicode-segmentation` as the Unicode grapheme-boundary counterpart to
+  `unicode-width`; see D28.
 - Phase 4.2 core timelines (B26): `timeline` dispatch, a type-specific ordered
   title/period/event/section IR, inline and continuation events, strict
   line-specific placement/syntax errors, a reusable semantic-free integer
@@ -88,16 +147,17 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   period/event counts and chronological ranks, 170 exhaustive small structures,
   deep/broad/Unicode/long-label stress coverage, exact temporal geometry
   contracts, and five focused goldens. Calendar arithmetic, gantt bars,
-  direction variants, styling, and zero-width terminal sequences remain
-  explicitly deferred; accepted Phase 4.1 mindmap bytes/contracts are unchanged.
+  direction variants, and styling remain explicitly deferred; D28 now supplies
+  the shared extended-grapheme behavior.
 - Phase 4.1 core mindmaps (B25): `mindmap` dispatch, a type-specific ordered
   indentation IR, strict line-specific errors, a reusable native integer tree
   layout, arrowless shared-trunk Scene geometry, deterministic Unicode/ASCII
   output, B9 width fallback, typed audit JSON with exact level counts, 197
   generated ordered-tree shapes, exact parent-child quality contracts, and
   balanced/deep/wide/Unicode goldens. Canonical `root((label))` is accepted as
-  a label spelling; icons, styles, classes, Markdown, general node shapes, and
-  zero-width terminal sequences remain explicitly deferred.
+  a label spelling; icons, styles, classes, Markdown, and general node shapes
+  remain explicitly deferred. D28 now supplies shared extended-grapheme
+  behavior.
 - Phase 3.4 terminal visual fidelity: class headers and members now use closed
   compartments; aggregation/composition/inheritance/dependency/realization use
   endpoint diamonds, arrows, and triangles; multiplicities sit beside their
@@ -200,8 +260,8 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   graph-easy, mermaid.js). Product stance: agents create/self-debug, humans
   view. Linked from `AGENTS.md`, `HANDOFF.md`, `DESIGN.md`.
 - Testing (B14): rendered `.txt` golden snapshots byte-compared; canvas
-  invariants (closed borders, label cells intact, edge endpoints, no
-  truncation glyphs) via `render::render_with_checks` on every case.
+  invariants (complete closed borders, exact grapheme/continuation cells, and
+  edge endpoints) via `render::render_with_checks` on every case.
 - Layout (B9/B10): `--width` overflow ladder — normal → compact gaps → wrap
   labels under pressure → over-width if still needed; never truncate or fail.
   Comfortable budgets leave single-line labels intact.
@@ -237,6 +297,92 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 
 ### Decisions
 
+- **D33 — A frame crossing is a bitmask union, not a punched hole.** Group
+  borders merge their required line directions into existing connector cells,
+  letting the shared glyph table resolve a continuous tee or crossing. The
+  invariant gate checks the required mask for every side and corner while
+  permitting additional connector directions. Flowchart routing places a
+  title in the nearest unoccupied interior span after edge geometry is known;
+  the painter never chooses between destroying text and destroying a path.
+  Rejected: painting frames only into empty cells, accepting any line
+  orientation as a closed border, and hiding a connector underneath a title.
+
+- **D32 — Alternate branches subdivide one semantic frame.** Sequence layout
+  lowers `else` to a labeled horizontal separator inside its containing `alt`
+  `SceneGroup`; nested controls keep their ordinary control depth rather than
+  gaining a fake branch-frame depth. `SceneGroupSeparator` is a narrow generic
+  scene primitive whose complete stroke, label, frame joins, and lifeline
+  crossings are painted and checked without exposing sequence syntax to the
+  renderer. Rejected: the previous nested `else` frame (excess ink and false
+  hierarchy), type-specific painter logic, and an unframed floating branch
+  label with no exact geometry contract.
+
+- **D31 — Audit v1 already has the right diagnostic envelope.** Exact nonzero
+  topology residuals and width-target overflow are serialized as new stable
+  names inside the existing `violations` vector, whose per-name witness was
+  already an open structured value. This preserves the byte shape and output of
+  clean v1 reports without a schema bump or a parallel advisory field. Metric
+  witnesses carry the exact doubled-cell value; fit witnesses carry target,
+  rendered width, and overflow columns. These entries make imperfection
+  inspectable but do not make permitted B9 overflow a render failure. Bends and
+  wire length stay descriptive until a topology-specific contract proves one
+  avoidable. Rejected: `llmaid.audit.v2` for an additive use of the existing
+  envelope, opaque prose-only diagnostics, and any global beauty/severity
+  score.
+
+- **D30 — Flowchart whitespace follows visible geometry; junctions branch
+  outside natural boxes.** Vertical rank channels reserve one straight-arrow
+  row, two rows per reusable bend track, measured label rows plus the terminal
+  arrow row, and explicit endpoint/group clearance. Acyclic distinct-peer
+  forks and merges attach at one centered box port and share the lowest
+  external track instead of inflating the node across every peer lane. A
+  bounded legal-slot pass may align a mono endpoint without reordering
+  siblings or swallowing long-edge lanes; horizontal rank members center on
+  their rank extent. Exact fork/merge barycenter diagnostics apply only to
+  feedback-free junctions, matching the router's eligibility rule. Rejected:
+  the blanket five-row vertical gap, extreme junction widening solely to
+  achieve zero bends, grading perimeter-feedback junctions as avoidably
+  off-center, and compaction that lets external boxes touch group frames.
+
+- **D29 — Width is a readability target, not permission to make text
+  vertical.** The B9 ladder evaluates rendered width after normal and compact
+  spacing, wraps only complete words with an eight-column floor, and chooses
+  the largest cap that fits. Whitespace-free developer tokens remain whole; if
+  readable wrapping cannot meet the target, the result may stay over-width and
+  wrapping is retained only when it reduces the overflow. Sequence headers,
+  messages, and notes participate in the same ladder. Structured class/ER
+  tables use compact unwrapped geometry because wrapping placeholder rows would
+  corrupt their final columns. Rejected: one-character columns, slicing
+  identifiers, blindly returning an over-wrapped candidate, and treating
+  `--width` as a destructive hard maximum.
+
+- **D28 — Extended grapheme clusters are the terminal paint atom.** Canvas
+  text cells retain one complete Unicode grapheme plus its measured
+  continuation cells, using `unicode-segmentation` for boundaries and
+  `unicode-width` for columns. This preserves combining marks and emoji ZWJ
+  sequences without reimplementing Unicode tables or broadly rejecting valid
+  labels. Parsed label boundaries, rather than raw Mermaid punctuation, decide
+  whether a grapheme owns a visible cell. `SceneText` represents explicit
+  newlines as measured rows; control scalars never reach a cell and are
+  rejected with source-line diagnostics, with checked rendering as the
+  programmatic safety backstop. Truncation is verified by exact grapheme/run
+  continuity and full border closure, not by banning ellipsis glyphs that
+  users may intentionally write. Rejected:
+  treating every scalar as at least one cell, silently stripping valid
+  zero-width joiners, and maintaining a hand-written segmentation table.
+
+- **D27 — CLI failures are source-aware and pipeline-native.** Type dispatch
+  rejects a conservative catalog of exact unsupported Mermaid headers before
+  the forgiving headerless-flowchart fallback, while actual flowchart
+  statements remain legal without a header. Human parse errors use
+  `source:line`, a repairable expectation, and a terminal-safe source excerpt.
+  stdout is written explicitly through a buffered writer; `BrokenPipe` means a
+  downstream consumer stopped normally, while other write failures use exit
+  74. Exactly one FILE/`-` source and a positive width are validated before
+  reading. ASCII mode transforms structure, not arbitrary label text, and
+  preserves edge-kind distinctions. A new machine-error flag remains deferred
+  until its schema warrants expanding the intentionally tiny CLI.
+
 - **D26 — Timeline semantics own a reusable plain temporal spine.** Phase 4.2
   parses free-text periods, source-ordered events, and contiguous named section
   ranges into an independent IR, then lowers measured slots through a
@@ -256,10 +402,10 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   integer tree engine. Source sibling order is authoritative; parents center
   exactly on their child span; arrowless shared trunks follow Unix/Diagon tree
   convention; width fallback wraps only under pressure and may render
-  over-width rather than truncate. Advanced Mermaid mindmap syntax and
-  zero-width terminal sequences fail explicitly until their rendering semantics
-  are designed. Rejected: feeding fake flowchart edges to Sugiyama (order and
-  tidy-tree contracts become incidental) and embedding/invoking Diagon.
+  over-width rather than truncate. Advanced Mermaid mindmap syntax remains
+  deferred; D28 now defines shared rendering for extended grapheme clusters.
+  Rejected: feeding fake flowchart edges to Sugiyama (order and tidy-tree
+  contracts become incidental) and embedding/invoking Diagon.
 
 - **D24 — Relationship notation is endpoint geometry, not edge-label text.**
   Class/ER engines lower semantic adornments and structured table content into
@@ -333,7 +479,7 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   order / position) are classic and small at our scale. Fallback if quality
   stalls: `dagre` crate (full dagre.js port) behind the same narrow layout API.
 
-- **D4 — Only dependency: `unicode-width`.** Terminal column measurement is a
+- **D4 — Unicode width tables are a dependency.** Terminal column measurement is a
   maintained-Unicode-tables problem (CJK, emoji ZWJ, combining marks; shifts
   with each Unicode release) — exactly what to outsource. Canonical unicode-rs
   crate used by ratatui et al. Rolling our own rejected as re-deriving the same

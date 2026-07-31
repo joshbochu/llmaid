@@ -1,9 +1,10 @@
 //! Core Mermaid `mindmap` subset: one indentation-defined ordered hierarchy.
 
-use crate::parse::{ParseError, Warning};
+use crate::parse::{ParseError, Warning, validate_terminal_text};
 use crate::scene::{EdgeKind, RoutedEdge, Scene, SceneBox, Shape};
 use crate::tree::{self, TreeNode};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use crate::wrapping::{self, MIN_READABLE_COLUMNS};
+use unicode_width::UnicodeWidthStr;
 
 const NORMAL_DEPTH_GAP: i32 = 6;
 const COMPACT_DEPTH_GAP: i32 = 3;
@@ -41,6 +42,7 @@ impl Mindmap {
 }
 
 pub fn parse(src: &str) -> Result<Mindmap, ParseError> {
+    crate::parse::validate_terminal_source(src)?;
     let mut diagram = Mindmap::default();
     let mut seen_header = false;
     let mut stack: Vec<usize> = Vec::new();
@@ -112,12 +114,6 @@ pub fn parse(src: &str) -> Result<Mindmap, ParseError> {
                 "unsupported advanced mindmap syntax; expected a plain label",
             ));
         }
-        if text.chars().any(|ch| ch.width() == Some(0)) {
-            return Err(error(
-                line_number,
-                "unsupported zero-width Unicode sequence in core mindmap label; use precomposed text or a single-scalar emoji",
-            ));
-        }
         let label = if let Some(label) = canonical_root {
             label.to_string()
         } else {
@@ -126,6 +122,7 @@ pub fn parse(src: &str) -> Result<Mindmap, ParseError> {
         if label.is_empty() {
             return Err(error(line_number, "expected a non-empty mindmap label"));
         }
+        validate_terminal_text(&label, line_number)?;
         let parent = (depth > 0).then(|| stack[depth - 1]);
         let index = diagram.nodes.len();
         diagram.nodes.push(MindmapNode {
@@ -211,9 +208,14 @@ pub fn scene(diagram: &Mindmap, max_width: usize) -> Scene {
     let wrapped: Vec<Vec<String>> = diagram
         .nodes
         .iter()
-        .map(|node| wrap_label(&node.label, caps[node.depth]))
+        .map(|node| wrapping::wrap_words(&node.label, caps[node.depth]))
         .collect();
-    lower(diagram, &wrapped, COMPACT_DEPTH_GAP)
+    let wrapped = lower(diagram, &wrapped, COMPACT_DEPTH_GAP);
+    if wrapped.bounds().w < compact.bounds().w {
+        wrapped
+    } else {
+        compact
+    }
 }
 
 fn lower(diagram: &Mindmap, lines: &[Vec<String>], depth_gap: i32) -> Scene {
@@ -277,6 +279,10 @@ fn wrap_caps(diagram: &Mindmap, max_width: usize, gap: usize) -> Vec<usize> {
     for node in &diagram.nodes {
         caps[node.depth] = caps[node.depth].max(node.label.width().max(1));
     }
+    let minimums: Vec<usize> = caps
+        .iter()
+        .map(|cap| (*cap).min(MIN_READABLE_COLUMNS))
+        .collect();
     let overhead = 4usize
         .saturating_mul(levels)
         .saturating_add(gap.saturating_mul(levels.saturating_sub(1)));
@@ -285,7 +291,7 @@ fn wrap_caps(diagram: &Mindmap, max_width: usize, gap: usize) -> Vec<usize> {
         let Some((depth, _)) = caps
             .iter()
             .enumerate()
-            .filter(|(_, cap)| **cap > 1)
+            .filter(|(depth, cap)| **cap > minimums[*depth])
             .max_by_key(|(depth, cap)| (**cap, std::cmp::Reverse(*depth)))
         else {
             break;
@@ -293,47 +299,4 @@ fn wrap_caps(diagram: &Mindmap, max_width: usize, gap: usize) -> Vec<usize> {
         caps[depth] -= 1;
     }
     caps
-}
-
-fn wrap_label(text: &str, max_cols: usize) -> Vec<String> {
-    let max_cols = max_cols.max(1);
-    if text.width() <= max_cols {
-        return vec![text.to_string()];
-    }
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    for word in text.split_whitespace() {
-        let candidate = if current.is_empty() {
-            word.to_string()
-        } else {
-            format!("{current} {word}")
-        };
-        if candidate.width() <= max_cols {
-            current = candidate;
-            continue;
-        }
-        if !current.is_empty() {
-            lines.push(std::mem::take(&mut current));
-        }
-        if word.width() <= max_cols {
-            current.push_str(word);
-            continue;
-        }
-        for ch in word.chars() {
-            let mut candidate = current.clone();
-            candidate.push(ch);
-            if !current.is_empty() && candidate.width() > max_cols {
-                lines.push(std::mem::take(&mut current));
-            }
-            current.push(ch);
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    if lines.is_empty() {
-        vec![text.to_string()]
-    } else {
-        lines
-    }
 }

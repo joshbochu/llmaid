@@ -120,10 +120,6 @@ fn b14_frame_invariants_hold_for_all_cases() {
         }
         let scene = diagram::scene(&parsed, 100);
         let (rendered, inv) = render::render_scene_with_checks(&scene, style);
-        assert!(
-            !rendered.contains('…') && !rendered.contains("..."),
-            "case `{name}` truncated"
-        );
         if !inv.is_empty() {
             failures.push(format!("`{name}`: {}", inv.join("; ")));
         }

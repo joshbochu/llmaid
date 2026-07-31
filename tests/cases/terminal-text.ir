@@ -1,0 +1,8 @@
+direction: LR
+nodes:
+  A rect "café"
+  B rect "developer 👩‍💻"
+  C rect "Wait…"
+edges:
+  A -->|one\ntwo| B
+  B --> C

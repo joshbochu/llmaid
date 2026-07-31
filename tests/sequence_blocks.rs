@@ -93,7 +93,7 @@ fn malformed_control_blocks_name_the_line_and_expectation() {
 fn nested_control_blocks_render_closed_frames_without_losing_labels() {
     let parsed = diagram::parse(BLOCKS).unwrap();
     let scene = diagram::scene(&parsed, 100);
-    assert_eq!(scene.groups.len(), 4, "loop, two alt branches, and opt");
+    assert_eq!(scene.groups.len(), 3, "loop, one alt frame, and opt");
     let group = |title: &str| {
         scene
             .groups
@@ -102,31 +102,38 @@ fn nested_control_blocks_render_closed_frames_without_losing_labels() {
             .unwrap_or_else(|| panic!("missing group {title:?}"))
     };
     let alt = group("alt accepted");
-    let else_branch = group("else rejected");
     let opt = group("opt retryable");
     assert!(
-        alt.rect.contains(llmaid::scene::Point::new(
-            else_branch.rect.x,
-            else_branch.rect.y
-        )) && alt.rect.contains(llmaid::scene::Point::new(
-            else_branch.rect.right() - 1,
-            else_branch.rect.bottom() - 1,
-        )),
-        "else branch should be visibly nested inside alt: {alt:?} {else_branch:?}"
+        scene
+            .groups
+            .iter()
+            .all(|group| !group.title.text.starts_with("else ")),
+        "else must subdivide the alt frame rather than create another frame"
+    );
+    assert_eq!(alt.separators.len(), 1);
+    let separator = &alt.separators[0];
+    assert_eq!(separator.label.text.trim(), "else rejected");
+    assert_eq!(
+        separator.label.at,
+        llmaid::scene::Point::new(alt.rect.x + 2, separator.y)
     );
     assert!(
-        else_branch
-            .rect
+        alt.rect
             .contains(llmaid::scene::Point::new(opt.rect.x, opt.rect.y))
-            && else_branch.rect.contains(llmaid::scene::Point::new(
+            && alt.rect.contains(llmaid::scene::Point::new(
                 opt.rect.right() - 1,
                 opt.rect.bottom() - 1,
             )),
-        "blocks inside else should nest inside its branch: {else_branch:?} {opt:?}"
+        "blocks inside else should remain inside the single alt frame: {alt:?} {opt:?}"
     );
     assert!(
-        opt.rect.x > else_branch.rect.x && opt.rect.right() < else_branch.rect.right(),
-        "nested opt needs visible horizontal insets: {else_branch:?} {opt:?}"
+        opt.rect.x > alt.rect.x && opt.rect.right() < alt.rect.right(),
+        "nested opt needs visible horizontal insets: {alt:?} {opt:?}"
+    );
+    assert_eq!(
+        opt.rect.y,
+        separator.y + 2,
+        "the branch label owns its divider row and one breathing row"
     );
     let first_lifeline = scene.paths[0].points[0].x;
     let last_lifeline = scene.paths[1].points[0].x;
@@ -149,12 +156,23 @@ fn nested_control_blocks_render_closed_frames_without_losing_labels() {
     ] {
         assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
     }
-    assert!(!unicode.contains('…'));
-
+    let else_line = unicode
+        .lines()
+        .find(|line| line.contains("else rejected"))
+        .unwrap();
+    assert!(
+        else_line.contains("├─ else rejected ─") && else_line.contains('┤'),
+        "else branch needs a visible full-width separator:\n{unicode}"
+    );
     let (ascii, failures) = render::render_scene_with_checks(&scene, Style { ascii: true });
     assert!(failures.is_empty(), "{}\n{ascii}", failures.join("\n"));
     assert!(ascii.is_ascii(), "ASCII mode emitted Unicode:\n{ascii}");
-    assert!(ascii.contains("else rejected"));
+    assert!(
+        ascii
+            .lines()
+            .any(|line| line.contains("+- else rejected -")),
+        "ASCII else separator missing:\n{ascii}"
+    );
 }
 
 #[test]
@@ -199,4 +217,45 @@ sequenceDiagram
         )),
         "activation must be contained by loop: {frame:?} {activation:?}"
     );
+}
+
+#[test]
+fn activation_spanning_alt_separator_remains_closed_and_attached() {
+    let source = "\
+sequenceDiagram
+  participant A
+  participant B
+  activate A
+  alt accepted
+    A->>B: call
+  else rejected
+    B-->>A: retry
+  end
+  deactivate A
+";
+    let parsed = diagram::parse(source).unwrap();
+    let scene = diagram::scene(&parsed, 100);
+    let alt = scene
+        .groups
+        .iter()
+        .find(|group| group.title.text == "alt accepted")
+        .expect("alt frame");
+    let separator = &alt.separators[0];
+    let activation = scene
+        .foreground_boxes
+        .iter()
+        .find(|box_| box_.lines.is_empty())
+        .expect("activation bar");
+    assert!(
+        activation.rect.y < separator.y && activation.rect.bottom() > separator.y,
+        "activation should span both branches: {activation:?} {separator:?}"
+    );
+
+    for ascii in [false, true] {
+        let (output, failures) = render::render_scene_with_checks(&scene, Style { ascii });
+        assert!(failures.is_empty(), "{}\n{output}", failures.join("\n"));
+        for label in ["alt accepted", "else rejected", "call", "retry"] {
+            assert!(output.contains(label), "missing {label:?}:\n{output}");
+        }
+    }
 }

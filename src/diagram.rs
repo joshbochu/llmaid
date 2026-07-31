@@ -25,17 +25,81 @@ pub enum Diagram {
 pub fn parse(src: &str) -> Result<Diagram, ParseError> {
     let first = src
         .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty() && !line.starts_with("%%"));
-    match first.and_then(|line| line.split_whitespace().next()) {
+        .enumerate()
+        .map(|(index, line)| (index, line.trim()))
+        .find(|(_, line)| !line.is_empty() && !line.starts_with("%%"));
+    let first_line = first.map(|(index, line)| (index + 1, line));
+    let first_keyword = first_line.and_then(|(_, line)| line.split_whitespace().next());
+    match first_keyword {
         Some("sequenceDiagram") => sequence::parse(src).map(Diagram::Sequence),
         Some("stateDiagram" | "stateDiagram-v2") => state::parse(src).map(Diagram::State),
         Some("classDiagram") => class::parse(src).map(Diagram::Class),
         Some("erDiagram") => er::parse(src).map(Diagram::Er),
         Some("mindmap") => mindmap::parse(src).map(Diagram::Mindmap),
         Some("timeline") => timeline::parse(src).map(Diagram::Timeline),
-        _ => parse::parse(src).map(Diagram::Flowchart),
+        _ => {
+            if let Some((line_number, line)) = first_line
+                && let Some(header) = unsupported_header(line)
+            {
+                return Err(ParseError {
+                    line: line_number,
+                    msg: format!(
+                        "diagram type `{header}` is not supported; rewrite it as a supported type, such as `flowchart LR`"
+                    ),
+                });
+            }
+            parse::parse(src).map(Diagram::Flowchart)
+        }
     }
+}
+
+/// Return a known Mermaid document header that llmaid deliberately does not
+/// implement. Detection stays conservative: a recognized type token followed
+/// by flowchart node/edge syntax continues through the flowchart parser.
+fn unsupported_header(line: &str) -> Option<&str> {
+    let statement = line.split(';').next().unwrap_or(line).trim();
+    let mut words = statement.split_whitespace();
+    let keyword = words.next()?;
+    let rest = statement[keyword.len()..].trim();
+
+    const UNSUPPORTED_HEADERS: &[&str] = &[
+        "architecture-beta",
+        "block-beta",
+        "C4Component",
+        "C4Container",
+        "C4Context",
+        "C4Deployment",
+        "C4Dynamic",
+        "gantt",
+        "gitGraph",
+        "journey",
+        "kanban",
+        "packet-beta",
+        "quadrantChart",
+        "radar-beta",
+        "requirementDiagram",
+        "sankey-beta",
+        "treemap",
+        "treemap-beta",
+        "xychart-beta",
+        "zenuml",
+    ];
+    if UNSUPPORTED_HEADERS.contains(&keyword) && !looks_like_flowchart_statement(rest) {
+        return Some(keyword);
+    }
+
+    if keyword == "pie" && !looks_like_flowchart_statement(rest) {
+        return Some(keyword);
+    }
+
+    None
+}
+
+fn looks_like_flowchart_statement(rest: &str) -> bool {
+    matches!(rest.chars().next(), Some('[' | '(' | '{' | '&'))
+        || ["--", "-.", "==", "~~~"]
+            .iter()
+            .any(|operator| rest.starts_with(operator))
 }
 
 impl Diagram {

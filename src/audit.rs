@@ -27,6 +27,33 @@ impl GeometryViolation {
     }
 }
 
+/// One exact, named quality diagnostic exposed through the existing audit
+/// violation envelope.
+///
+/// Unlike [`GeometryViolation`], these diagnostics describe inspectable
+/// aesthetic or fit relationships rather than a corrupt scene. Their order is
+/// stable and their witness is deliberately structured instead of being
+/// hidden in a global score.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QualityDiagnostic {
+    pub name: &'static str,
+    pub message: String,
+    pub witness: QualityWitness,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QualityWitness {
+    Metric {
+        metric: &'static str,
+        value: usize,
+    },
+    Width {
+        target_width: usize,
+        rendered_width: usize,
+        overflow_columns: usize,
+    },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GeometryAudit {
     pub width: usize,
@@ -50,6 +77,113 @@ pub struct GeometryAudit {
     pub crossing_cells: usize,
     pub bends: usize,
     pub wire_length: usize,
+}
+
+/// Return non-zero exact topology residuals and width overflow in stable
+/// metric order. Routing costs such as total bends and wire length are
+/// intentionally excluded because they are descriptive until a topology
+/// contract proves that a particular cost is avoidable.
+pub fn quality_diagnostics(
+    audit: &GeometryAudit,
+    target_width: Option<usize>,
+) -> Vec<QualityDiagnostic> {
+    let mut diagnostics = Vec::new();
+    push_metric_diagnostic(
+        &mut diagnostics,
+        "rank_axis_misalignment",
+        "rank_axis_residual2",
+        audit.rank_axis_residual2,
+        "avoidable doubled-cell unit",
+        "avoidable doubled-cell units",
+    );
+    push_metric_diagnostic(
+        &mut diagnostics,
+        "mono_centerline_misalignment",
+        "mono_centerline_residual2",
+        audit.mono_centerline_residual2,
+        "avoidable doubled-cell unit",
+        "avoidable doubled-cell units",
+    );
+    push_metric_diagnostic(
+        &mut diagnostics,
+        "fork_barycenter_misalignment",
+        "fork_barycenter_residual2",
+        audit.fork_barycenter_residual2,
+        "avoidable doubled-cell unit",
+        "avoidable doubled-cell units",
+    );
+    push_metric_diagnostic(
+        &mut diagnostics,
+        "merge_barycenter_misalignment",
+        "merge_barycenter_residual2",
+        audit.merge_barycenter_residual2,
+        "avoidable doubled-cell unit",
+        "avoidable doubled-cell units",
+    );
+    push_metric_diagnostic(
+        &mut diagnostics,
+        "diamond_asymmetry",
+        "diamond_mirror_residual2",
+        audit.diamond_mirror_residual2,
+        "avoidable doubled-cell unit",
+        "avoidable doubled-cell units",
+    );
+    push_metric_diagnostic(
+        &mut diagnostics,
+        "edge_crossing",
+        "crossing_cells",
+        audit.crossing_cells,
+        "interior crossing cell",
+        "interior crossing cells",
+    );
+    if let Some(target_width) = target_width
+        && audit.width > target_width
+    {
+        let overflow_columns = audit.width - target_width;
+        let column_unit = if overflow_columns == 1 {
+            "column"
+        } else {
+            "columns"
+        };
+        diagnostics.push(QualityDiagnostic {
+            name: "width_target_exceeded",
+            message: format!(
+                "rendered width {} exceeds target width {} by {} {}",
+                audit.width, target_width, overflow_columns, column_unit
+            ),
+            witness: QualityWitness::Width {
+                target_width,
+                rendered_width: audit.width,
+                overflow_columns,
+            },
+        });
+    }
+    diagnostics
+}
+
+fn push_metric_diagnostic(
+    diagnostics: &mut Vec<QualityDiagnostic>,
+    name: &'static str,
+    metric: &'static str,
+    value: usize,
+    singular_unit: &'static str,
+    plural_unit: &'static str,
+) {
+    if value == 0 {
+        return;
+    }
+    diagnostics.push(QualityDiagnostic {
+        name,
+        message: format!(
+            "{metric} has {value} {}",
+            if value == 1 {
+                singular_unit
+            } else {
+                plural_unit
+            }
+        ),
+        witness: QualityWitness::Metric { metric, value },
+    });
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -159,7 +293,7 @@ pub fn json(diagram: &crate::diagram::Diagram, max_width: usize) -> String {
         crate::diagram::Diagram::Flowchart(graph) => {
             let placed = crate::layout::layout(graph, max_width);
             let scene = crate::route::route(graph, &placed);
-            flowchart_json(graph, &placed, &scene)
+            flowchart_json_with_target(graph, &placed, &scene, Some(max_width))
         }
         crate::diagram::Diagram::Sequence(sequence) => {
             let mut scene = crate::sequence::scene(sequence, max_width);
@@ -200,21 +334,29 @@ pub fn json(diagram: &crate::diagram::Diagram, max_width: usize) -> String {
                     .sum(),
             };
             let generic = generic_invariant_failures(&scene);
-            json_report("sequence", &audit, &violations(&scene), &generic, false)
+            json_report(
+                "sequence",
+                &audit,
+                &violations(&scene),
+                &generic,
+                false,
+                Some(max_width),
+            )
         }
         crate::diagram::Diagram::State(state) => {
-            generic_scene_json("state", crate::state::scene(state, max_width), 0)
+            generic_scene_json("state", crate::state::scene(state, max_width), 0, max_width)
         }
         crate::diagram::Diagram::Class(class) => {
-            generic_scene_json("class", crate::class::scene(class, max_width), 0)
+            generic_scene_json("class", crate::class::scene(class, max_width), 0, max_width)
         }
         crate::diagram::Diagram::Er(er) => {
-            generic_scene_json("er", crate::er::scene(er, max_width), 0)
+            generic_scene_json("er", crate::er::scene(er, max_width), 0, max_width)
         }
         crate::diagram::Diagram::Mindmap(mindmap) => generic_scene_json(
             "mindmap",
             crate::mindmap::scene(mindmap, max_width),
             mindmap.levels(),
+            max_width,
         ),
         crate::diagram::Diagram::Timeline(timeline) => generic_scene_json_with_counts(
             "timeline",
@@ -222,14 +364,15 @@ pub fn json(diagram: &crate::diagram::Diagram, max_width: usize) -> String {
             timeline.periods.len() + timeline.event_count(),
             timeline.event_count(),
             timeline.periods.len(),
+            max_width,
         ),
     }
 }
 
-fn generic_scene_json(diagram: &str, scene: Scene, ranks: usize) -> String {
+fn generic_scene_json(diagram: &str, scene: Scene, ranks: usize, target_width: usize) -> String {
     let nodes = scene.boxes.len();
     let edges = scene.edges.len();
-    generic_scene_json_with_counts(diagram, scene, nodes, edges, ranks)
+    generic_scene_json_with_counts(diagram, scene, nodes, edges, ranks, target_width)
 }
 
 fn generic_scene_json_with_counts(
@@ -238,6 +381,7 @@ fn generic_scene_json_with_counts(
     nodes: usize,
     edges: usize,
     ranks: usize,
+    target_width: usize,
 ) -> String {
     scene.normalize();
     let bounds = scene.bounds();
@@ -269,12 +413,28 @@ fn generic_scene_json_with_counts(
             .sum(),
     };
     let generic = generic_invariant_failures(&scene);
-    json_report(diagram, &audit, &violations, &generic, false)
+    json_report(
+        diagram,
+        &audit,
+        &violations,
+        &generic,
+        false,
+        Some(target_width),
+    )
 }
 
 /// Serialize caller-supplied flowchart geometry, primarily for layout tools
 /// that need the same stable report as the CLI.
 pub fn flowchart_json(graph: &Graph, placed: &Placed, scene: &Scene) -> String {
+    flowchart_json_with_target(graph, placed, scene, None)
+}
+
+fn flowchart_json_with_target(
+    graph: &Graph,
+    placed: &Placed,
+    scene: &Scene,
+    target_width: Option<usize>,
+) -> String {
     let mut scene = scene.clone();
     scene.normalize();
     let mut audit = measure(graph, placed, &scene);
@@ -282,7 +442,14 @@ pub fn flowchart_json(graph: &Graph, placed: &Placed, scene: &Scene) -> String {
         audit.ranks = 0;
     }
     let generic = generic_invariant_failures(&scene);
-    json_report("flowchart", &audit, &violations(&scene), &generic, true)
+    json_report(
+        "flowchart",
+        &audit,
+        &violations(&scene),
+        &generic,
+        true,
+        target_width,
+    )
 }
 
 fn generic_invariant_failures(scene: &Scene) -> Vec<String> {
@@ -304,15 +471,15 @@ fn json_report(
     violations: &[GeometryViolation],
     generic_violations: &[String],
     flowchart_metrics: bool,
+    target_width: Option<usize>,
 ) -> String {
     let mut output = format!(
         "{{\"schema\":\"llmaid.audit.v1\",\"diagram\":\"{diagram}\",\"bounds\":{{\"width\":{},\"height\":{},\"area\":{}}},\"elements\":{{\"nodes\":{},\"edges\":{},\"ranks\":{}}},\"violations\":[",
         audit.width, audit.height, audit.area, audit.nodes, audit.edges, audit.ranks
     );
-    for (index, violation) in violations.iter().enumerate() {
-        if index != 0 {
-            output.push(',');
-        }
+    let mut violation_count = 0usize;
+    for violation in violations {
+        push_json_separator(&mut output, &mut violation_count);
         output.push_str(&format!(
             "{{\"name\":\"{}\",\"message\":\"{}\",\"witness\":{{\"edge\":{},\"node\":{},\"at\":{{\"x\":{},\"y\":{}}}}}}}",
             violation.name,
@@ -323,14 +490,35 @@ fn json_report(
             violation.at.y
         ));
     }
-    for (index, message) in generic_violations.iter().enumerate() {
-        if !violations.is_empty() || index != 0 {
-            output.push(',');
-        }
+    for message in generic_violations {
+        push_json_separator(&mut output, &mut violation_count);
         output.push_str(&format!(
             "{{\"name\":\"scene_invariant\",\"message\":\"{}\",\"witness\":null}}",
             json_escape(message)
         ));
+    }
+    for diagnostic in quality_diagnostics(audit, target_width) {
+        push_json_separator(&mut output, &mut violation_count);
+        output.push_str(&format!(
+            "{{\"name\":\"{}\",\"message\":\"{}\",\"witness\":",
+            diagnostic.name,
+            json_escape(&diagnostic.message)
+        ));
+        match diagnostic.witness {
+            QualityWitness::Metric { metric, value } => {
+                output.push_str(&format!("{{\"metric\":\"{metric}\",\"value\":{value}}}"));
+            }
+            QualityWitness::Width {
+                target_width,
+                rendered_width,
+                overflow_columns,
+            } => {
+                output.push_str(&format!(
+                    "{{\"target_width\":{target_width},\"rendered_width\":{rendered_width},\"overflow_columns\":{overflow_columns}}}"
+                ));
+            }
+        }
+        output.push('}');
     }
     output.push_str("],\"metrics\":");
     if flowchart_metrics {
@@ -351,6 +539,13 @@ fn json_report(
     }
     output.push_str("}\n");
     output
+}
+
+fn push_json_separator(output: &mut String, count: &mut usize) {
+    if *count != 0 {
+        output.push(',');
+    }
+    *count += 1;
 }
 
 fn json_escape(value: &str) -> String {
@@ -449,7 +644,14 @@ fn junction_barycenter_residuals(
     let mut fork = 0usize;
     let mut merge = 0usize;
     for (node, &center) in centers.iter().enumerate() {
-        if topology.outgoing[node].len() >= 2 {
+        // Layout deliberately keeps separate ports at a junction incident to
+        // a perimeter-routed feedback edge. Its forward lanes are therefore
+        // not eligible for the avoidable, shared-trunk barycenter contract.
+        let feedback_incident = placed.back_edges.iter().any(|&edge_index| {
+            let edge = &graph.edges[edge_index];
+            edge.from == node || edge.to == node
+        });
+        if topology.outgoing[node].len() >= 2 && !feedback_incident {
             let mut destinations = Vec::new();
             let lanes: Vec<i64> = graph
                 .edges
@@ -473,7 +675,7 @@ fn junction_barycenter_residuals(
                 .collect();
             fork += lane_barycenter_numerator(center, &lanes);
         }
-        if topology.incoming[node].len() >= 2 {
+        if topology.incoming[node].len() >= 2 && !feedback_incident {
             let mut sources = Vec::new();
             let lanes: Vec<i64> = graph
                 .edges
@@ -659,5 +861,61 @@ mod tests {
         assert_eq!(parity_excess(3, 2), 2);
         assert_eq!(parity_excess(2, 4), 0);
         assert_eq!(parity_excess(6, 4), 4);
+    }
+
+    #[test]
+    fn quality_diagnostic_names_and_order_are_exact_without_grading_route_costs() {
+        let audit = GeometryAudit {
+            width: 21,
+            height: 9,
+            area: 189,
+            nodes: 4,
+            edges: 4,
+            ranks: 3,
+            hard_violations: Vec::new(),
+            rank_axis_residual2: 2,
+            mono_centerline_residual2: 4,
+            fork_barycenter_residual2: 6,
+            merge_barycenter_residual2: 8,
+            diamond_motifs: 1,
+            diamond_mirror_residual2: 10,
+            crossing_cells: 1,
+            bends: 99,
+            wire_length: 999,
+        };
+
+        let diagnostics = quality_diagnostics(&audit, Some(20));
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.name)
+                .collect::<Vec<_>>(),
+            vec![
+                "rank_axis_misalignment",
+                "mono_centerline_misalignment",
+                "fork_barycenter_misalignment",
+                "merge_barycenter_misalignment",
+                "diamond_asymmetry",
+                "edge_crossing",
+                "width_target_exceeded",
+            ]
+        );
+        assert_eq!(
+            diagnostics[5],
+            QualityDiagnostic {
+                name: "edge_crossing",
+                message: "crossing_cells has 1 interior crossing cell".to_string(),
+                witness: QualityWitness::Metric {
+                    metric: "crossing_cells",
+                    value: 1,
+                },
+            }
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .all(|diagnostic| !diagnostic.message.contains("bends")
+                    && !diagnostic.message.contains("wire_length"))
+        );
     }
 }

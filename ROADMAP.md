@@ -37,7 +37,7 @@ Agents speak Mermaid; we own primitives behind the door.
 | 4 | Hierarchy & planning (mindmap / timeline) | **done for current scope** |
 | 5 | Charts & boards (selective) | **parked** |
 | 6 | Agent self-debug loop | **in progress** (6.2–6.3 and 6.5 done) |
-| 7 | Distribution & product | later |
+| 7 | Distribution & product | **in progress** (README/CI/package metadata/license done; channel pending) |
 
 ---
 
@@ -151,7 +151,7 @@ and maintenance cost.
 
 | ID | Item | Notes |
 |----|------|--------|
-| 6.1 | Richer per-type error catalog | **in progress** — line + expectation for all shipped types |
+| 6.1 | Richer per-type error catalog | **in progress** — unified source + line + excerpt + expectation diagnostics; known unsupported headers fail directly |
 | 6.2 | Machine-readable geometry audit | **done** — stable v1 JSON; named violations, exact witnesses, every shipped type |
 | 6.3 | Generated + metamorphic topology tests | **done** — 71 DAGs + 40 design-doc direction renders + 197 ordered tree shapes + 170 timeline structures |
 | 6.4 | Optional machine-readable parser diagnostics | e.g. `--error-format=json` |
@@ -169,6 +169,7 @@ human review remains the oracle for preferences not yet expressed as geometry.
 
 | ID | Item |
 |----|------|
+| 7.0 | **done** — MIT license declared in the package and repository |
 | 7.1 | Release channel (crates.io / brew / gh releases — pick one first) |
 | 7.2 | Versioned CLI; examples per diagram type in `--help` or docs |
 | 7.3 | Visual gallery (checked-in renders) for human taste QA |

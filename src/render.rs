@@ -8,7 +8,8 @@ use crate::scene::{
     Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, ScenePath, SceneText, Shape,
 };
 use crate::style::{E, N, S, Style, W};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Copy, Debug)]
 enum Cell {
@@ -18,14 +19,27 @@ enum Cell {
         rounded: bool,
         kind: EdgeKind,
     },
-    Text(char),
-    WideCont,
+    Text {
+        run: usize,
+    },
+    WideCont {
+        run: usize,
+    },
+}
+
+#[derive(Debug)]
+struct TextRun {
+    text: String,
+    x: usize,
+    y: usize,
+    width: usize,
 }
 
 struct Canvas {
     w: usize,
     h: usize,
     cells: Vec<Cell>,
+    text_runs: Vec<TextRun>,
 }
 
 impl Canvas {
@@ -34,6 +48,7 @@ impl Canvas {
             w,
             h,
             cells: vec![Cell::Empty; w.saturating_mul(h)],
+            text_runs: Vec::new(),
         }
     }
 
@@ -67,7 +82,7 @@ impl Canvas {
                 // straight single-kind spans.
                 kind: old_kind,
             },
-            Cell::Text(_) | Cell::WideCont => self.cells[ix],
+            Cell::Text { .. } | Cell::WideCont { .. } => self.cells[ix],
         };
     }
 
@@ -86,24 +101,88 @@ impl Canvas {
     }
 
     fn put_text_char(&mut self, x: usize, y: usize, ch: char) {
-        if !self.in_bounds(x, y) {
+        let mut encoded = [0; 4];
+        self.put_text(x, y, ch.encode_utf8(&mut encoded));
+    }
+
+    fn put_text_run(&mut self, x: usize, y: usize, text: &str, width: usize) {
+        if width == 0 || !self.in_bounds(x, y) {
             return;
         }
-        let width = ch.width().unwrap_or(1).max(1);
+
+        // Replacing any cell of a wide grapheme removes that entire grapheme.
+        // Leaving its start behind would make the terminal print more columns
+        // than the canvas owns; leaving a continuation behind would suppress a
+        // real canvas cell.
+        let mut replaced = Vec::new();
+        for dx in 0..width {
+            if !self.in_bounds(x + dx, y) {
+                continue;
+            }
+            let owner = match self.cells[self.idx(x + dx, y)] {
+                Cell::Text { run } | Cell::WideCont { run } => Some(run),
+                _ => None,
+            };
+            if let Some(run) = owner
+                && !replaced.contains(&run)
+            {
+                replaced.push(run);
+            }
+        }
+        for run in replaced {
+            let old = &self.text_runs[run];
+            let (old_x, old_y, old_width) = (old.x, old.y, old.width);
+            for dx in 0..old_width {
+                if self.in_bounds(old_x + dx, old_y) {
+                    let old_ix = self.idx(old_x + dx, old_y);
+                    if matches!(
+                        self.cells[old_ix],
+                        Cell::Text { run: owner } | Cell::WideCont { run: owner }
+                            if owner == run
+                    ) {
+                        self.cells[old_ix] = Cell::Empty;
+                    }
+                }
+            }
+        }
+
+        let run = self.text_runs.len();
+        self.text_runs.push(TextRun {
+            text: text.to_string(),
+            x,
+            y,
+            width,
+        });
         let ix = self.idx(x, y);
-        self.cells[ix] = Cell::Text(ch);
+        self.cells[ix] = Cell::Text { run };
         for dx in 1..width {
             if self.in_bounds(x + dx, y) {
                 let cont_ix = self.idx(x + dx, y);
-                self.cells[cont_ix] = Cell::WideCont;
+                self.cells[cont_ix] = Cell::WideCont { run };
             }
         }
     }
 
     fn put_text(&mut self, mut x: usize, y: usize, text: &str) {
-        for ch in text.chars() {
-            self.put_text_char(x, y, ch);
-            x += ch.width().unwrap_or(1).max(1);
+        for grapheme in text.graphemes(true) {
+            // Never forward terminal controls or isolated zero-column runs.
+            // Checked rendering reports the precise source failure; unchecked
+            // library rendering remains terminal-safe by omitting it.
+            if grapheme.chars().any(char::is_control) {
+                continue;
+            }
+            let width = grapheme.width();
+            if width == 0 {
+                continue;
+            }
+            self.put_text_run(x, y, grapheme, width);
+            x += width;
+        }
+    }
+
+    fn put_scene_text(&mut self, text: &SceneText) {
+        for (line, value) in text.text.split('\n').enumerate() {
+            self.put_text(text.at.x as usize, text.at.y as usize + line, value);
         }
     }
 
@@ -130,8 +209,8 @@ impl Canvas {
                         rounded,
                         kind,
                     } => row.push(style.line(bits, rounded, kind)),
-                    Cell::Text(ch) => row.push(ch),
-                    Cell::WideCont => {}
+                    Cell::Text { run } => row.push_str(&self.text_runs[run].text),
+                    Cell::WideCont { .. } => {}
                 }
             }
             while row.ends_with(' ') {
@@ -191,7 +270,7 @@ fn paint_normalized_scene(scene: &Scene, style: Style, w: usize, h: usize) -> Ca
         draw_endpoint_decoration(&mut canvas, decoration, style);
     }
     for text in &scene.texts {
-        canvas.put_text(text.at.x as usize, text.at.y as usize, &text.text);
+        canvas.put_scene_text(text);
     }
     for group in &scene.groups {
         draw_scene_group(&mut canvas, group);
@@ -240,7 +319,7 @@ fn draw_scene_edge(canvas: &mut Canvas, edge: &RoutedEdge, style: Style) {
         canvas.mark_rounded(x, y);
     }
     if let Some(label) = &edge.label {
-        canvas.put_text(label.at.x as usize, label.at.y as usize, &label.text);
+        canvas.put_scene_text(label);
     }
     if let Some(arrow) = &edge.arrow {
         let at = point(arrow.at);
@@ -266,36 +345,39 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
         ));
     }
 
-    for y in 0..canvas.h {
-        for x in 0..canvas.w {
-            if let Cell::Text(ch) = canvas.cells[canvas.idx(x, y)]
-                && matches!(ch, '…' | '⋯')
-            {
-                failures.push(format!("truncated glyph {ch:?} at ({x},{y})"));
-            }
-        }
-    }
-
     for group in &scene.groups {
-        check_rect_corners(
+        check_rect_border(
             canvas,
             group.rect,
             &format!("group {}", group.subgraph),
+            |_, _, _| false,
+            |_, _| false,
             &mut failures,
         );
-        check_text(
+        check_single_line_text(
             canvas,
             &group.title,
             &format!("group {} title", group.subgraph),
             &mut failures,
         );
+        for (separator_index, separator) in group.separators.iter().enumerate() {
+            let name = format!("group {} separator {separator_index}", group.subgraph);
+            check_group_separator(canvas, group, separator, &name, &mut failures);
+        }
     }
 
     for b in &scene.boxes {
-        check_rect_corners(canvas, b.rect, &format!("box {}", b.node), &mut failures);
+        check_rect_border(
+            canvas,
+            b.rect,
+            &format!("box {}", b.node),
+            |x, y, text| is_shape_hint(b, x, y, text),
+            |_, _| false,
+            &mut failures,
+        );
         if b.table.is_some() {
             for text in table_texts(b) {
-                check_text(
+                check_single_line_text(
                     canvas,
                     &text,
                     &format!("box {} table", b.node),
@@ -315,7 +397,7 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
                     ),
                     line.clone(),
                 );
-                check_text(
+                check_single_line_text(
                     canvas,
                     &text,
                     &format!("box {} label", b.node),
@@ -325,11 +407,18 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
         }
     }
 
-    for b in &scene.foreground_boxes {
-        check_rect_corners(
+    for (box_index, b) in scene.foreground_boxes.iter().enumerate() {
+        check_rect_border(
             canvas,
             b.rect,
             &format!("foreground box {}", b.node),
+            |x, y, text| is_shape_hint(b, x, y, text),
+            |x, y| {
+                let point = Point::new(x as i32, y as i32);
+                scene.foreground_boxes[box_index + 1..]
+                    .iter()
+                    .any(|later| later.rect.contains(point))
+            },
             &mut failures,
         );
         let rect = b.rect;
@@ -344,7 +433,7 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
                 ),
                 line.clone(),
             );
-            check_text(
+            check_single_line_text(
                 canvas,
                 &text,
                 &format!("foreground box {} label", b.node),
@@ -393,7 +482,7 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
         if let Some(arrow) = &edge.arrow {
             let at = point(arrow.at);
             if !canvas.in_bounds(at.0, at.1)
-                || !matches!(canvas.cells[canvas.idx(at.0, at.1)], Cell::Text(_))
+                || !matches!(canvas.cells[canvas.idx(at.0, at.1)], Cell::Text { .. })
             {
                 failures.push(format!("edge {} arrow is not painted", edge.edge));
             }
@@ -418,7 +507,9 @@ fn check_scene_invariants(scene: &Scene, canvas: &Canvas) -> Vec<String> {
     for decoration in &scene.endpoint_decorations {
         for at in decoration_cells(decoration) {
             let (x, y) = point(at);
-            if !canvas.in_bounds(x, y) || !matches!(canvas.cells[canvas.idx(x, y)], Cell::Text(_)) {
+            if !canvas.in_bounds(x, y)
+                || !matches!(canvas.cells[canvas.idx(x, y)], Cell::Text { .. })
+            {
                 failures.push(format!(
                     "edge {} endpoint decoration is not painted at ({x},{y})",
                     decoration.edge
@@ -466,7 +557,14 @@ fn check_path(
     }
 }
 
-fn check_rect_corners(canvas: &Canvas, rect: Rect, name: &str, failures: &mut Vec<String>) {
+fn check_rect_border(
+    canvas: &Canvas,
+    rect: Rect,
+    name: &str,
+    allowed_text: impl Fn(usize, usize, &str) -> bool,
+    occluded: impl Fn(usize, usize) -> bool,
+    failures: &mut Vec<String>,
+) {
     if rect.w < 2 || rect.h < 2 {
         failures.push(format!("{name} is smaller than 2x2"));
         return;
@@ -475,14 +573,94 @@ fn check_rect_corners(canvas: &Canvas, rect: Rect, name: &str, failures: &mut Ve
     let y = rect.y as usize;
     let right = (rect.right() - 1) as usize;
     let bottom = (rect.bottom() - 1) as usize;
-    for (cx, cy, corner) in [
-        (x, y, "TL"),
-        (right, y, "TR"),
-        (x, bottom, "BL"),
-        (right, bottom, "BR"),
-    ] {
-        if !canvas.in_bounds(cx, cy) || matches!(canvas.cells[canvas.idx(cx, cy)], Cell::Empty) {
-            failures.push(format!("{name} open {corner} corner at ({cx},{cy})"));
+
+    let mut border = Vec::new();
+    for cx in x..=right {
+        border.push((
+            cx,
+            y,
+            if cx == x {
+                "TL corner"
+            } else if cx == right {
+                "TR corner"
+            } else {
+                "top border"
+            },
+            if cx == x {
+                E | S
+            } else if cx == right {
+                S | W
+            } else {
+                E | W
+            },
+        ));
+        border.push((
+            cx,
+            bottom,
+            if cx == x {
+                "BL corner"
+            } else if cx == right {
+                "BR corner"
+            } else {
+                "bottom border"
+            },
+            if cx == x {
+                N | E
+            } else if cx == right {
+                N | W
+            } else {
+                E | W
+            },
+        ));
+    }
+    for cy in y + 1..bottom {
+        border.push((x, cy, "left border", N | S));
+        border.push((right, cy, "right border", N | S));
+    }
+
+    for (cx, cy, part, required) in border {
+        let closed = occluded(cx, cy)
+            || canvas.in_bounds(cx, cy)
+                && match canvas.cells[canvas.idx(cx, cy)] {
+                    Cell::Line { bits, .. } => bits & required == required,
+                    Cell::Text { run } => allowed_text(cx, cy, &canvas.text_runs[run].text),
+                    Cell::Empty | Cell::WideCont { .. } => false,
+                };
+        if !closed {
+            failures.push(format!(
+                "{name} incomplete {part} at ({cx},{cy}); required border directions are missing"
+            ));
+        }
+    }
+}
+
+fn cell_has_line_bits(canvas: &Canvas, x: usize, y: usize, required: u8) -> bool {
+    canvas.in_bounds(x, y)
+        && matches!(
+            canvas.cells[canvas.idx(x, y)],
+            Cell::Line { bits, .. } if bits & required == required
+        )
+}
+
+fn is_shape_hint(b: &SceneBox, x: usize, y: usize, text: &str) -> bool {
+    let left = b.rect.x as usize;
+    let top = b.rect.y as usize;
+    let right = (b.rect.right() - 1) as usize;
+    let bottom = (b.rect.bottom() - 1) as usize;
+    let mid_y = top + b.rect.h as usize / 2;
+    match b.shape {
+        Shape::Rect | Shape::Rounded => false,
+        Shape::Stadium | Shape::Circle => {
+            (x, y) == (left, mid_y) && text == "(" || (x, y) == (right, mid_y) && text == ")"
+        }
+        Shape::Cylinder => y == top && x > left && x < right && matches!(text, "=" | "═"),
+        Shape::Diamond => {
+            (x == left || x == right) && (y == top || y == bottom) && matches!(text, "*" | "◇")
+        }
+        Shape::Hexagon => {
+            (x == left || x == right)
+                && (y == top || y == bottom)
+                && matches!(text, "/" | "\\" | "╱" | "╲")
         }
     }
 }
@@ -493,15 +671,73 @@ fn check_text(
     name: &str,
     failures: &mut Vec<String>,
 ) {
-    let mut x = text.at.x as usize;
-    let y = text.at.y as usize;
-    for expected in text.text.chars() {
-        if !canvas.in_bounds(x, y) {
-            failures.push(format!("{name} {expected:?} is out of bounds at ({x},{y})"));
-        } else if !matches!(canvas.cells[canvas.idx(x, y)], Cell::Text(got) if got == expected) {
-            failures.push(format!("{name} {expected:?} overwritten at ({x},{y})"));
+    check_text_mode(canvas, text, name, true, failures);
+}
+
+fn check_single_line_text(
+    canvas: &Canvas,
+    text: &SceneText,
+    name: &str,
+    failures: &mut Vec<String>,
+) {
+    check_text_mode(canvas, text, name, false, failures);
+}
+
+fn check_text_mode(
+    canvas: &Canvas,
+    text: &SceneText,
+    name: &str,
+    allow_newlines: bool,
+    failures: &mut Vec<String>,
+) {
+    for ch in text.text.chars() {
+        if ch.is_control() && !(allow_newlines && ch == '\n') {
+            failures.push(format!(
+                "{name} contains terminal control U+{:04X}; remove it or use visible text",
+                ch as u32
+            ));
+            return;
         }
-        x += expected.width().unwrap_or(1).max(1);
+    }
+
+    for (line, value) in text.text.split('\n').enumerate() {
+        let mut x = text.at.x as usize;
+        let y = text.at.y as usize + line;
+        for expected in value.graphemes(true) {
+            let width = expected.width();
+            if width == 0 {
+                failures.push(format!(
+                    "{name} contains unsupported zero-column grapheme {expected:?}"
+                ));
+                return;
+            }
+            if !canvas.in_bounds(x, y) {
+                failures.push(format!("{name} {expected:?} is out of bounds at ({x},{y})"));
+            } else {
+                let run = match canvas.cells[canvas.idx(x, y)] {
+                    Cell::Text { run } if canvas.text_runs[run].text == expected => Some(run),
+                    _ => None,
+                };
+                if let Some(run) = run {
+                    for dx in 1..width {
+                        if !canvas.in_bounds(x + dx, y)
+                            || !matches!(
+                                canvas.cells[canvas.idx(x + dx, y)],
+                                Cell::WideCont { run: owner } if owner == run
+                            )
+                        {
+                            failures.push(format!(
+                                "{name} {expected:?} continuation overwritten at ({},{y})",
+                                x + dx
+                            ));
+                        }
+                    }
+                } else {
+                    failures.push(format!("{name} {expected:?} overwritten at ({x},{y})"));
+                }
+            }
+            x += width;
+        }
     }
 }
 
@@ -524,6 +760,83 @@ fn draw_scene_group(canvas: &mut Canvas, group: &SceneGroup) {
         group.title.at.y as usize,
         &group.title.text,
     );
+    for separator in &group.separators {
+        draw_group_separator(canvas, group.rect, separator);
+    }
+}
+
+fn draw_group_separator(
+    canvas: &mut Canvas,
+    rect: Rect,
+    separator: &crate::scene::SceneGroupSeparator,
+) {
+    if separator.y <= rect.y
+        || separator.y >= rect.bottom() - 1
+        || rect.w < 2
+        || separator.y < 0
+        || rect.x < 0
+    {
+        return;
+    }
+    let left = rect.x as usize;
+    let right = (rect.right() - 1) as usize;
+    let y = separator.y as usize;
+    for x in left..=right {
+        let bits = if x == left {
+            N | E | S
+        } else if x == right {
+            N | S | W
+        } else {
+            E | W
+        };
+        canvas.add_line_bits(x, y, bits, EdgeKind::Solid);
+    }
+    canvas.put_scene_text(&separator.label);
+}
+
+fn check_group_separator(
+    canvas: &Canvas,
+    group: &SceneGroup,
+    separator: &crate::scene::SceneGroupSeparator,
+    name: &str,
+    failures: &mut Vec<String>,
+) {
+    if separator.y <= group.rect.y || separator.y >= group.rect.bottom() - 1 {
+        failures.push(format!("{name} is not inside its group frame"));
+        return;
+    }
+    if separator.label.at.y != separator.y || separator.label.height() != 1 {
+        failures.push(format!("{name} label is not on its separator row"));
+        return;
+    }
+    let label_left = separator.label.at.x;
+    let label_right = label_left + separator.label.width() as i32;
+    if label_left <= group.rect.x || label_right >= group.rect.right() - 1 {
+        failures.push(format!("{name} label is not padded inside its group frame"));
+        return;
+    }
+
+    check_single_line_text(canvas, &separator.label, &format!("{name} label"), failures);
+    let y = separator.y as usize;
+    for x in group.rect.x..group.rect.right() {
+        if x >= label_left && x < label_right {
+            continue;
+        }
+        let required = if x == group.rect.x {
+            N | E | S
+        } else if x == group.rect.right() - 1 {
+            N | S | W
+        } else {
+            E | W
+        };
+        let (x, y) = (x as usize, y);
+        let painted = cell_has_line_bits(canvas, x, y, required);
+        if !painted {
+            failures.push(format!(
+                "{name} is missing its horizontal stroke at ({x},{y})"
+            ));
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -541,16 +854,11 @@ fn draw_group(
         return;
     }
     let kind = EdgeKind::Solid;
-    // Only paint empty cells so boxes/edges already drawn punch clean gaps
-    // through the frame (no ┬┴ merge on exit shafts).
+    // Merge frame directions into existing line cells. A connector crossing a
+    // frame remains one continuous connector *and* one continuous frame,
+    // producing the exact tee/crossing glyph from their combined bitmask.
+    // Text remains untouched so checked rendering can report real collisions.
     let paint = |canvas: &mut Canvas, px: usize, py: usize, bits: u8| {
-        if !canvas.in_bounds(px, py) {
-            return;
-        }
-        let ix = canvas.idx(px, py);
-        if !matches!(canvas.cells[ix], Cell::Empty) {
-            return;
-        }
         canvas.add_line_bits(px, py, bits, kind);
     };
 
@@ -943,5 +1251,67 @@ fn arrow_toward(
         style.arrow_down(head)
     } else {
         style.arrow_up(head)
+    }
+}
+
+#[cfg(test)]
+mod border_tests {
+    use super::*;
+
+    #[test]
+    fn border_check_rejects_wrong_orientation_but_accepts_merged_crossings() {
+        let mut canvas = Canvas::new(7, 5);
+        draw_group(&mut canvas, 1, 1, 5, 3, 2, 2, "G");
+
+        let top = canvas.idx(3, 1);
+        let bottom = canvas.idx(3, 3);
+        let left = canvas.idx(1, 2);
+        let right = canvas.idx(5, 2);
+        canvas.cells[top] = Cell::Line {
+            bits: N | S,
+            rounded: false,
+            kind: EdgeKind::Solid,
+        };
+        canvas.cells[bottom] = canvas.cells[top];
+        canvas.cells[left] = Cell::Line {
+            bits: E | W,
+            rounded: false,
+            kind: EdgeKind::Solid,
+        };
+        canvas.cells[right] = canvas.cells[left];
+
+        let mut failures = Vec::new();
+        check_rect_border(
+            &canvas,
+            Rect::new(1, 1, 5, 3),
+            "test frame",
+            |_, _, _| false,
+            |_, _| false,
+            &mut failures,
+        );
+        for expected in ["top border", "bottom border", "left border", "right border"] {
+            assert!(
+                failures.iter().any(|failure| failure.contains(expected)),
+                "missing {expected:?}: {failures:#?}"
+            );
+        }
+
+        for index in [top, bottom, left, right] {
+            canvas.cells[index] = Cell::Line {
+                bits: N | E | S | W,
+                rounded: false,
+                kind: EdgeKind::Solid,
+            };
+        }
+        let mut failures = Vec::new();
+        check_rect_border(
+            &canvas,
+            Rect::new(1, 1, 5, 3),
+            "test frame",
+            |_, _, _| false,
+            |_, _| false,
+            &mut failures,
+        );
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 }

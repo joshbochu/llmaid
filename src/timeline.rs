@@ -3,7 +3,8 @@
 use crate::parse::{self, ParseError, Warning};
 use crate::scene::{EdgeKind, RoutedEdge, Scene, SceneGroup, ScenePath, SceneText};
 use crate::temporal::{self, Extent, TemporalBand, TemporalEntry, TemporalGaps};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use crate::wrapping::{self, MIN_READABLE_COLUMNS};
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TimelineEvent {
@@ -58,6 +59,7 @@ impl Timeline {
 }
 
 pub fn parse(src: &str) -> Result<Timeline, ParseError> {
+    crate::parse::validate_terminal_source(src)?;
     let mut timeline = Timeline::default();
     let mut seen_header = false;
     let mut last_period: Option<usize> = None;
@@ -213,15 +215,9 @@ pub fn parse(src: &str) -> Result<Timeline, ParseError> {
 }
 
 fn label(raw: &str, line: usize, expected: &str) -> Result<String, ParseError> {
-    let label = parse::clean_label(raw);
+    let label = parse::clean_terminal_label(raw, line)?;
     if label.is_empty() {
         return Err(error(line, format!("expected a {expected}")));
-    }
-    if label.chars().any(|ch| ch.width() == Some(0)) {
-        return Err(error(
-            line,
-            "unsupported zero-width Unicode sequence in core timeline label; use precomposed text or a single-scalar emoji",
-        ));
     }
     Ok(label)
 }
@@ -319,7 +315,7 @@ pub fn scene(timeline: &Timeline, max_width: usize) -> Scene {
     let periods: Vec<Vec<String>> = timeline
         .periods
         .iter()
-        .map(|period| wrap_label(&period.label, period_cap))
+        .map(|period| wrapping::wrap_words(&period.label, period_cap))
         .collect();
     let events: Vec<Vec<Vec<String>>> = timeline
         .periods
@@ -328,11 +324,16 @@ pub fn scene(timeline: &Timeline, max_width: usize) -> Scene {
             period
                 .events
                 .iter()
-                .map(|event| wrap_label(&event.label, event_cap))
+                .map(|event| wrapping::wrap_words(&event.label, event_cap))
                 .collect()
         })
         .collect();
-    lower(timeline, &periods, &events, TemporalGaps::compact())
+    let wrapped = lower(timeline, &periods, &events, TemporalGaps::compact());
+    if wrapped.bounds().w < compact.bounds().w {
+        wrapped
+    } else {
+        compact
+    }
 }
 
 fn fits(scene: &Scene, max_width: usize) -> bool {
@@ -408,6 +409,7 @@ fn lower(
             subgraph: section,
             rect: placed.band_rects[section],
             title: SceneText::new(placed.band_title_points[section], value.label.clone()),
+            separators: Vec::new(),
         })
         .collect();
     let mut scene = Scene {
@@ -485,67 +487,22 @@ fn wrap_caps(timeline: &Timeline, max_width: usize) -> (usize, usize) {
         .max()
         .unwrap_or(1)
         .max(1);
+    let minimum_period = period.min(MIN_READABLE_COLUMNS);
+    let minimum_event = event.min(MIN_READABLE_COLUMNS);
     // Two borders plus one visible padding cell on both sides for each box,
     // compact connector gaps, and section frame padding when present.
     let overhead = 4 + 4 + usize::from(!timeline.sections.is_empty()) * 4;
     let budget = max_width.saturating_sub(overhead).max(2);
     while period + event > budget {
-        if period >= event && period > 1 {
+        if period >= event && period > minimum_period {
             period -= 1;
-        } else if event > 1 {
+        } else if event > minimum_event {
             event -= 1;
+        } else if period > minimum_period {
+            period -= 1;
         } else {
             break;
         }
     }
     (period, event)
-}
-
-fn wrap_label(text: &str, max_cols: usize) -> Vec<String> {
-    text.lines()
-        .flat_map(|line| wrap_line(line, max_cols))
-        .collect()
-}
-
-fn wrap_line(text: &str, max_cols: usize) -> Vec<String> {
-    let max_cols = max_cols.max(1);
-    if text.width() <= max_cols {
-        return vec![text.to_string()];
-    }
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    for word in text.split_whitespace() {
-        let candidate = if current.is_empty() {
-            word.to_string()
-        } else {
-            format!("{current} {word}")
-        };
-        if candidate.width() <= max_cols {
-            current = candidate;
-            continue;
-        }
-        if !current.is_empty() {
-            lines.push(std::mem::take(&mut current));
-        }
-        if word.width() <= max_cols {
-            current.push_str(word);
-            continue;
-        }
-        for ch in word.chars() {
-            let mut candidate = current.clone();
-            candidate.push(ch);
-            if !current.is_empty() && candidate.width() > max_cols {
-                lines.push(std::mem::take(&mut current));
-            }
-            current.push(ch);
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    if lines.is_empty() {
-        vec![text.to_string()]
-    } else {
-        lines
-    }
 }

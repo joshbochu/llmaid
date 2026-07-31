@@ -234,6 +234,12 @@ fn visual_fidelity_uses_attribute_table_and_endpoint_cardinalities() {
 
     let ascii = render::render_scene(&scene, Style { ascii: true });
     assert!(ascii.is_ascii(), "{ascii}");
+    let comfortable_width = scene.bounds().w;
+    let comfortable_tables: Vec<_> = scene.boxes.iter().map(|box_| box_.table.clone()).collect();
+    assert!(
+        er::scene(&diagram, 1).bounds().w < comfortable_width,
+        "width pressure should compact relation channels"
+    );
     for width in [1, 50, 100] {
         let narrow = er::scene(&diagram, width);
         let (narrow_output, narrow_failures) =
@@ -243,8 +249,17 @@ fn visual_fidelity_uses_attribute_table_and_endpoint_cardinalities() {
             "width {width}: {narrow_failures:#?}"
         );
         assert_eq!(
-            narrow_output, unicode,
-            "structured ER changed at width {width}"
+            narrow
+                .boxes
+                .iter()
+                .map(|box_| box_.table.clone())
+                .collect::<Vec<_>>(),
+            comfortable_tables,
+            "structured ER content changed at width {width}"
+        );
+        assert!(
+            narrow.bounds().w <= comfortable_width,
+            "width pressure expanded ER geometry at width {width}:\n{narrow_output}"
         );
     }
 }

@@ -35,7 +35,7 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
         })
         .collect();
 
-    let groups = route_groups(g, &boxes);
+    let mut groups = route_groups(g, &boxes);
 
     let mut edges: Vec<RoutedEdge> = placed
         .segs
@@ -81,10 +81,10 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
 
             let first = &segs[0];
             let label = edge.label.as_deref().map(|label| {
-                let text = format!(" {label} ");
+                let text = padded_edge_label(label);
                 let ch = &placed.channels[first.channel];
                 let at = if placed.horizontal {
-                    let label_w = text.width();
+                    let label_w = multiline_width(&text);
                     let (f, cross) = if first.from.1 == first.to.1 {
                         (
                             ch.start + ch.width.saturating_sub(label_w) / 2,
@@ -110,6 +110,7 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
                         to_screen(placed, f, cross)
                     }
                 } else {
+                    let label_height = label.split('\n').count();
                     let lane = placed.segs[..edge_index]
                         .iter()
                         .enumerate()
@@ -117,9 +118,27 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
                             g.edges[*other_ei].label.is_some()
                                 && other.first().map(|seg| seg.channel) == Some(first.channel)
                         })
-                        .count();
-                    let label_band_start = ch.start + ch.width.saturating_sub(ch.label_zone) / 2;
-                    let mut point = to_screen(placed, label_band_start + 2 * lane, first.from.1);
+                        .map(|(other_ei, _)| {
+                            g.edges[other_ei]
+                                .label
+                                .as_deref()
+                                .map_or(0, |label| label.split('\n').count() + 1)
+                        })
+                        .sum::<usize>();
+                    let label_band_start = ch.start + ch.label_offset;
+                    // Flow coordinates reverse under BT, while SceneText rows
+                    // always advance downward on screen. Anchor at the final
+                    // reserved flow row so a multiline label occupies its
+                    // band upward in flow-space without growing into the
+                    // source box.
+                    let anchor = label_band_start
+                        + lane
+                        + if placed.flipped {
+                            label_height.saturating_sub(1)
+                        } else {
+                            0
+                        };
+                    let mut point = to_screen(placed, anchor, first.from.1);
                     point.x += 1;
                     point
                 };
@@ -144,6 +163,8 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
         edges.push(route_self_loop(g, placed, edge_index));
     }
 
+    place_group_titles(&mut groups, &boxes, &edges);
+
     let mut scene = Scene {
         boxes,
         foreground_boxes: Vec::new(),
@@ -155,6 +176,75 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
     };
     scene.normalize();
     scene
+}
+
+/// Keep group titles in their dedicated interior band while moving them only
+/// when routed geometry would overwrite the text. The nearest clear span wins
+/// with a stable left bias; if the title band is fully occupied, later clear
+/// interior rows are considered before checked rendering rejects the scene.
+fn place_group_titles(groups: &mut [SceneGroup], boxes: &[SceneBox], edges: &[RoutedEdge]) {
+    let mut routed_cells = Vec::new();
+    for edge in edges {
+        routed_cells.extend(crate::scene::path_cells(&edge.points));
+        if let Some(arrow) = &edge.arrow {
+            routed_cells.push(arrow.at);
+        }
+        if let Some(label) = &edge.label {
+            for (line, text) in label.text.split('\n').enumerate() {
+                for dx in 0..text.width() as i32 {
+                    routed_cells.push(Point::new(label.at.x + dx, label.at.y + line as i32));
+                }
+            }
+        }
+    }
+    routed_cells.sort_by_key(|point| (point.y, point.x));
+    routed_cells.dedup();
+
+    for group_index in 0..groups.len() {
+        let rect = groups[group_index].rect;
+        let title_width = groups[group_index].title.width() as i32;
+        let preferred = groups[group_index].title.at;
+        let min_x = rect.x + 1;
+        let max_x = rect.right() - 1 - title_width;
+        if title_width <= 0 || min_x > max_x {
+            continue;
+        }
+
+        let mut rows: Vec<i32> = (rect.y + 1..rect.bottom() - 1).collect();
+        rows.sort_by_key(|&y| ((y - preferred.y).abs(), y));
+        let mut columns: Vec<i32> = (min_x..=max_x).collect();
+        columns.sort_by_key(|&x| ((x - preferred.x).abs(), x));
+
+        let placement = rows.into_iter().find_map(|y| {
+            columns.iter().copied().find_map(|x| {
+                let clear = (x..x + title_width).all(|cell_x| {
+                    let point = Point::new(cell_x, y);
+                    !point_is_routed(point, &routed_cells)
+                        && !boxes.iter().any(|box_| box_.rect.contains(point))
+                        && !groups.iter().enumerate().any(|(other_index, other)| {
+                            other_index != group_index
+                                && rect_contains_rect(rect, other.rect)
+                                && other.rect.contains(point)
+                        })
+                });
+                clear.then_some(Point::new(x, y))
+            })
+        });
+        if let Some(at) = placement {
+            groups[group_index].title.at = at;
+        }
+    }
+}
+
+fn point_is_routed(point: Point, routed_cells: &[Point]) -> bool {
+    routed_cells
+        .binary_search_by_key(&(point.y, point.x), |candidate| (candidate.y, candidate.x))
+        .is_ok()
+}
+
+fn rect_contains_rect(outer: Rect, inner: Rect) -> bool {
+    outer.contains(Point::new(inner.x, inner.y))
+        && outer.contains(Point::new(inner.right() - 1, inner.bottom() - 1))
 }
 
 fn to_screen(placed: &Placed, f: usize, c: usize) -> Point {
@@ -250,6 +340,7 @@ fn route_groups(g: &Graph, boxes: &[SceneBox]) -> Vec<SceneGroup> {
                 subgraph: index,
                 rect,
                 title: SceneText::new(Point::new(title_x, rect.y + 1), title),
+                separators: Vec::new(),
             })
         })
         .collect()
@@ -285,7 +376,7 @@ fn route_self_loop(g: &Graph, placed: &Placed, edge_index: usize) -> RoutedEdge 
     let label_w = edge
         .label
         .as_deref()
-        .map(|label| label.width() + 2)
+        .map(|label| multiline_width(label) + 2)
         .unwrap_or(0) as i32;
     let source = Point::new(rect.right() - 1, rect.y + rect.h / 2);
     let target = Point::new(rect.x + rect.w / 2, rect.bottom() - 1);
@@ -299,9 +390,9 @@ fn route_self_loop(g: &Graph, placed: &Placed, edge_index: usize) -> RoutedEdge 
         target,
     ];
     let label = edge.label.as_deref().and_then(|label| {
-        let text = format!(" {label} ");
+        let text = padded_edge_label(label);
         let at = Point::new(source.x + 2 + EDGE_LABEL_PAD as i32, source.y);
-        (at.x + (text.width() as i32) < loop_x).then(|| SceneText::new(at, text))
+        (at.x + (multiline_width(&text) as i32) < loop_x).then(|| SceneText::new(at, text))
     });
     routed_screen_path(edge_index, edge, points, label)
 }
@@ -321,7 +412,7 @@ fn route_vertical_back_edge(g: &Graph, placed: &Placed, edge_index: usize) -> Ro
     let label_w = edge
         .label
         .as_deref()
-        .map(|label| label.width() + 2)
+        .map(|label| multiline_width(label) + 2)
         .unwrap_or(0) as i32;
     let source = Point::new(source_rect.right() - 1, source_rect.y + source_rect.h / 2);
     let target = Point::new(target_rect.right() - 1, target_rect.y + target_rect.h / 2);
@@ -339,12 +430,12 @@ fn route_vertical_back_edge(g: &Graph, placed: &Placed, edge_index: usize) -> Ro
         target,
     ];
     let label = edge.label.as_deref().and_then(|label| {
-        let text = format!(" {label} ");
+        let text = padded_edge_label(label);
         let at = Point::new(
             target.x + EDGE_LABEL_PAD as i32 + if edge.arrow { 2 } else { 1 },
             target.y,
         );
-        (at.x + (text.width() as i32) < perimeter_x).then(|| SceneText::new(at, text))
+        (at.x + (multiline_width(&text) as i32) < perimeter_x).then(|| SceneText::new(at, text))
     });
     routed_screen_path(edge_index, edge, points, label)
 }
@@ -369,10 +460,10 @@ fn route_horizontal_back_edge(g: &Graph, placed: &Placed, edge_index: usize) -> 
         target,
     ];
     let label = edge.label.as_deref().and_then(|label| {
-        let text = format!(" {label} ");
+        let text = padded_edge_label(label);
         let left = source.x.min(target.x);
         let right = source.x.max(target.x);
-        let text_w = text.width() as i32;
+        let text_w = multiline_width(&text) as i32;
         (right > left + text_w).then(|| {
             SceneText::new(
                 Point::new(left + (right - left - text_w) / 2, perimeter_y),
@@ -381,6 +472,21 @@ fn route_horizontal_back_edge(g: &Graph, placed: &Placed, edge_index: usize) -> 
         })
     });
     routed_screen_path(edge_index, edge, points, label)
+}
+
+fn multiline_width(text: &str) -> usize {
+    text.split('\n')
+        .map(UnicodeWidthStr::width)
+        .max()
+        .unwrap_or(0)
+}
+
+fn padded_edge_label(label: &str) -> String {
+    label
+        .split('\n')
+        .map(|line| format!(" {line} "))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn routed_screen_path(
