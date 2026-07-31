@@ -33,6 +33,26 @@ cargo test --test inspection     # reviewed-gallery semantic quality gate
 UPDATE_GOLDEN=1 cargo test        # regen tests/cases/*.{ir,txt} after intentional changes
 ```
 
+## Render verification policy
+
+Read `INSPECTION.md` before changing layout, routing, painting, or quality
+checks. For an agent-produced diagram or a changed reference render:
+
+1. Run `--inspect=json` on the final output.
+2. Never publish an invariant failure.
+3. Treat a preference failure as an exact failed relationship, not a vague
+   style opinion.
+4. Evaluate `viewport.width` as a fit decision rather than structural damage.
+5. Treat `unclassified` as unknown quality and inspect the canvas or gallery.
+6. Use `canvas.rows` as the exact human-facing raster, with a real terminal for
+   font-dependent glyph questions.
+7. When adding a new quality claim, state an eligible topology and exact
+   predicate, then prove evaluator independence with a final-Scene mutation.
+
+Passing checks establish only the claims that were applicable. They do not
+turn `not_applicable` or `unclassified` compositions into implicit successes,
+and they never replace the gallery review loop for subjective aesthetics.
+
 ## Architecture
 
 Flowcharts retain the five-stage pipeline; diagram dispatch and other engines
