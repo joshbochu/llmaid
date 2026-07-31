@@ -203,7 +203,13 @@ fn run_llmaid(args: &[&str], stdin: &str) -> (String, String, i32) {
         .take()
         .unwrap()
         .write_all(stdin.as_bytes())
-        .unwrap();
+        .unwrap_or_else(|error| {
+            assert_eq!(
+                error.kind(),
+                std::io::ErrorKind::BrokenPipe,
+                "failed to write llmaid stdin"
+            );
+        });
     let out = child.wait_with_output().unwrap();
     (
         String::from_utf8(out.stdout).unwrap(),
