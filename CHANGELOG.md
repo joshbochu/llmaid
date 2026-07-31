@@ -5,6 +5,8 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-31
+
 ### Changed
 - Flowchart rank channels now reserve rows from visible geometry instead of a
   blanket five-row minimum: one row for a straight arrow, two per reusable
@@ -126,8 +128,7 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   cross-platform CI quality gate covering the MSRV, formatting, Clippy, Python
   gallery tests, and the full Rust suite on Linux, macOS, and Windows.
   `cargo package` contents and the live README example are verified. The project
-  is MIT licensed; selecting the first release channel remains the distribution
-  decision.
+  is MIT licensed, and crates.io is the first release channel.
 - Named audit quality and fit diagnostics (B33): nonzero exact flowchart
   alignment, symmetry, and crossing residuals plus over-width fallback now
   appear in the existing `llmaid.audit.v1` violation vector with deterministic

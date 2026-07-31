@@ -170,7 +170,7 @@ human review remains the oracle for preferences not yet expressed as geometry.
 | ID | Item |
 |----|------|
 | 7.0 | **done** — MIT license declared in the package and repository |
-| 7.1 | Release channel (crates.io / brew / gh releases — pick one first) |
+| 7.1 | **done** — crates.io selected as the first release channel (`cargo install llmaid`) |
 | 7.2 | Versioned CLI; examples per diagram type in `--help` or docs |
 | 7.3 | Visual gallery (checked-in renders) for human taste QA |
 | 7.4 | Optional wasm/npm embed |
@@ -224,5 +224,5 @@ human review remains the oracle for preferences not yet expressed as geometry.
 ```text
 gallery-driven polish of shipped types
 → 6.1/6.4 agent diagnostics
-→ 7.1–7.3 release, docs, and visual gallery
+→ 7.2–7.3 versioned docs and visual gallery
 ```

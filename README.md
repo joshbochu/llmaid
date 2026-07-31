@@ -19,11 +19,16 @@ flowchart LR
 
 ## Quick start
 
-Build from this repository with Rust 1.88 or newer:
+Install from crates.io with Rust 1.88 or newer:
 
 ```sh
-cargo build --release
-echo 'flowchart LR; prompt --> tokens --> answer' | target/release/llmaid
+cargo install llmaid --locked
+```
+
+Then render Mermaid from stdin or a file:
+
+```sh
+echo 'flowchart LR; prompt --> tokens --> answer' | llmaid
 ```
 
 Render a file, select ASCII structural glyphs, or inspect machine geometry:
@@ -90,10 +95,10 @@ width is fixed rather than inferred from a TTY so renders remain reproducible.
 ## Development
 
 ```sh
+cargo build --release
 cargo test --all-targets
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
-cargo build --release
 python3 -m unittest scripts/test_review_gallery.py
 ```
 
