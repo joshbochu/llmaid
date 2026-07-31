@@ -47,6 +47,10 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   case at a time and persists only annotated cases to `.llmaid-review.json`.
 
 ### Fixed
+- CI fixtures now retain canonical LF endings on Windows, preserving exact
+  golden byte comparisons across platforms. CLI subprocess tests also accept
+  the legitimate broken pipe produced when argument validation exits before
+  consuming irrelevant stdin.
 - Group frames now merge their own stroke directions with connectors crossing
   any side, producing a real tee/crossing instead of a vertical or horizontal
   hole that merely occupied the same cell. Border invariants require the exact

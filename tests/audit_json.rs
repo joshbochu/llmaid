@@ -9,12 +9,13 @@ fn run(args: &[&str], stdin: &str) -> (String, String, i32) {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
+    if let Err(error) = child.stdin.take().unwrap().write_all(stdin.as_bytes()) {
+        assert_eq!(
+            error.kind(),
+            std::io::ErrorKind::BrokenPipe,
+            "failed to write child stdin: {error}"
+        );
+    }
     let output = child.wait_with_output().unwrap();
     (
         String::from_utf8(output.stdout).unwrap(),

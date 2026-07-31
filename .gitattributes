@@ -1,0 +1,5 @@
+# Golden fixtures are byte-compared and must keep canonical LF endings on
+# every checkout, including Windows runners.
+tests/cases/*.mmd text eol=lf
+tests/cases/*.ir text eol=lf
+tests/cases/*.txt text eol=lf
