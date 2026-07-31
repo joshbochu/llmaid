@@ -1,4 +1,6 @@
+use llmaid::diagram;
 use llmaid::mindmap;
+use llmaid::quality;
 use llmaid::render;
 use llmaid::style::Style;
 
@@ -36,6 +38,14 @@ fn generated_depth_breadth_and_unicode_trees_are_deterministic_and_valid() {
         let diagram = mindmap::parse(&source).unwrap_or_else(|error| panic!("{error}\n{source}"));
         for width in [18, 40, 100] {
             let scene = mindmap::scene(&diagram, width);
+            let semantic = diagram::parse(&source).unwrap();
+            let report = quality::evaluate(&semantic, &scene, width);
+            assert_eq!(
+                report.invariant_failed_checks(),
+                0,
+                "semantic invariant failures: {:?}\n{source}",
+                report.invariant_failures().collect::<Vec<_>>()
+            );
             assert_eq!(scene, mindmap::scene(&diagram, width), "{source}");
             assert_eq!(scene.boxes.len(), diagram.nodes.len(), "{source}");
             assert_eq!(scene.edges.len() + 1, diagram.nodes.len(), "{source}");
@@ -95,6 +105,14 @@ fn all_small_ordered_tree_shapes_preserve_source_order_and_ascii_purity() {
             let source = source_from_depths(&depths);
             let diagram = mindmap::parse(&source).unwrap();
             let scene = mindmap::scene(&diagram, 100);
+            let semantic = diagram::parse(&source).unwrap();
+            let report = quality::evaluate(&semantic, &scene, 100);
+            assert_eq!(
+                report.invariant_failed_checks(),
+                0,
+                "semantic invariant failures: {:?}\n{source}",
+                report.invariant_failures().collect::<Vec<_>>()
+            );
             let (rendered, failures) =
                 render::render_scene_with_checks(&scene, Style { ascii: true });
             assert!(

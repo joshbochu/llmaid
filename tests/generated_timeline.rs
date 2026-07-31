@@ -1,3 +1,5 @@
+use llmaid::diagram;
+use llmaid::quality;
 use llmaid::render;
 use llmaid::style::Style;
 use llmaid::timeline;
@@ -44,6 +46,14 @@ fn all_170_small_period_event_and_section_structures_are_clean_ordered_and_deter
                 }
 
                 let scene = timeline::scene(&diagram, 100);
+                let semantic = diagram::parse(&source).unwrap();
+                let report = quality::evaluate(&semantic, &scene, 100);
+                assert_eq!(
+                    report.invariant_failed_checks(),
+                    0,
+                    "semantic invariant failures: {:?}\n{source}",
+                    report.invariant_failures().collect::<Vec<_>>()
+                );
                 assert_eq!(scene, timeline::scene(&diagram, 100), "{source}");
                 for ascii in [false, true] {
                     let (first, failures) =
@@ -82,6 +92,14 @@ fn stress_timelines_cover_depth_breadth_unicode_long_labels_and_tight_widths() {
         let diagram = timeline::parse(source).unwrap();
         for width in [1, 18, 40, 100] {
             let scene = timeline::scene(&diagram, width);
+            let semantic = diagram::parse(source).unwrap();
+            let report = quality::evaluate(&semantic, &scene, width);
+            assert_eq!(
+                report.invariant_failed_checks(),
+                0,
+                "semantic invariant failures: {:?}\nwidth={width}\n{source}",
+                report.invariant_failures().collect::<Vec<_>>()
+            );
             assert_eq!(
                 scene,
                 timeline::scene(&diagram, width),

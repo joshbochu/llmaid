@@ -5,7 +5,9 @@
 //! project's five-second budget.
 
 use llmaid::class;
+use llmaid::diagram;
 use llmaid::er;
+use llmaid::quality;
 use llmaid::render;
 use llmaid::scene::{Rect, Scene};
 use llmaid::state;
@@ -47,6 +49,15 @@ fn assert_scene_contract(scene: &Scene, context: &str, visible: &[&str]) {
             "ASCII missing {expected:?}\n{context}\n{ascii}"
         );
     }
+
+    let semantic = diagram::parse(context).unwrap_or_else(|error| panic!("{error}\n{context}"));
+    let report = quality::evaluate(&semantic, scene, 120);
+    assert_eq!(
+        report.invariant_failed_checks(),
+        0,
+        "semantic invariant failures: {:?}\n{context}\n{unicode}",
+        report.invariant_failures().collect::<Vec<_>>()
+    );
 }
 
 fn assert_opposite_envelopes(lr: Rect, rl: Rect, tb: Rect, bt: Rect, context: &str) {

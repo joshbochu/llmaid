@@ -44,13 +44,14 @@ Then render Mermaid from stdin or a file:
 echo 'flowchart LR; prompt --> tokens --> answer' | llmaid
 ```
 
-Render a file, select ASCII structural glyphs, or inspect machine geometry:
+Render a file, select ASCII structural glyphs, or inspect it programmatically:
 
 ```sh
 llmaid diagram.mmd
 llmaid --ascii diagram.mmd
 llmaid --width 72 diagram.mmd
 llmaid --audit=json diagram.mmd
+llmaid --inspect=json diagram.mmd
 ```
 
 Diagram output is written only to stdout. Warnings and repairable, source-aware
@@ -70,7 +71,8 @@ logs, and agent responses.
 
 Known Mermaid document types outside those slices fail directly instead of
 being silently reinterpreted. See [MATRIX.md](MATRIX.md) for the exact coverage
-boundary and [BEHAVIORS.md](BEHAVIORS.md) for user-facing contracts.
+boundary, [BEHAVIORS.md](BEHAVIORS.md) for user-facing contracts, and
+[INSPECTION.md](INSPECTION.md) for the agent self-verification workflow.
 
 ## Rendering guarantees
 
@@ -86,8 +88,22 @@ boundary and [BEHAVIORS.md](BEHAVIORS.md) for user-facing contracts.
 - Raw terminal controls are rejected with a source line; closed downstream
   pipes exit cleanly.
 
-`--audit=json` emits deterministic `llmaid.audit.v1` geometry, fit diagnostics,
-and exact named violations for an agent or test harness to inspect.
+`--inspect=json` emits deterministic `llmaid.inspect.v1`: normalized semantic
+geometry, exact terminal rows, and typed invariant, preference, and budget
+checks. Checks report `pass`, `fail`, or `not_applicable`; failures name the
+affected elements and exact integer witnesses. Unsupported aesthetic
+compositions are explicit in `unclassified` rather than silently passing.
+This is the primary agent self-verification interface.
+
+An agent should require `summary.invariant_failed_checks == 0`, inspect any
+nonzero `summary.quality_failed_checks`, and treat `unclassified` as a request
+for human review or a new topology-specific predicate—not as proof of quality.
+Budget failures are reported separately because labels are allowed to exceed a
+target width rather than truncate.
+
+`--audit=json` remains the smaller, backward-compatible `llmaid.audit.v1`
+geometry and fit report. It is useful for existing consumers; its bytes and
+schema are separate from semantic inspection.
 
 ## Command line
 
@@ -98,6 +114,7 @@ llmaid [OPTIONS] [FILE]
 --width <N>    target output width (default: 100)
 --strict       treat warnings as errors
 --audit=json   output a machine-readable geometry audit
+--inspect=json output semantic geometry, typed quality checks, and raster rows
 --help         print help
 --version      print the version
 ```
@@ -113,6 +130,7 @@ cargo test --all-targets
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 python3 -m unittest scripts/test_review_gallery.py
+cargo test --test inspection
 ```
 
 Rendering aesthetics are part of the specification. Use

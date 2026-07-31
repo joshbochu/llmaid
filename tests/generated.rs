@@ -5,8 +5,10 @@
 //! exercised in all four Mermaid directions.
 
 use llmaid::audit;
+use llmaid::diagram::{self, Diagram};
 use llmaid::layout;
 use llmaid::parse;
+use llmaid::quality;
 use llmaid::render;
 use llmaid::route;
 use llmaid::style::Style;
@@ -73,12 +75,16 @@ fn exhaustive_small_dags_satisfy_scene_and_geometry_invariants() {
         for mask in 1..(1 << edge_slots) {
             for direction in DIRECTIONS {
                 let source = source(nodes, mask, direction);
-                let graph = parse::parse(&source).unwrap_or_else(|error| {
+                let diagram = diagram::parse(&source).unwrap_or_else(|error| {
                     panic!("generated case did not parse: {error}\n{source}")
                 });
-                let placed = layout::layout(&graph, 100);
-                let scene = route::route(&graph, &placed);
-                let geometry = audit::measure(&graph, &placed, &scene);
+                let Diagram::Flowchart(graph) = &diagram else {
+                    unreachable!("generated flowchart parsed as another diagram type")
+                };
+                let placed = layout::layout(graph, 100);
+                let scene = route::route(graph, &placed);
+                let geometry = audit::measure(graph, &placed, &scene);
+                let quality = quality::evaluate(&diagram, &scene, 100);
                 let (rendered, failures) = render::render_scene_with_checks(&scene, style);
 
                 assert!(
@@ -91,6 +97,11 @@ fn exhaustive_small_dags_satisfy_scene_and_geometry_invariants() {
                     "render invariants: {}\n{source}\n{rendered}",
                     failures.join("; ")
                 );
+                assert!(
+                    quality.invariant_failed_checks() == 0,
+                    "semantic invariant failures: {:?}\n{source}\n{rendered}",
+                    quality.invariant_failures().collect::<Vec<_>>()
+                );
                 assert_eq!(scene.boxes.len(), nodes, "{source}");
                 assert_eq!(scene.edges.len(), mask.count_ones() as usize, "{source}");
                 assert!(
@@ -101,10 +112,10 @@ fn exhaustive_small_dags_satisfy_scene_and_geometry_invariants() {
                     "incomplete routed edge\n{source}\n{rendered}"
                 );
                 // Re-running the whole integer pipeline must be byte-identical.
-                let placed_again = layout::layout(&graph, 100);
+                let placed_again = layout::layout(graph, 100);
                 assert_eq!(
                     rendered,
-                    render::render(&graph, &placed_again, style),
+                    render::render(graph, &placed_again, style),
                     "non-deterministic render\n{source}"
                 );
                 cases += 1;

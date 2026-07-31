@@ -180,6 +180,7 @@ Mermaid as the only primary agent language.
 | Behavior contracts / goldens | Y | ? | ? | N | N | — |
 | Frame invariants (tests) | Y | ? | ? | N | N | — |
 | Machine geometry audit | Y | N | N | N | N | — |
+| Semantic final-render inspection | Y | N | N | N | N | — |
 | Generated/metamorphic coverage | Y | ? | ? | N | N | — |
 | Color themes | N | P | Y | N | P | Y |
 | Interactive TUI | N | P | Y | N | N | Y |
@@ -251,6 +252,7 @@ When you ship a feature:
 
 | Date | Note |
 |------|------|
+| 2026-07-31 | Added stable semantic final-Scene inspection with typed applicability, exact witnesses, unclassified compositions, raster rows, and cross-engine quality gates. |
 | 2026-07-09 | Initial matrix from design + local tool probes (tw, termaid demos, diagon modes, graph-easy). |
 | 2026-07-09 | Phase 0: TB/BT labels, RL goldens, mono-chain straighten; flowchart direction cells strengthened. |
 | 2026-07-09 | Phase 1.1: real subgraphs (parse membership, bbox frames, titles). |
