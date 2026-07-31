@@ -25,6 +25,19 @@ Install from crates.io with Rust 1.88 or newer:
 cargo install llmaid --locked
 ```
 
+Cargo installs the executable in `$CARGO_HOME/bin` (normally
+`~/.cargo/bin`). To upgrade or reinstall the latest published version:
+
+```sh
+cargo install llmaid --locked --force
+```
+
+To remove it:
+
+```sh
+cargo uninstall llmaid
+```
+
 Then render Mermaid from stdin or a file:
 
 ```sh
