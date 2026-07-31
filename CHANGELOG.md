@@ -5,6 +5,10 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 
 ## [Unreleased]
 
+### Documentation
+- The README now documents crates.io installation, upgrade/reinstallation,
+  removal, and the Cargo binary location.
+
 ## [0.1.0] - 2026-07-31
 
 ### Changed
