@@ -25,6 +25,13 @@ Agents speak Mermaid; we own primitives behind the door.
 
 ---
 
+## Parity targets
+
+- **Strategic parity target:** sequence diagrams.
+- **Quickest parity target:** timeline.
+
+---
+
 ## Phase status
 
 | Phase | Name | Status |
