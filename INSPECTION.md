@@ -218,12 +218,13 @@ Current check families include:
 - shared scene integrity and viewport width;
 - flowchart endpoint attachment, simple centerlines, exclusive fork/merge
   centering, eligible-diamond mirroring, unrelated crossings, and groups;
-- sequence header/lifeline alignment, message ordering and centering, and
-  fragment span;
+- sequence header/lifeline alignment, message ordering and centering, fragment
+  span, and final-frame lifeline termination;
 - state transition endpoints and node shapes;
 - class relation endpoints, compartments, endpoint decorations, and
   multiplicities;
-- ER relationship endpoints, attribute tables, and cardinalities;
+- ER relationship endpoints, attribute tables, cardinalities, relationship
+  label attachment, and shared-endpoint lane separation;
 - mindmap parent/child spans, edge attachments, padding, and depth columns;
 - timeline spine, chronology, connector padding, section containment, and
   title centering.

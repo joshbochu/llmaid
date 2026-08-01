@@ -138,7 +138,11 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
                         } else {
                             0
                         };
-                    let mut point = to_screen(placed, anchor, first.from.1);
+                    // The label band lies after all bend tracks, alongside the
+                    // segment approaching this channel's target. Anchor to
+                    // that real shaft rather than the source port, whose leg
+                    // may already have ended at an earlier bend.
+                    let mut point = to_screen(placed, anchor, first.to.1);
                     point.x += 1;
                     point
                 };

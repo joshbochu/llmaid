@@ -2,7 +2,7 @@ use llmaid::audit;
 use llmaid::diagram;
 use llmaid::scene::{CardinalityMaximum, CardinalityMinimum, EndpointDecorationKind};
 use llmaid::style::Style;
-use llmaid::{class, er, layout, mindmap, parse, render, route, temporal, timeline};
+use llmaid::{class, er, layout, mindmap, parse, quality, render, route, temporal, timeline};
 use unicode_width::UnicodeWidthStr;
 
 fn audit_source(source: &str) -> audit::GeometryAudit {
@@ -87,6 +87,38 @@ fn sequence_alt_else_has_one_exact_full_width_branch_separator() {
             "the separator should visibly cross each lifeline"
         );
     }
+}
+
+#[test]
+fn final_sequence_fragment_terminates_lifelines_on_its_bottom_border() {
+    let parsed = diagram::parse(
+        "sequenceDiagram\nparticipant A\nparticipant B\nloop Retry\nA->>B: go\nend\n",
+    )
+    .unwrap();
+    let scene = diagram::scene(&parsed, 100);
+    let frame_bottom = scene.groups.last().unwrap().rect.bottom() - 1;
+    assert!(
+        scene
+            .paths
+            .iter()
+            .all(|path| path.points.last().unwrap().y == frame_bottom)
+    );
+    let check = quality::evaluate(&parsed, &scene, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.final_fragment_termination")
+        .unwrap();
+    assert_eq!(check.status(), "pass", "{check:#?}");
+
+    let followed = diagram::parse(
+        "sequenceDiagram\nparticipant A\nparticipant B\nloop Retry\nA->>B: go\nend\nB-->>A: done\n",
+    )
+    .unwrap();
+    let followed_scene = diagram::scene(&followed, 100);
+    assert!(
+        followed_scene.paths[0].points.last().unwrap().y
+            > followed_scene.groups.last().unwrap().rect.bottom() - 1
+    );
 }
 
 #[test]
@@ -672,6 +704,43 @@ fn er_cardinalities_are_exactly_adjacent_and_tables_keep_one_row_per_attribute()
     }
     assert_eq!(scene.boxes[0].table.as_ref().unwrap().rows.len(), 2);
     assert_eq!(scene.boxes[0].rect.h, 7);
+}
+
+#[test]
+fn converging_vertical_er_relationships_keep_distinct_attached_lanes() {
+    let parsed = diagram::parse(
+        "erDiagram\ndirection TB\nMEMBER ||--o{ LOAN : borrows\nBOOK ||--o{ LOAN : appears_in\n",
+    )
+    .unwrap();
+    let scene = diagram::scene(&parsed, 100);
+    let target_a = &scene.endpoint_decorations[1];
+    let target_b = &scene.endpoint_decorations[3];
+    assert_ne!(target_a.at.x, target_b.at.x);
+    assert_eq!(target_a.toward.y, target_b.toward.y);
+
+    for edge in &scene.edges {
+        let label = edge.label.as_ref().unwrap();
+        assert!(edge.points.windows(2).any(|segment| {
+            segment[0].x == segment[1].x
+                && label.at.x == segment[0].x + 1
+                && label.at.y >= segment[0].y.min(segment[1].y)
+                && label.at.y <= segment[0].y.max(segment[1].y)
+        }));
+    }
+
+    let report = quality::evaluate(&parsed, &scene, 100);
+    for id in [
+        "er.cardinality_endpoints",
+        "er.relationship_label_attachment",
+        "er.cardinality_lane_separation",
+    ] {
+        let check = report.checks.iter().find(|check| check.id == id).unwrap();
+        assert_eq!(check.status(), "pass", "{check:#?}");
+    }
+
+    let unicode = render::render_scene(&scene, Style { ascii: false });
+    assert!(unicode.lines().any(|line| line.matches('∨').count() == 2));
+    assert!(unicode.lines().any(|line| line.matches('─').count() == 2));
 }
 
 #[test]

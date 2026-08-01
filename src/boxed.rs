@@ -62,6 +62,7 @@ struct BoxEdge {
     arrow: bool,
     label: Option<String>,
     endpoint_reserve: usize,
+    distinct_endpoints: bool,
 }
 
 /// Builder returned for an edge. Mutations preserve its declaration position.
@@ -92,6 +93,12 @@ impl EdgeBuilder<'_> {
 
     pub fn endpoint_spacing(&mut self, cells: usize) -> &mut Self {
         self.edge.endpoint_reserve = cells;
+        self
+    }
+
+    /// Preserve a stable, edge-specific port at shared endpoints.
+    pub fn distinct_endpoints(&mut self) -> &mut Self {
+        self.edge.distinct_endpoints = true;
         self
     }
 }
@@ -136,6 +143,7 @@ impl BoxDiagram {
             arrow: true,
             label: None,
             endpoint_reserve: 0,
+            distinct_endpoints: false,
         });
         EdgeBuilder {
             edge: self.edges.last_mut().expect("edge was just inserted"),
@@ -182,6 +190,7 @@ impl BoxDiagram {
                 arrow: edge.arrow,
                 label: edge.label.clone(),
                 endpoint_reserve: edge.endpoint_reserve,
+                distinct_endpoints: edge.distinct_endpoints,
             })
             .collect();
         graph

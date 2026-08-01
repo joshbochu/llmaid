@@ -667,6 +667,23 @@ sequenceDiagram
 }
 
 #[test]
+fn b36_given_final_sequence_fragment_then_lifelines_end_on_its_bottom_border() {
+    let source = "\
+sequenceDiagram
+  participant App
+  participant API
+  loop Retry
+    App->>API: request
+  end
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    let last = unicode.lines().last().unwrap();
+    assert_eq!(last.matches('┴').count(), 2, "{unicode}");
+    assert!(!last.contains('┼'), "{unicode}");
+}
+
+#[test]
 fn b21_given_flat_state_diagram_then_states_markers_and_transitions_are_preserved() {
     let source = "\
 stateDiagram-v2
@@ -793,6 +810,30 @@ erDiagram
         stderr.contains("<stdin>:2:") && stderr.contains("expected `:`"),
         "{stderr}"
     );
+}
+
+#[test]
+fn b35_given_converging_vertical_er_relationships_then_terminal_lanes_stay_distinct() {
+    let source = "\
+erDiagram
+  direction TB
+  MEMBER ||--o{ LOAN : borrows
+  BOOK ||--o{ LOAN : appears_in
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(unicode.matches("borrows").count(), 1, "{unicode}");
+    assert_eq!(unicode.matches("appears_in").count(), 1, "{unicode}");
+    assert!(
+        unicode.lines().any(|line| line.matches('∨').count() == 2),
+        "converging many-cardinalities need distinct vertical lanes:\n{unicode}"
+    );
+    assert!(!unicode.contains("○ <"), "{unicode}");
+
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+    assert!(ascii.lines().any(|line| line.matches('v').count() == 2));
 }
 
 #[test]

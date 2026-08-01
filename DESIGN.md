@@ -174,8 +174,11 @@ grids. Paint-level endpoint decorations carry UML diamonds/arrows/triangles and
 ER min/max cardinalities at exact cells. Design relationships reserve their
 paint footprint in layout: each adornment sits two cells from its box, leaving
 one visible connector cell, and paired ER marks retain a connector cell between
-them. Type-specific engines choose the semantics; the renderer only orients and
-paints the glyphs.
+them. Converging ER relationships retain declaration-ordered terminal ports so
+their cardinalities never collapse onto a shared trunk; vertical relationship
+labels sit beside the target-side shaft that actually crosses their reserved
+label row. Type-specific engines choose the semantics; the renderer only
+orients and paints the glyphs.
 
 `SceneGroup` frames may carry labeled horizontal separators. Sequence layout
 uses that generic primitive for `alt` / `else` branches, keeping control
