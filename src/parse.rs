@@ -55,6 +55,9 @@ pub struct Edge {
     pub label: Option<String>,
     /// Extra flow-axis cells reserved for paint-level endpoint adornments.
     pub endpoint_reserve: usize,
+    /// Keep this edge on its own endpoint ports instead of sharing a
+    /// fork/merge trunk with distinct peers.
+    pub distinct_endpoints: bool,
 }
 
 impl Edge {
@@ -413,6 +416,7 @@ fn parse_statement(g: &mut Graph, stmt: &str, line: usize) -> Result<(), ParseEr
                     arrow,
                     label: label.clone(),
                     endpoint_reserve: 0,
+                    distinct_endpoints: false,
                 });
             }
         }

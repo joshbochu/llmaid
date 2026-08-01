@@ -243,13 +243,20 @@ fn lower(sequence: &SequenceDiagram, fit: Fit) -> Scene {
                     row
                 }
                 ControlKind::End => {
+                    let closes_final_outer_fragment = event_index == sequence.events.len()
+                        && control_index + 1 == sequence.controls.len()
+                        && fragment_rows.len() == 1;
                     let start = fragment_rows
                         .pop()
                         .expect("parser guarantees balanced control blocks");
                     let row = next_top.max(last_content_bottom + 2).max(start + 2);
                     next_top = row + 1;
                     last_content_bottom = row;
-                    lifeline_bottom = lifeline_bottom.max(row + 1);
+                    lifeline_bottom = lifeline_bottom.max(if closes_final_outer_fragment {
+                        row
+                    } else {
+                        row + 1
+                    });
                     row
                 }
             };

@@ -1,0 +1,9 @@
+type: er
+direction: TB
+entities:
+  0: MEMBER [MEMBER]
+  1: LOAN [LOAN]
+  2: BOOK [BOOK]
+relationships:
+  MEMBER ||--o{ LOAN : "borrows"
+  BOOK ||--o{ LOAN : "appears_in"

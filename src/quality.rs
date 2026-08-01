@@ -671,6 +671,9 @@ fn sequence_checks(sequence: &SequenceDiagram, scene: &Scene, report: &mut Quali
     report.checks.push(sequence_lifelines(sequence, scene));
     report.checks.push(sequence_messages(sequence, scene));
     report.checks.push(sequence_fragments(sequence, scene));
+    report
+        .checks
+        .push(sequence_final_fragment_termination(sequence, scene));
     if sequence
         .events
         .iter()
@@ -852,6 +855,54 @@ fn sequence_fragments(sequence: &SequenceDiagram, scene: &Scene) -> CheckReport 
                     WitnessField::rect("fragment", group.rect),
                     WitnessField::integer("first_lifeline_x", first as i64),
                     WitnessField::integer("last_lifeline_x", last as i64),
+                ],
+            );
+        }
+    }
+    check
+}
+
+/// Eligible only when the final semantic control closes the outermost frame at
+/// the final event boundary. In that topology the frame is also the diagram's
+/// visual terminus, so every lifeline ends on—not below—its bottom border.
+fn sequence_final_fragment_termination(sequence: &SequenceDiagram, scene: &Scene) -> CheckReport {
+    let eligible = sequence.controls.last().is_some_and(|control| {
+        control.at == sequence.events.len()
+            && matches!(control.kind, crate::sequence::ControlKind::End)
+    });
+    let mut check = CheckReport::new(
+        "sequence.final_fragment_termination",
+        CheckClass::Preference,
+        usize::from(eligible),
+    );
+    if !eligible {
+        return check;
+    }
+    let Some(frame) = scene.groups.last() else {
+        check.fail(
+            Vec::new(),
+            "final semantic sequence fragment has no rendered frame",
+            Vec::new(),
+        );
+        return check;
+    };
+    let expected_y = frame.rect.bottom() - 1;
+    for (participant, path) in sequence.participants.iter().zip(&scene.paths) {
+        let actual_y = path.points.last().map_or(i32::MIN, |point| point.y);
+        if actual_y != expected_y {
+            check.fail(
+                vec![
+                    format!("participant:{}", participant.id),
+                    format!("lifeline:{}", participant.id),
+                ],
+                format!(
+                    "final lifeline `{}` does not terminate on the outer fragment border",
+                    participant.id
+                ),
+                vec![
+                    WitnessField::integer("expected_y", expected_y as i64),
+                    WitnessField::integer("actual_y", actual_y as i64),
+                    WitnessField::rect("fragment", frame.rect),
                 ],
             );
         }
@@ -1103,13 +1154,15 @@ fn er_checks(er: &ErDiagram, scene: &Scene, report: &mut QualityReport) {
     ));
     report.checks.push(er_tables(er, scene));
     report.checks.push(er_cardinalities(er, scene));
+    report.checks.push(er_relationship_labels(er, scene));
+    report.checks.push(er_cardinality_lanes(er, scene));
     if !er.relationships.is_empty() {
         report.unclassified.push(UnclassifiedComposition {
             kind: "er.boxed_layout_composition",
             elements: (0..er.relationships.len())
                 .map(|edge| format!("relationship:{edge}"))
                 .collect(),
-            message: "entity tables and endpoint cardinalities are verified; boxed-graph alignment and spacing are not yet classified by an ER-specific predicate".to_string(),
+            message: "entity tables, endpoint cardinalities, label attachment, and shared terminal-lane separation are verified; remaining boxed-graph alignment is not yet classified by an ER-specific predicate".to_string(),
         });
     }
 }
@@ -1208,7 +1261,22 @@ fn er_cardinalities(er: &ErDiagram, scene: &Scene) -> CheckReport {
             };
             let box_rect = scene_box(scene, box_index).unwrap().rect;
             let distance = manhattan(decoration.at, decoration.toward);
-            if decoration.kind != kind || distance != 2 || !box_rect.contains(decoration.toward) {
+            let path_cells = scene
+                .edges
+                .iter()
+                .find(|candidate| candidate.edge == edge)
+                .map(|candidate| crate::scene::path_cells(&candidate.points))
+                .unwrap_or_default();
+            let off_path = decoration
+                .paint_cells()
+                .into_iter()
+                .filter(|cell| !path_cells.contains(cell))
+                .count();
+            if decoration.kind != kind
+                || distance != 2
+                || !box_rect.contains(decoration.toward)
+                || off_path != 0
+            {
                 check.fail(
                     vec![
                         format!("relationship:{edge}"),
@@ -1221,9 +1289,119 @@ fn er_cardinalities(er: &ErDiagram, scene: &Scene) -> CheckReport {
                         WitnessField::integer("distance", distance as i64),
                         WitnessField::point("at", decoration.at),
                         WitnessField::point("toward", decoration.toward),
+                        WitnessField::integer("off_path_cells", off_path as i64),
                     ],
                 );
             }
+        }
+    }
+    check
+}
+
+fn er_relationship_labels(er: &ErDiagram, scene: &Scene) -> CheckReport {
+    let mut check = CheckReport::new(
+        "er.relationship_label_attachment",
+        CheckClass::Preference,
+        er.relationships.len(),
+    );
+    for (edge_index, relationship) in er.relationships.iter().enumerate() {
+        let Some(edge) = scene.edges.iter().find(|edge| edge.edge == edge_index) else {
+            continue;
+        };
+        let Some(label) = &edge.label else {
+            check.fail(
+                vec![format!("relationship:{edge_index}")],
+                format!(
+                    "relationship `{}` has no rendered label",
+                    relationship.label
+                ),
+                Vec::new(),
+            );
+            continue;
+        };
+        let bounds = label.bounds();
+        let nearest = crate::scene::path_cells(&edge.points)
+            .into_iter()
+            .map(|point| point_rect_distance(point, bounds))
+            .min()
+            .unwrap_or(usize::MAX);
+        if nearest > 1 {
+            check.fail(
+                vec![format!("relationship:{edge_index}")],
+                format!(
+                    "relationship label `{}` is detached from its routed path",
+                    relationship.label
+                ),
+                vec![
+                    WitnessField::rect("label", bounds),
+                    WitnessField::integer("nearest_path_distance", nearest as i64),
+                ],
+            );
+        }
+    }
+    check
+}
+
+/// Eligible for each pair of relationship endpoints attached to the same
+/// entity. Paint cells must remain disjoint so every semantic relationship has
+/// a visible, independently readable cardinality lane.
+fn er_cardinality_lanes(er: &ErDiagram, scene: &Scene) -> CheckReport {
+    let mut shared = Vec::new();
+    for left in 0..er.relationships.len() {
+        for right in left + 1..er.relationships.len() {
+            let a = &er.relationships[left];
+            let b = &er.relationships[right];
+            for entity in 0..er.entities.len() {
+                let a_end = (a.from == entity)
+                    .then_some(0)
+                    .or((a.to == entity).then_some(1));
+                let b_end = (b.from == entity)
+                    .then_some(0)
+                    .or((b.to == entity).then_some(1));
+                if let (Some(a_end), Some(b_end)) = (a_end, b_end) {
+                    shared.push((left, a_end, right, b_end, entity));
+                }
+            }
+        }
+    }
+    let mut check = CheckReport::new(
+        "er.cardinality_lane_separation",
+        CheckClass::Preference,
+        shared.len(),
+    );
+    for (left, left_end, right, right_end, entity) in shared {
+        let decorations = |edge: usize| {
+            scene
+                .endpoint_decorations
+                .iter()
+                .filter(|decoration| decoration.edge == edge)
+                .collect::<Vec<_>>()
+        };
+        let left_decorations = decorations(left);
+        let right_decorations = decorations(right);
+        let (Some(a), Some(b)) = (
+            left_decorations.get(left_end),
+            right_decorations.get(right_end),
+        ) else {
+            continue;
+        };
+        let a_cells = a.paint_cells();
+        let b_cells = b.paint_cells();
+        let overlap = a_cells.iter().filter(|cell| b_cells.contains(cell)).count();
+        if overlap != 0 {
+            check.fail(
+                vec![
+                    format!("relationship:{left}"),
+                    format!("relationship:{right}"),
+                    format!("entity:{}", er.entities[entity].id),
+                ],
+                "converging ER cardinalities occupy the same terminal lane",
+                vec![
+                    WitnessField::integer("overlap_cells", overlap as i64),
+                    WitnessField::point("left_anchor", a.at),
+                    WitnessField::point("right_anchor", b.at),
+                ],
+            );
         }
     }
     check
@@ -1864,6 +2042,24 @@ fn manhattan(left: Point, right: Point) -> usize {
     left.x.abs_diff(right.x) as usize + left.y.abs_diff(right.y) as usize
 }
 
+fn point_rect_distance(point: Point, rect: Rect) -> usize {
+    let dx = if point.x < rect.x {
+        rect.x - point.x
+    } else if point.x >= rect.right() {
+        point.x - rect.right() + 1
+    } else {
+        0
+    };
+    let dy = if point.y < rect.y {
+        rect.y - point.y
+    } else if point.y >= rect.bottom() {
+        point.y - rect.bottom() + 1
+    } else {
+        0
+    };
+    (dx + dy) as usize
+}
+
 fn decoration_kind_name(kind: EndpointDecorationKind) -> &'static str {
     match kind {
         EndpointDecorationKind::OpenArrow => "open_arrow",
@@ -2013,5 +2209,62 @@ mod tests {
                 .any(|value| value.kind == "class.boxed_layout_composition"),
             "{report:#?}"
         );
+    }
+
+    #[test]
+    fn extended_final_lifeline_fails_final_fragment_termination_check() {
+        let parsed = diagram::parse(
+            "sequenceDiagram\nparticipant A\nparticipant B\nloop Retry\nA->>B: go\nend\n",
+        )
+        .unwrap();
+        let mut scene = diagram::scene(&parsed, 100);
+        scene.paths[0].points.last_mut().unwrap().y += 1;
+
+        let report = evaluate(&parsed, &scene, 100);
+        let check = report
+            .checks
+            .iter()
+            .find(|check| check.id == "sequence.final_fragment_termination")
+            .unwrap();
+        assert_eq!(check.status(), "fail");
+        assert_eq!(check.failures[0].elements, ["participant:A", "lifeline:A"]);
+    }
+
+    #[test]
+    fn overlapping_final_er_decorations_fail_lane_separation_check() {
+        let parsed =
+            diagram::parse("erDiagram\ndirection TB\nA ||--o{ C : first\nB ||--o{ C : second\n")
+                .unwrap();
+        let mut scene = diagram::scene(&parsed, 100);
+        scene.endpoint_decorations[3].at = scene.endpoint_decorations[1].at;
+        scene.endpoint_decorations[3].toward = scene.endpoint_decorations[1].toward;
+
+        let report = evaluate(&parsed, &scene, 100);
+        let check = report
+            .checks
+            .iter()
+            .find(|check| check.id == "er.cardinality_lane_separation")
+            .unwrap();
+        assert_eq!(check.status(), "fail");
+        assert_eq!(
+            check.failures[0].elements,
+            ["relationship:0", "relationship:1", "entity:C"]
+        );
+    }
+
+    #[test]
+    fn detached_er_label_fails_path_attachment_check() {
+        let parsed = diagram::parse("erDiagram\ndirection TB\nA ||--o{ B : owns\n").unwrap();
+        let mut scene = diagram::scene(&parsed, 100);
+        scene.edges[0].label.as_mut().unwrap().at.x += 20;
+
+        let report = evaluate(&parsed, &scene, 100);
+        let check = report
+            .checks
+            .iter()
+            .find(|check| check.id == "er.relationship_label_attachment")
+            .unwrap();
+        assert_eq!(check.status(), "fail");
+        assert_eq!(check.failures[0].elements, ["relationship:0"]);
     }
 }

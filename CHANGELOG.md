@@ -29,6 +29,17 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   mutually exclusive machine-output modes.
 
 ### Fixed
+- Converging ER relationships now retain distinct declaration-ordered terminal
+  lanes instead of collapsing their cardinalities onto one shared trunk.
+  Cardinality bars and many-marks orient with horizontal or vertical endpoint
+  legs, and vertical relationship labels anchor beside a shaft that exists on
+  their row. New exact checks cover on-path cardinalities, pairwise lane
+  separation, and label attachment, with final-Scene mutation proofs and a
+  reviewed `er-converging` golden (B35).
+- A sequence diagram whose final content is an outermost control fragment now
+  terminates participant lifelines on the frame's bottom border rather than
+  painting a dangling row below it. Fragments followed by later events retain
+  continuing lifelines (B36).
 - Sequence message labels now center their occupied cell extent between the
   actual attachment cells instead of subtracting the full width and biasing
   labels one column left. Four sequence goldens record the improved centering.
@@ -48,6 +59,17 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   roadmap, handoff, behavior, and capability docs cover the inspection loop.
 
 ### Decisions
+
+- **D35 — Decorated relationships preserve endpoint identity; shared trunks
+  are not valid when they collapse semantic adornments.** Generic flow routing
+  may share fork/merge geometry, but ER cardinalities belong to individual
+  relationships and must remain independently readable. The semantic-free
+  boxed adapter therefore exposes a stable distinct-endpoint property; ER
+  lowering opts into it, layout reserves complete vertical endpoint runs, and
+  the final-Scene evaluator independently checks on-path paint cells,
+  pairwise lane separation, and label adjacency. Rejected: painter-only glyph
+  offsets beside a shared route, because they detach notation from the wire
+  and let multiple semantic endpoints occupy the same cells.
 
 - **D34 — Inspect semantic relations on the final Scene; do not grade a fixed
   placement grid.** Diagram IR supplies stable semantic identity and intent,

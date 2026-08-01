@@ -539,6 +539,7 @@ pub fn scene(diagram: &ErDiagram, width: usize) -> Scene {
         edge.label(relationship.label.clone());
         edge.without_arrow();
         edge.endpoint_spacing(4);
+        edge.distinct_endpoints();
         if relationship.kind == RelationshipKind::NonIdentifying {
             edge.kind(EdgeKind::Dotted);
         }

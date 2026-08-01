@@ -146,6 +146,10 @@ structural coverage lives beside its engine tests. Decisions behind these:
   deterministic and never truncate labels; malformed, unmatched,
   duplicate-`else`, and unclosed directives name the source line and
   expectation.
+- **B36** Given a sequence whose final semantic content is an outermost
+  control fragment, when rendered, then each participant lifeline terminates
+  on that frame's bottom border without a dangling row below it. If a later
+  event follows the fragment, lifelines continue through the frame normally.
 
 ## Design-document diagrams
 
@@ -172,6 +176,11 @@ structural coverage lives beside its engine tests. Decisions behind these:
   other and from box borders by visible connector cells. Unicode and `--ascii`
   output are deterministic and malformed attributes/relationships name the
   source line and expectation.
+- **B35** Given two or more ER relationships that share an entity endpoint,
+  including vertical `TB` / `BT` layouts, when rendered, then every
+  relationship retains a distinct terminal lane, its direction-aware
+  cardinality marks lie on that lane without overlapping another relation,
+  and its label remains adjacent to its own routed path.
 
 ## Runtime self-checks
 

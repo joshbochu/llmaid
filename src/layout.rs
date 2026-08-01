@@ -73,6 +73,8 @@ pub struct Channel {
     pub label_zone: usize,
     /// Flow-axis offset of the label band from `start`.
     pub label_offset: usize,
+    /// Flow-axis clearance before the first bend track.
+    pub leading_reserve: usize,
 }
 
 impl Channel {
@@ -80,7 +82,7 @@ impl Channel {
         // Jog first, then reserve the remainder of the channel for labels on
         // the outgoing branch. This makes a label visibly belong to the path
         // it describes instead of floating on the other side of the bend.
-        self.start + 1 + 2 * t
+        self.start + self.leading_reserve + 1 + 2 * t
     }
 }
 
@@ -724,12 +726,33 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
             .map(|&edge| g.edges[edge].endpoint_reserve)
             .max()
             .unwrap_or(0);
+        let preserves_distinct_endpoints = channel_edges[r]
+            .iter()
+            .any(|&edge| g.edges[edge].distinct_endpoints);
+        // Vertical channels need a complete endpoint run on both sides so
+        // direction-aware adornments cannot overlap bend or label bands.
+        // Horizontal channels already place adornments along the label-bearing
+        // branch, so retain the compact established split there.
+        let (leading_reserve, trailing_reserve) = if horizontal || !preserves_distinct_endpoints {
+            (
+                endpoint_reserve / 2,
+                endpoint_reserve - endpoint_reserve / 2,
+            )
+        } else {
+            (endpoint_reserve, endpoint_reserve)
+        };
         let (mut width, label_offset) = if horizontal {
             let channel_min = if fit.compact { 3 } else { 5 };
             let slack = if fit.compact { 2 } else { 3 };
             (
-                channel_min.max(label_zone + 2 * channel_track_count[r] + slack + endpoint_reserve),
-                0,
+                channel_min.max(
+                    leading_reserve
+                        + label_zone
+                        + 2 * channel_track_count[r]
+                        + slack
+                        + trailing_reserve,
+                ),
+                leading_reserve,
             )
         } else {
             // Vertical channels reserve only rows that carry visible geometry:
@@ -742,7 +765,10 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
             } else {
                 track_rows + label_zone + 1
             };
-            (geometry_rows + endpoint_reserve, track_rows)
+            (
+                leading_reserve + geometry_rows + trailing_reserve,
+                leading_reserve + track_rows,
+            )
         };
         width = width.max(group_channel_min[r]);
         channels.push(Channel {
@@ -750,6 +776,7 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
             width,
             label_zone,
             label_offset,
+            leading_reserve,
         });
     }
 
@@ -1805,7 +1832,13 @@ fn port_map(
             && attached
                 .iter()
                 .any(|&(edge_index, _, _)| g.edges[edge_index].label.is_some());
-        let centered_junction = distinct_junction && !has_feedback && !labeled_horizontal_merge;
+        let preserves_distinct_endpoints = attached
+            .iter()
+            .any(|&(edge_index, _, _)| g.edges[edge_index].distinct_endpoints);
+        let centered_junction = distinct_junction
+            && !has_feedback
+            && !labeled_horizontal_merge
+            && !preserves_distinct_endpoints;
         let interior = b.clen.saturating_sub(2).max(1);
         for (index, &(ei, _, _)) in attached.iter().enumerate() {
             let offset = if centered_junction || attached.len() == 1 {

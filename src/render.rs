@@ -1013,17 +1013,13 @@ fn draw_endpoint_decoration(canvas: &mut Canvas, decoration: &EndpointDecoration
             };
             let maximum_glyph = cardinality_maximum_glyph(decoration, maximum, style);
             let cells = decoration_cells(decoration);
-            if decoration.at.x == decoration.toward.x {
-                let minimum_at = point(cells[0]);
-                let maximum_at = point(cells[1]);
-                canvas.put_text_char(minimum_at.0, minimum_at.1, minimum_glyph);
-                canvas.put_text_char(maximum_at.0, maximum_at.1, maximum_glyph);
-            } else {
-                let maximum_at = point(cells[0]);
-                let minimum_at = point(cells[1]);
-                canvas.put_text_char(maximum_at.0, maximum_at.1, maximum_glyph);
-                canvas.put_text_char(minimum_at.0, minimum_at.1, minimum_glyph);
-            }
+            // Mermaid cardinality tokens place the maximum nearest the
+            // entity and the minimum farther away. `paint_cells` follows the
+            // endpoint leg in that order for every orientation.
+            let maximum_at = point(cells[0]);
+            let minimum_at = point(cells[1]);
+            canvas.put_text_char(maximum_at.0, maximum_at.1, maximum_glyph);
+            canvas.put_text_char(minimum_at.0, minimum_at.1, minimum_glyph);
         }
         kind => {
             let ch = match kind {
@@ -1062,8 +1058,14 @@ fn decoration_cells(decoration: &EndpointDecoration) -> Vec<Point> {
     decoration.paint_cells()
 }
 
-fn cardinality_bar(_decoration: &EndpointDecoration, style: Style) -> char {
-    if style.ascii { '|' } else { '│' }
+fn cardinality_bar(decoration: &EndpointDecoration, style: Style) -> char {
+    if decoration.at.x == decoration.toward.x {
+        if style.ascii { '-' } else { '─' }
+    } else if style.ascii {
+        '|'
+    } else {
+        '│'
+    }
 }
 
 fn cardinality_maximum_glyph(
@@ -1075,7 +1077,20 @@ fn cardinality_maximum_glyph(
         CardinalityMaximum::One => cardinality_bar(decoration, style),
         CardinalityMaximum::Many if decoration.toward.x > decoration.at.x => '<',
         CardinalityMaximum::Many if decoration.toward.x < decoration.at.x => '>',
-        CardinalityMaximum::Many => '<',
+        CardinalityMaximum::Many if decoration.toward.y > decoration.at.y => {
+            if style.ascii {
+                'v'
+            } else {
+                '∨'
+            }
+        }
+        CardinalityMaximum::Many => {
+            if style.ascii {
+                '^'
+            } else {
+                '∧'
+            }
+        }
     }
 }
 
