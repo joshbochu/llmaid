@@ -605,6 +605,99 @@ fn group_entry_and_exit_paths_preserve_frame_strokes_and_titles_in_every_directi
 }
 
 #[test]
+fn group_endpoint_attachment_is_independently_checked_on_the_final_scene() {
+    let parsed = diagram::parse(
+        "flowchart LR\n\
+         subgraph workers [Workers]\n\
+           A --> B\n\
+         end\n\
+         workers --> T\n",
+    )
+    .unwrap();
+    let mut scene = diagram::scene(&parsed, 100);
+    let workers = scene.groups[0].rect;
+    let edge = scene.edges.iter_mut().find(|edge| edge.edge == 1).unwrap();
+    edge.points[0] = llmaid::scene::Point::new(workers.x + 1, workers.y + 1);
+
+    let check = quality::evaluate(&parsed, &scene, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "flow.edge_endpoints")
+        .unwrap();
+    assert_eq!(check.status(), "fail", "{check:#?}");
+    assert!(
+        check.failures[0]
+            .elements
+            .iter()
+            .any(|value| value == "group:workers"),
+        "{check:#?}"
+    );
+}
+
+#[test]
+fn containment_endpoints_attach_to_exact_group_borders_in_every_direction() {
+    for direction in ["LR", "RL", "TB", "BT"] {
+        for (relation, source_group, target_group) in [
+            ("outer -->|contains| inner", Some("outer"), Some("inner")),
+            ("inner -->|contains| outer", Some("inner"), Some("outer")),
+            ("A -->|contains| outer", None, Some("outer")),
+            ("outer -->|contains| A", Some("outer"), None),
+        ] {
+            let parsed = diagram::parse(&format!(
+                "flowchart {direction}\n\
+                 subgraph outer\n\
+                   subgraph inner\n\
+                     A --> B\n\
+                   end\n\
+                 end\n\
+                 {relation}\n"
+            ))
+            .unwrap();
+            let scene = diagram::scene(&parsed, 100);
+            let edge = scene.edges.iter().find(|edge| edge.edge == 1).unwrap();
+            assert_eq!(
+                edge.label.as_ref().map(|label| label.text.trim()),
+                Some("contains"),
+                "{direction} {relation}: semantic label was dropped"
+            );
+            let source = *edge.points.first().unwrap();
+            let target = edge
+                .arrow
+                .as_ref()
+                .map(|arrow| arrow.toward)
+                .or_else(|| edge.points.last().copied())
+                .unwrap();
+
+            for (group, point) in [(source_group, source), (target_group, target)] {
+                let Some(group) = group else {
+                    continue;
+                };
+                let rect = scene
+                    .groups
+                    .iter()
+                    .find(|value| value.title.text.trim() == group)
+                    .unwrap()
+                    .rect;
+                assert!(
+                    rect.contains(point)
+                        && (point.x == rect.x
+                            || point.x == rect.right() - 1
+                            || point.y == rect.y
+                            || point.y == rect.bottom() - 1),
+                    "{direction} {relation}: {edge:#?}"
+                );
+            }
+
+            let report = quality::evaluate(&parsed, &scene, 100);
+            assert!(
+                !report.has_failures(),
+                "{direction} {relation}: {report:#?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn asymmetric_graph_is_not_graded_as_a_mirror_candidate() {
     let audit = audit_source("flowchart TB\nA --> B\nA --> C\nB --> D\nD --> E\nC --> E\n");
 

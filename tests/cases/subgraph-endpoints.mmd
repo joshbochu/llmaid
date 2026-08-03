@@ -1,0 +1,8 @@
+flowchart LR
+  Source --> workers
+  subgraph platform [Platform]
+    subgraph workers [Workers]
+      Build --> Verify
+    end
+  end
+  workers --> Publish

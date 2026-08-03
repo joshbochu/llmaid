@@ -5,7 +5,7 @@
 //! then reuses the deterministic flowchart layout and routing geometry.
 
 use crate::layout;
-use crate::parse::{Dir, Edge, Graph, Node};
+use crate::parse::{Dir, Edge, Endpoint, Graph, Node};
 use crate::route;
 use crate::scene::{
     EdgeKind, EndpointDecoration, EndpointDecorationKind, Point, Scene, SceneText, Shape,
@@ -186,11 +186,14 @@ impl BoxDiagram {
             .map(|edge| Edge {
                 from: edge.from.0,
                 to: edge.to.0,
+                source: Endpoint::Node(edge.from.0),
+                target: Endpoint::Node(edge.to.0),
                 kind: edge.kind,
                 arrow: edge.arrow,
                 label: edge.label.clone(),
                 endpoint_reserve: edge.endpoint_reserve,
                 distinct_endpoints: edge.distinct_endpoints,
+                line: 0,
             })
             .collect();
         graph

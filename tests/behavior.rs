@@ -4,7 +4,7 @@
 //! every golden in `tests/golden.rs`.
 
 use llmaid::layout;
-use llmaid::parse::{EdgeKind, Shape, parse};
+use llmaid::parse::{EdgeKind, Endpoint, Shape, parse};
 use llmaid::render;
 use llmaid::style::{E, N, S, Style, W};
 use std::process::{Command, Stdio};
@@ -160,6 +160,89 @@ flowchart TB
     assert!(
         outer_i < inner_i,
         "Outer title should appear above Inner:\n{nout}"
+    );
+}
+
+#[test]
+fn b39_given_declared_subgraph_id_as_an_edge_endpoint_then_the_frame_is_semantic_endpoint() {
+    for direction in ["LR", "RL", "TB", "BT"] {
+        let source = format!(
+            "flowchart {direction}\n\
+             Outside -.->|enter| inner\n\
+             subgraph outer [Outer]\n\
+               subgraph inner [Inner]\n\
+                 A --> B\n\
+               end\n\
+             end\n\
+             inner ==>|leave| After\n"
+        );
+        let graph = parse(&source).unwrap();
+        let inner = graph
+            .subgraphs
+            .iter()
+            .position(|group| group.id == "inner")
+            .unwrap();
+        assert!(
+            graph.nodes.iter().all(|node| node.id != "inner"),
+            "{direction}: a subgraph endpoint must not create a node"
+        );
+        assert!(matches!(graph.edges[0].target, Endpoint::Subgraph(group) if group == inner));
+        assert!(matches!(graph.edges[2].source, Endpoint::Subgraph(group) if group == inner));
+        assert_eq!(graph.edges[0].kind, EdgeKind::Dotted);
+        assert_eq!(graph.edges[0].label.as_deref(), Some("enter"));
+        assert_eq!(graph.edges[2].kind, EdgeKind::Thick);
+        assert_eq!(graph.edges[2].label.as_deref(), Some("leave"));
+
+        let placed = layout::layout(&graph, 100);
+        let scene = llmaid::route::route(&graph, &placed);
+        let frame = scene
+            .groups
+            .iter()
+            .find(|group| group.subgraph == inner)
+            .unwrap()
+            .rect;
+        for edge in [
+            scene.edges.iter().find(|edge| edge.edge == 0).unwrap(),
+            scene.edges.iter().find(|edge| edge.edge == 2).unwrap(),
+        ] {
+            let source = edge.points.first().copied().unwrap();
+            let target = edge
+                .arrow
+                .as_ref()
+                .map(|arrow| arrow.toward)
+                .or_else(|| edge.points.last().copied())
+                .unwrap();
+            assert!(
+                [source, target].iter().any(|point| {
+                    frame.contains(*point)
+                        && (point.x == frame.x
+                            || point.x == frame.right() - 1
+                            || point.y == frame.y
+                            || point.y == frame.bottom() - 1)
+                }),
+                "{direction}: group endpoint must lie on its frame: {edge:?}"
+            );
+        }
+        let semantic = llmaid::diagram::Diagram::Flowchart(graph);
+        let inspected = llmaid::inspect::json(&semantic, 100, Style { ascii: false });
+        assert!(
+            inspected.contains("\"source\":\"group:inner\"")
+                && inspected.contains("\"target\":\"group:inner\"")
+                && !inspected.contains("node:inner"),
+            "{direction}: {inspected}"
+        );
+        let scene = llmaid::diagram::scene(&semantic, 100);
+        assert!(
+            !llmaid::quality::evaluate(&semantic, &scene, 100).has_quality_failures(),
+            "{direction}"
+        );
+    }
+
+    let error = parse("flowchart LR\nSource --> empty\nsubgraph empty\nend\n").unwrap_err();
+    assert_eq!(error.line, 2);
+    assert!(
+        error.msg.contains("subgraph `empty`") && error.msg.contains("member node"),
+        "{error}"
     );
 }
 

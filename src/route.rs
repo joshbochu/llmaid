@@ -1,7 +1,7 @@
 //! Turn flow-space layout geometry into complete screen-space scene primitives.
 
 use crate::layout::{BoxGeom, CLUSTER_PAD, CLUSTER_TITLE_BAND, EDGE_LABEL_PAD, Placed};
-use crate::parse::{Edge, Graph};
+use crate::parse::{Edge, Endpoint, Graph};
 use crate::scene::{
     Arrow, ArrowHead, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, SceneText,
 };
@@ -167,6 +167,35 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
         edges.push(route_self_loop(g, placed, edge_index));
     }
 
+    // A group endpoint is laid out through one of its member nodes, then
+    // clipped back to the semantic frame. This keeps the layered engine
+    // node-only while ensuring no internal proxy leaks into the Scene.
+    for edge in &mut edges {
+        clip_group_endpoints(g, &groups, &boxes, edge);
+    }
+    // A path to a nested group can legitimately traverse its ancestors. Keep
+    // that traversal out of each ancestor's dedicated title row by using the
+    // existing one-cell side gutter rather than allowing an edge to overwrite
+    // frame text.
+    for group in &groups {
+        for edge in &mut edges {
+            if g.edges.get(edge.edge).is_some_and(|semantic| {
+                matches!(semantic.source, Endpoint::Subgraph(_))
+                    || matches!(semantic.target, Endpoint::Subgraph(_))
+            }) {
+                detour_group_title(edge, group);
+            }
+        }
+    }
+    for edge in &mut edges {
+        if g.edges.get(edge.edge).is_some_and(|semantic| {
+            matches!(semantic.source, Endpoint::Subgraph(_))
+                || matches!(semantic.target, Endpoint::Subgraph(_))
+        }) {
+            relocate_group_endpoint_label(edge, &groups, &boxes);
+        }
+    }
+
     place_group_titles(&mut groups, &boxes, &edges);
 
     let mut scene = Scene {
@@ -180,6 +209,443 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
     };
     scene.normalize();
     scene
+}
+
+fn clip_group_endpoints(
+    g: &Graph,
+    groups: &[SceneGroup],
+    boxes: &[SceneBox],
+    edge: &mut RoutedEdge,
+) {
+    let Some(semantic) = g.edges.get(edge.edge) else {
+        return;
+    };
+    if !matches!(semantic.source, Endpoint::Subgraph(_))
+        && !matches!(semantic.target, Endpoint::Subgraph(_))
+    {
+        return;
+    }
+    let mut full = edge.points.clone();
+    if let Some(arrow) = &edge.arrow
+        && full.last() != Some(&arrow.toward)
+    {
+        full.push(arrow.toward);
+    }
+    if full.len() < 2 {
+        return;
+    }
+
+    let containment = containment_endpoint_route(semantic, groups, boxes);
+    let used_containment_route = containment.is_some();
+    if let Some(contained) = containment {
+        full = contained;
+    } else {
+        if let Endpoint::Subgraph(group) = semantic.source
+            && let Some(rect) = groups
+                .iter()
+                .find(|value| value.subgraph == group)
+                .map(|value| value.rect)
+            && let Some(clipped) = clip_polyline_at_group(&full, rect, true)
+        {
+            full = clipped;
+        }
+        if let Endpoint::Subgraph(group) = semantic.target
+            && let Some(rect) = groups
+                .iter()
+                .find(|value| value.subgraph == group)
+                .map(|value| value.rect)
+            && let Some(clipped) = clip_polyline_at_group(&full, rect, false)
+        {
+            full = clipped;
+        }
+    }
+
+    let arrow_head = edge.arrow.as_ref().map(|arrow| arrow.head);
+    edge.arrow = arrow_head.and_then(|head| {
+        (full.len() >= 2).then(|| {
+            let target = *full.last().expect("checked length");
+            let from = full[full.len() - 2];
+            let at = cell_before(target, from);
+            *full.last_mut().expect("checked length") = at;
+            Arrow {
+                at,
+                toward: target,
+                head,
+            }
+        })
+    });
+    edge.rounded = polyline_bends(&full);
+    edge.points = full;
+    if used_containment_route {
+        edge.label = semantic
+            .label
+            .as_deref()
+            .map(|label| containment_label(edge, label, groups, boxes));
+    }
+}
+
+/// Construct the short gutter path needed when a group endpoint contains the
+/// other endpoint. A proxy route may never leave that requested frame, so it
+/// cannot be clipped at a border. The four side candidates are all integer
+/// straight paths; the first clear one keeps the existing Scene collision
+/// contract without introducing a second compound-layout phase.
+fn containment_endpoint_route(
+    edge: &Edge,
+    groups: &[SceneGroup],
+    boxes: &[SceneBox],
+) -> Option<Vec<Point>> {
+    let source = endpoint_rect(edge.source, groups, boxes)?;
+    let target = endpoint_rect(edge.target, groups, boxes)?;
+    let source_contains_target =
+        matches!(edge.source, Endpoint::Subgraph(_)) && rect_contains_rect(source, target);
+    let target_contains_source =
+        matches!(edge.target, Endpoint::Subgraph(_)) && rect_contains_rect(target, source);
+    if !source_contains_target && !target_contains_source {
+        return None;
+    }
+
+    for side in [
+        ContainmentSide::Left,
+        ContainmentSide::Right,
+        ContainmentSide::Bottom,
+        ContainmentSide::Top,
+    ] {
+        let (from, to) = shared_side_anchors(source, target, side);
+        let points = (from != to).then_some(vec![from, to])?;
+        if containment_path_clear(&points, edge, groups, boxes) {
+            return Some(points);
+        }
+    }
+    None
+}
+
+#[derive(Clone, Copy)]
+enum ContainmentSide {
+    Left,
+    Right,
+    Bottom,
+    Top,
+}
+
+fn shared_side_anchors(source: Rect, target: Rect, side: ContainmentSide) -> (Point, Point) {
+    match side {
+        ContainmentSide::Left | ContainmentSide::Right => {
+            let y = shared_coordinate(
+                source.y + 1,
+                source.bottom() - 2,
+                target.y + 1,
+                target.bottom() - 2,
+            );
+            let x = |rect: Rect| match side {
+                ContainmentSide::Left => rect.x,
+                ContainmentSide::Right => rect.right() - 1,
+                _ => unreachable!(),
+            };
+            (Point::new(x(source), y), Point::new(x(target), y))
+        }
+        ContainmentSide::Bottom | ContainmentSide::Top => {
+            let x = shared_coordinate(
+                source.x + 1,
+                source.right() - 2,
+                target.x + 1,
+                target.right() - 2,
+            );
+            let y = |rect: Rect| match side {
+                ContainmentSide::Bottom => rect.bottom() - 1,
+                ContainmentSide::Top => rect.y,
+                _ => unreachable!(),
+            };
+            (Point::new(x, y(source)), Point::new(x, y(target)))
+        }
+    }
+}
+
+fn shared_coordinate(a_min: i32, a_max: i32, b_min: i32, b_max: i32) -> i32 {
+    let low = a_min.max(b_min);
+    let high = a_max.min(b_max);
+    (low + high) / 2
+}
+
+fn containment_path_clear(
+    points: &[Point],
+    edge: &Edge,
+    groups: &[SceneGroup],
+    boxes: &[SceneBox],
+) -> bool {
+    let cells = crate::scene::path_cells(points);
+    let endpoint_nodes = [edge.source, edge.target]
+        .into_iter()
+        .filter_map(|endpoint| match endpoint {
+            Endpoint::Node(node) => Some(node),
+            Endpoint::Subgraph(_) => None,
+        })
+        .collect::<Vec<_>>();
+    cells.iter().all(|&point| {
+        !boxes
+            .iter()
+            .filter(|box_| !endpoint_nodes.contains(&box_.node))
+            .any(|box_| box_.rect.contains(point))
+            && !groups
+                .iter()
+                .any(|group| group.title.bounds().contains(point))
+    })
+}
+
+fn endpoint_rect(endpoint: Endpoint, groups: &[SceneGroup], boxes: &[SceneBox]) -> Option<Rect> {
+    match endpoint {
+        Endpoint::Node(node) => boxes
+            .iter()
+            .find(|box_| box_.node == node)
+            .map(|box_| box_.rect),
+        Endpoint::Subgraph(group) => groups
+            .iter()
+            .find(|value| value.subgraph == group)
+            .map(|value| value.rect),
+    }
+}
+
+/// A containment route replaces the proxy route completely, so its label must
+/// be placed from the semantic edge text rather than inheriting a position (or
+/// a dropped label) from that discarded geometry. Prefer a cell adjacent to
+/// the new segment; if the nested frames leave no room, use the deterministic
+/// clear margin outside all routed/group geometry. Labels are never truncated.
+fn containment_label(
+    edge: &RoutedEdge,
+    label: &str,
+    groups: &[SceneGroup],
+    boxes: &[SceneBox],
+) -> SceneText {
+    let text = padded_edge_label(label);
+    let width = multiline_width(&text) as i32;
+    let height = text.split('\n').count() as i32;
+    let mut points = edge.points.clone();
+    if let Some(arrow) = &edge.arrow
+        && points.last() != Some(&arrow.toward)
+    {
+        points.push(arrow.toward);
+    }
+
+    let mut candidates = Vec::new();
+    for pair in points.windows(2) {
+        let (from, to) = (pair[0], pair[1]);
+        if from.y == to.y {
+            let left = from.x.min(to.x);
+            let right = from.x.max(to.x);
+            let centered = left + (right - left - width) / 2;
+            candidates.extend([
+                Point::new(centered, from.y - height),
+                Point::new(centered, from.y + 1),
+                Point::new(left - width - 1, from.y),
+                Point::new(right + 2, from.y),
+            ]);
+        } else if from.x == to.x {
+            let top = from.y.min(to.y);
+            let bottom = from.y.max(to.y);
+            let centered = top + (bottom - top - height) / 2;
+            candidates.extend([
+                Point::new(from.x - width - 1, centered),
+                Point::new(from.x + 2, centered),
+                Point::new(from.x, top - height - 1),
+                Point::new(from.x, bottom + 2),
+            ]);
+        }
+    }
+    candidates.dedup();
+    if let Some(at) = candidates
+        .into_iter()
+        .find(|&at| label_rect_clear(at, width, height, groups, boxes))
+    {
+        return SceneText::new(at, text);
+    }
+
+    let min_x = points
+        .iter()
+        .map(|point| point.x)
+        .chain(groups.iter().map(|group| group.rect.x))
+        .chain(boxes.iter().map(|box_| box_.rect.x))
+        .min()
+        .unwrap_or(0);
+    let y = points.first().map_or(0, |point| point.y);
+    SceneText::new(Point::new(min_x - width - 1, y), text)
+}
+
+/// Crop an orthogonal routed polyline at the first group-frame crossing. The
+/// caller supplies the semantic direction: sources leave a frame, targets
+/// enter one. Returning `None` leaves unusual entirely-internal compositions
+/// to their existing route rather than inventing a diagonal path.
+fn clip_polyline_at_group(points: &[Point], rect: Rect, source: bool) -> Option<Vec<Point>> {
+    let cells = crate::scene::path_cells(points);
+    if cells.len() < 2 {
+        return None;
+    }
+    let clipped = if source {
+        let outside = cells.iter().position(|point| !rect.contains(*point))?;
+        (outside > 0).then(|| cells[outside - 1..].to_vec())?
+    } else {
+        let outside = cells.iter().rposition(|point| !rect.contains(*point))?;
+        (outside + 1 < cells.len()).then(|| cells[..=outside + 1].to_vec())?
+    };
+    Some(compact_polyline(&clipped))
+}
+
+fn compact_polyline(cells: &[Point]) -> Vec<Point> {
+    let mut points = vec![cells[0]];
+    for triple in cells.windows(3) {
+        let before = triple[0];
+        let at = triple[1];
+        let after = triple[2];
+        let first_direction = (at.x - before.x, at.y - before.y);
+        let second_direction = (after.x - at.x, after.y - at.y);
+        if first_direction != second_direction && points.last() != Some(&at) {
+            points.push(at);
+        }
+    }
+    if points.last() != cells.last() {
+        points.push(*cells.last().expect("nonempty cells"));
+    }
+    points
+}
+
+fn polyline_bends(points: &[Point]) -> Vec<Point> {
+    points
+        .windows(3)
+        .filter_map(|triple| {
+            let first_direction = (triple[1].x - triple[0].x, triple[1].y - triple[0].y);
+            let second_direction = (triple[2].x - triple[1].x, triple[2].y - triple[1].y);
+            (first_direction != second_direction).then_some(triple[1])
+        })
+        .collect()
+}
+
+fn detour_group_title(edge: &mut RoutedEdge, group: &SceneGroup) {
+    let title = group.title.bounds();
+    let mut rerouted = Vec::new();
+    for pair in edge.points.windows(2) {
+        let (from, to) = (pair[0], pair[1]);
+        if rerouted.last() != Some(&from) {
+            rerouted.push(from);
+        }
+        if from.x == to.x
+            && from.x >= title.x
+            && from.x < title.right()
+            && from.y.min(to.y) <= title.y
+            && title.y <= from.y.max(to.y)
+        {
+            let downward = to.y > from.y;
+            let first = if downward {
+                if from.y < group.rect.y {
+                    Point::new(from.x, group.rect.y - 1)
+                } else {
+                    from
+                }
+            } else if from.y >= group.rect.bottom() {
+                Point::new(from.x, group.rect.bottom())
+            } else {
+                from
+            };
+            let last = if downward {
+                if to.y >= group.rect.bottom() {
+                    Point::new(to.x, group.rect.bottom())
+                } else {
+                    to
+                }
+            } else if to.y < group.rect.y {
+                Point::new(to.x, group.rect.y - 1)
+            } else {
+                to
+            };
+            let gutter = Point::new(group.rect.x + 1, first.y);
+            for point in [first, gutter, Point::new(gutter.x, last.y), last] {
+                if rerouted.last() != Some(&point) {
+                    rerouted.push(point);
+                }
+            }
+        }
+        if rerouted.last() != Some(&to) {
+            rerouted.push(to);
+        }
+    }
+    if rerouted.len() >= 2 {
+        edge.rounded = polyline_bends(&rerouted);
+        edge.points = rerouted;
+    }
+}
+
+/// Labels use the ordinary channel reservation before a group endpoint is
+/// clipped to its frame. If that reservation would paint through a frame,
+/// move the label to the nearest clear, adjacent segment of the same route.
+/// This keeps the label semantic while preserving group borders.
+fn relocate_group_endpoint_label(edge: &mut RoutedEdge, groups: &[SceneGroup], boxes: &[SceneBox]) {
+    let Some(label) = edge.label.as_ref() else {
+        return;
+    };
+    if label_clear_of_groups(label, groups, boxes) {
+        return;
+    }
+    let width = label.width() as i32;
+    let height = label.height() as i32;
+    let original = label.at;
+    let mut candidates = Vec::new();
+    for pair in edge.points.windows(2) {
+        let (from, to) = (pair[0], pair[1]);
+        if from.y == to.y {
+            for x in from.x.min(to.x) - width..=from.x.max(to.x) + 1 {
+                candidates.push(Point::new(x, from.y));
+            }
+        } else if from.x == to.x {
+            for y in from.y.min(to.y)..=from.y.max(to.y) {
+                candidates.push(Point::new(from.x + 1, y));
+                candidates.push(Point::new(from.x - width, y));
+            }
+        }
+    }
+    candidates.sort_by_key(|point| {
+        (
+            point.x.abs_diff(original.x) + point.y.abs_diff(original.y),
+            point.y,
+            point.x,
+        )
+    });
+    candidates.dedup();
+    if let Some(at) = candidates
+        .into_iter()
+        .find(|&at| label_rect_clear(at, width, height, groups, boxes))
+    {
+        edge.label.as_mut().expect("label checked above").at = at;
+    }
+}
+
+fn label_clear_of_groups(label: &SceneText, groups: &[SceneGroup], boxes: &[SceneBox]) -> bool {
+    label_rect_clear(
+        label.at,
+        label.width() as i32,
+        label.height() as i32,
+        groups,
+        boxes,
+    )
+}
+
+fn label_rect_clear(
+    at: Point,
+    width: i32,
+    height: i32,
+    groups: &[SceneGroup],
+    boxes: &[SceneBox],
+) -> bool {
+    (at.y..at.y + height).all(|y| {
+        (at.x..at.x + width).all(|x| {
+            let point = Point::new(x, y);
+            !boxes.iter().any(|box_| box_.rect.contains(point))
+                && !groups.iter().any(|group| {
+                    let border = group.rect.contains(point)
+                        && (point.x == group.rect.x
+                            || point.x == group.rect.right() - 1
+                            || point.y == group.rect.y
+                            || point.y == group.rect.bottom() - 1);
+                    border || group.title.bounds().contains(point)
+                })
+        })
+    })
 }
 
 /// Keep group titles in their dedicated interior band while moving them only

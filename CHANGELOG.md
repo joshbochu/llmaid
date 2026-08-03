@@ -29,6 +29,14 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   mutually exclusive machine-output modes.
 
 ### Fixed
+- Flowchart edges can now name declared subgraphs directly, including forward
+  references and nested groups, without creating duplicate node boxes. The IR
+  preserves a `Node`/`Subgraph` endpoint identity while the integer layout
+  uses a deterministic member proxy that is clipped back to the actual frame
+  during routing. `--inspect=json` emits `group:<id>` endpoints, and the
+  final-Scene endpoint invariant independently requires them on the frame
+  border. B39, a four-direction nested behavior corpus, a final-Scene
+  mutation, and the `subgraph-endpoints` golden cover the contract.
 - Flowchart statement scanning is now quote-aware. Semicolons in double-quoted
   labels and safely-contained entity-shaped text no longer split statements;
   trailing %% comments apply only outside labels and consume the rest of that
@@ -98,6 +106,18 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   rather than its first word, leaving `timeline --> A`, `sequenceDiagram; A --> B`,
   and similar text to the flowchart parser. Rejected: prefix dispatch, because
   it silently changes valid headerless flowchart meaning.
+
+- **D38 — Subgraph endpoints retain semantic frame identity.** A flowchart
+  edge endpoint is explicitly a node or subgraph, rather than overloading a
+  node ID and later hiding a duplicate box. A parser pre-scan records declared
+  group IDs so forward references resolve deterministically. The layered
+  engine remains node-native by choosing a declaration-stable internal entry
+  or exit member proxy after parsing; routing clips completed paths to named
+  frames and uses a checked integer side-gutter route when one endpoint
+  contains the other, while inspection and final-Scene quality checks retain
+  the group identity and require a border attachment. Rejected: a phantom node
+  later suppressed only by the painter, textual endpoint rewrites, and a
+  second compound-graph layout engine for this focused compatibility slice.
 
 - **D35 — Decorated relationships preserve endpoint identity; shared trunks
   are not valid when they collapse semantic adornments.** Generic flow routing

@@ -47,10 +47,25 @@ pub struct Node {
     pub shape: Shape,
 }
 
+/// A semantic endpoint of a flowchart edge. Layout keeps a real member node
+/// as an internal proxy for a subgraph endpoint, but the endpoint identity is
+/// retained so routing and inspection attach to the visible frame instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Endpoint {
+    Node(usize),
+    Subgraph(usize),
+}
+
 #[derive(Debug)]
 pub struct Edge {
+    /// Real node used by the layered layout. For a subgraph endpoint this is
+    /// a deterministic non-rendered proxy choice from that subgraph.
     pub from: usize,
     pub to: usize,
+    /// Declared Mermaid source endpoint, retained independently of the
+    /// layout proxy so a subgraph never becomes a phantom node box.
+    pub source: Endpoint,
+    pub target: Endpoint,
     pub kind: EdgeKind,
     pub arrow: bool,
     pub label: Option<String>,
@@ -59,6 +74,7 @@ pub struct Edge {
     /// Keep this edge on its own endpoint ports instead of sharing a
     /// fork/merge trunk with distinct peers.
     pub distinct_endpoints: bool,
+    pub(crate) line: usize,
 }
 
 impl Edge {
@@ -113,6 +129,10 @@ pub struct Graph {
     pub subgraphs: Vec<Subgraph>,
     pub warnings: Vec<Warning>,
     index: HashMap<String, usize>,
+    /// Declared subgraph IDs collected before statement parsing. This permits
+    /// Mermaid's common forward references such as `A --> workers` before
+    /// `subgraph workers` without temporarily creating a node named workers.
+    subgraph_index: HashMap<String, usize>,
     /// Parse-time stack of open subgraph indices (not part of the public IR).
     sg_stack: Vec<usize>,
 }
@@ -160,6 +180,7 @@ impl Graph {
     fn open_subgraph(&mut self, id: String, title: String) {
         let parent = self.sg_stack.last().copied();
         let sgi = self.subgraphs.len();
+        self.subgraph_index.entry(id.clone()).or_insert(sgi);
         self.subgraphs.push(Subgraph {
             id,
             title,
@@ -177,11 +198,113 @@ impl Graph {
             });
         }
     }
+
+    fn resolve_edge_proxies(&mut self) -> Result<(), ParseError> {
+        let proxies: Result<Vec<(usize, usize)>, ParseError> = self
+            .edges
+            .iter()
+            .map(|edge| {
+                Ok((
+                    self.endpoint_proxy(edge.source, true, edge.line)?,
+                    self.endpoint_proxy(edge.target, false, edge.line)?,
+                ))
+            })
+            .collect();
+        for (edge, (from, to)) in self.edges.iter_mut().zip(proxies?) {
+            edge.from = from;
+            edge.to = to;
+        }
+        Ok(())
+    }
+
+    fn endpoint_proxy(
+        &self,
+        endpoint: Endpoint,
+        source: bool,
+        line: usize,
+    ) -> Result<usize, ParseError> {
+        match endpoint {
+            Endpoint::Node(node) => Ok(node),
+            Endpoint::Subgraph(group) => self.group_proxy(group, source).ok_or_else(|| ParseError {
+                line,
+                msg: format!(
+                    "subgraph `{}` used as an edge endpoint has no member node; add a member before connecting it",
+                    self.subgraphs
+                        .get(group)
+                        .map(|value| value.id.as_str())
+                        .unwrap_or("<unknown>")
+                ),
+            }),
+        }
+    }
+
+    /// Choose a deterministic layout-only representative for a group endpoint.
+    /// An incoming group endpoint uses the first internal entry node; an
+    /// outgoing endpoint uses the last internal exit node. The semantic
+    /// endpoint itself remains the frame and is never rendered as this node.
+    fn group_proxy(&self, group: usize, source: bool) -> Option<usize> {
+        let members: Vec<usize> = (0..self.nodes.len())
+            .filter(|&node| self.group_contains_node(group, node))
+            .collect();
+        let candidates: Vec<usize> = members
+            .iter()
+            .copied()
+            .filter(|&node| {
+                !self.edges.iter().any(|edge| {
+                    let from = matches!(edge.source, Endpoint::Node(value) if value == node);
+                    let to = matches!(edge.target, Endpoint::Node(value) if value == node);
+                    if source {
+                        from
+                            && matches!(edge.target, Endpoint::Node(other) if self.group_contains_node(group, other))
+                    } else {
+                        to && matches!(edge.source, Endpoint::Node(other) if self.group_contains_node(group, other))
+                    }
+                })
+            })
+            .collect();
+        if source {
+            candidates
+                .last()
+                .copied()
+                .or_else(|| members.last().copied())
+        } else {
+            candidates
+                .first()
+                .copied()
+                .or_else(|| members.first().copied())
+        }
+    }
+
+    fn group_contains_node(&self, group: usize, node: usize) -> bool {
+        self.subgraphs[group].members.contains(&node)
+            || self.subgraphs.iter().enumerate().any(|(child, value)| {
+                value.parent == Some(group) && self.group_contains_node(child, node)
+            })
+    }
 }
 
 pub fn parse(src: &str) -> Result<Graph, ParseError> {
     validate_terminal_source(src)?;
-    let mut g = Graph::default();
+    let mut subgraph_index = HashMap::new();
+    let mut subgraph_ordinal = 0usize;
+    for raw_line in src.lines() {
+        for stmt in scanner::statements(raw_line) {
+            let stmt = stmt.trim();
+            let keyword = stmt.split_whitespace().next().unwrap_or("");
+            if matches!(
+                scanner::classify_non_edge_keyword(keyword),
+                Some(scanner::NonEdgeKeyword::Subgraph)
+            ) {
+                let (id, _) = parse_subgraph_header(stmt["subgraph".len()..].trim());
+                subgraph_index.entry(id).or_insert(subgraph_ordinal);
+                subgraph_ordinal += 1;
+            }
+        }
+    }
+    let mut g = Graph {
+        subgraph_index,
+        ..Graph::default()
+    };
     let mut seen_header = false;
     let mut warned_no_header = false;
 
@@ -285,6 +408,8 @@ pub fn parse(src: &str) -> Result<Graph, ParseError> {
         });
         g.sg_stack.clear();
     }
+
+    g.resolve_edge_proxies()?;
 
     Ok(g)
 }
@@ -419,16 +544,21 @@ fn parse_statement(g: &mut Graph, stmt: &str, line: usize) -> Result<(), ParseEr
         }
         cur.skip_ws();
         let next = parse_group(g, &mut cur, line)?;
-        for &from in &prev {
-            for &to in &next {
+        for &source in &prev {
+            for &target in &next {
                 g.edges.push(Edge {
-                    from,
-                    to,
+                    // Resolve group endpoints after all subgraph members are
+                    // known. These placeholders never leave parsing.
+                    from: 0,
+                    to: 0,
+                    source,
+                    target,
                     kind,
                     arrow,
                     label: label.clone(),
                     endpoint_reserve: 0,
                     distinct_endpoints: false,
+                    line,
                 });
             }
         }
@@ -436,13 +566,13 @@ fn parse_statement(g: &mut Graph, stmt: &str, line: usize) -> Result<(), ParseEr
     }
 }
 
-fn parse_group(g: &mut Graph, cur: &mut Cur, line: usize) -> Result<Vec<usize>, ParseError> {
-    let mut ids = vec![parse_node(g, cur, line)?];
+fn parse_group(g: &mut Graph, cur: &mut Cur, line: usize) -> Result<Vec<Endpoint>, ParseError> {
+    let mut ids = vec![parse_endpoint(g, cur, line)?];
     loop {
         cur.skip_ws();
         if cur.eat('&') {
             cur.skip_ws();
-            ids.push(parse_node(g, cur, line)?);
+            ids.push(parse_endpoint(g, cur, line)?);
         } else {
             return Ok(ids);
         }
@@ -459,7 +589,7 @@ const SHAPES: &[(&str, &str, Shape)] = &[
     ("{", "}", Shape::Diamond),
 ];
 
-fn parse_node(g: &mut Graph, cur: &mut Cur, line: usize) -> Result<usize, ParseError> {
+fn parse_endpoint(g: &mut Graph, cur: &mut Cur, line: usize) -> Result<Endpoint, ParseError> {
     let id = cur.take_while(|c| c.is_alphanumeric() || c == '_');
     if id.is_empty() {
         return Err(ParseError {
@@ -474,10 +604,17 @@ fn parse_node(g: &mut Graph, cur: &mut Cur, line: usize) -> Result<usize, ParseE
                 line,
                 msg: format!("node `{id}`: unterminated `{open}` — expected closing `{close}`"),
             })?;
-            return Ok(g.add_node(&id, Some((shape, clean_flowchart_label(&raw, line)?)), line));
+            return Ok(Endpoint::Node(g.add_node(
+                &id,
+                Some((shape, clean_flowchart_label(&raw, line)?)),
+                line,
+            )));
         }
     }
-    Ok(g.add_node(&id, None, line))
+    if let Some(&subgraph) = g.subgraph_index.get(&id) {
+        return Ok(Endpoint::Subgraph(subgraph));
+    }
+    Ok(Endpoint::Node(g.add_node(&id, None, line)))
 }
 
 /// Edge operators, including inline-text forms:
@@ -760,10 +897,10 @@ pub fn dump(g: &Graph) -> String {
             .unwrap_or_default();
         out.push_str(&format!(
             "  {} {}{} {}\n",
-            g.nodes[e.from].id,
+            endpoint_id(g, e.source),
             e.op(),
             label,
-            g.nodes[e.to].id
+            endpoint_id(g, e.target)
         ));
     }
     if !g.warnings.is_empty() {
@@ -773,6 +910,13 @@ pub fn dump(g: &Graph) -> String {
         }
     }
     out
+}
+
+fn endpoint_id(g: &Graph, endpoint: Endpoint) -> &str {
+    match endpoint {
+        Endpoint::Node(node) => g.nodes[node].id.as_str(),
+        Endpoint::Subgraph(group) => g.subgraphs[group].id.as_str(),
+    }
 }
 
 fn dump_text(text: &str) -> String {
@@ -919,11 +1063,14 @@ mod tests {
             edges: vec![Edge {
                 from: 0,
                 to: 1,
+                source: Endpoint::Node(0),
+                target: Endpoint::Node(1),
                 kind: EdgeKind::Solid,
                 arrow: true,
                 label: Some("edge\\\"\n".into()),
                 endpoint_reserve: 0,
                 distinct_endpoints: false,
+                line: 1,
             }],
             subgraphs: vec![Subgraph {
                 id: "Group".into(),
@@ -933,6 +1080,7 @@ mod tests {
             }],
             warnings: Vec::new(),
             index: HashMap::new(),
+            subgraph_index: HashMap::new(),
             sg_stack: Vec::new(),
         };
 
@@ -949,6 +1097,22 @@ mod tests {
             dumped.contains(&format!("-->|{}|", r#"edge\\\"\n"#)),
             "{dumped}"
         );
+    }
+
+    #[test]
+    fn duplicate_subgraph_ids_do_not_shift_later_forward_endpoint_ids() {
+        let graph = parse(
+            "flowchart LR\n\
+             S --> b\n\
+             subgraph a\nA\nend\n\
+             subgraph a\nA2\nend\n\
+             subgraph b\nB\nend\n",
+        )
+        .unwrap();
+
+        assert_eq!(graph.subgraphs[2].id, "b");
+        assert!(matches!(graph.edges[0].target, Endpoint::Subgraph(2)));
+        assert!(graph.nodes.iter().all(|node| node.id != "b"));
     }
 
     #[test]

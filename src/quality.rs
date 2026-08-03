@@ -9,7 +9,7 @@ use crate::class::{ClassDiagram, RelationKind};
 use crate::diagram::Diagram;
 use crate::er::{AttributeKey, ErDiagram};
 use crate::mindmap::Mindmap;
-use crate::parse::{Dir, Graph};
+use crate::parse::{Dir, Endpoint as FlowEndpoint, Graph};
 use crate::scene::{
     EndpointDecorationKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneText, Shape,
 };
@@ -307,6 +307,11 @@ fn flowchart_checks(graph: &Graph, scene: &Scene, report: &mut QualityReport) {
         }
     }
     for (edge, value) in graph.edges.iter().enumerate() {
+        if !matches!(value.source, FlowEndpoint::Node(_))
+            || !matches!(value.target, FlowEndpoint::Node(_))
+        {
+            continue;
+        }
         if value.from == value.to || !topology.forward[edge] {
             report.unclassified.push(UnclassifiedComposition {
                 kind: if value.from == value.to {
@@ -339,6 +344,11 @@ impl FlowTopology {
             forward: vec![false; graph.edges.len()],
         };
         for (edge, value) in graph.edges.iter().enumerate() {
+            if !matches!(value.source, FlowEndpoint::Node(_))
+                || !matches!(value.target, FlowEndpoint::Node(_))
+            {
+                continue;
+            }
             if value.from == value.to {
                 continue;
             }
@@ -965,8 +975,8 @@ fn class_checks(class: &ClassDiagram, scene: &Scene, report: &mut QualityReport)
             .enumerate()
             .map(|(edge, relation)| EndpointExpectation {
                 edge,
-                source: relation.from,
-                target: relation.to,
+                source: EndpointGeometry::Box(relation.from),
+                target: EndpointGeometry::Box(relation.to),
                 elements: vec![
                     format!("relation:{edge}"),
                     format!("class:{}", class.classes[relation.from].id),
@@ -1141,8 +1151,8 @@ fn er_checks(er: &ErDiagram, scene: &Scene, report: &mut QualityReport) {
             .enumerate()
             .map(|(edge, relation)| EndpointExpectation {
                 edge,
-                source: relation.from,
-                target: relation.to,
+                source: EndpointGeometry::Box(relation.from),
+                target: EndpointGeometry::Box(relation.to),
                 elements: vec![
                     format!("relationship:{edge}"),
                     format!("entity:{}", er.entities[relation.from].id),
@@ -1807,11 +1817,17 @@ fn timeline_title(timeline: &Timeline, scene: &Scene) -> CheckReport {
     check
 }
 
+#[derive(Clone, Copy)]
+enum EndpointGeometry {
+    Box(usize),
+    Group(usize),
+}
+
 #[derive(Clone)]
 struct EndpointExpectation {
     edge: usize,
-    source: usize,
-    target: usize,
+    source: EndpointGeometry,
+    target: EndpointGeometry,
     elements: Vec<String>,
 }
 
@@ -1837,16 +1853,16 @@ fn edge_endpoint_check(
             );
             continue;
         };
-        let Some(source) = scene_box(scene, expectation.source) else {
+        let Some(source) = endpoint_rect(scene, expectation.source) else {
             continue;
         };
-        let Some(target) = scene_box(scene, expectation.target) else {
+        let Some(target) = endpoint_rect(scene, expectation.target) else {
             continue;
         };
         let first = edge.points.first().copied();
         let last = semantic_target(edge);
-        if first.is_none_or(|point| !source.rect.contains(point))
-            || last.is_none_or(|point| !target.rect.contains(point))
+        if first.is_none_or(|point| !endpoint_contains(source, expectation.source, point))
+            || last.is_none_or(|point| !endpoint_contains(target, expectation.target, point))
         {
             check.fail(
                 expectation.elements,
@@ -1855,8 +1871,8 @@ fn edge_endpoint_check(
                     expectation.edge
                 ),
                 vec![
-                    WitnessField::rect("source", source.rect),
-                    WitnessField::rect("target", target.rect),
+                    WitnessField::rect("source", source),
+                    WitnessField::rect("target", target),
                     WitnessField::point("actual_source", first.unwrap_or_default()),
                     WitnessField::point("actual_target", last.unwrap_or_default()),
                 ],
@@ -1873,12 +1889,12 @@ fn flow_endpoints(graph: &Graph) -> Vec<EndpointExpectation> {
         .enumerate()
         .map(|(edge, value)| EndpointExpectation {
             edge,
-            source: value.from,
-            target: value.to,
+            source: flow_endpoint_geometry(value.source),
+            target: flow_endpoint_geometry(value.target),
             elements: vec![
                 edge_ref(graph, edge),
-                node_ref(graph, value.from),
-                node_ref(graph, value.to),
+                flow_endpoint_ref(graph, value.source),
+                flow_endpoint_ref(graph, value.target),
             ],
         })
         .collect()
@@ -1909,8 +1925,8 @@ fn state_endpoints(state: &StateDiagram) -> Vec<EndpointExpectation> {
             };
             EndpointExpectation {
                 edge,
-                source,
-                target,
+                source: EndpointGeometry::Box(source),
+                target: EndpointGeometry::Box(target),
                 elements: vec![
                     format!("transition:{edge}"),
                     state_box_ref(state, source),
@@ -1933,6 +1949,44 @@ fn scene_box(scene: &Scene, node: usize) -> Option<&SceneBox> {
     scene.boxes.iter().find(|box_| box_.node == node)
 }
 
+fn endpoint_rect(scene: &Scene, endpoint: EndpointGeometry) -> Option<Rect> {
+    match endpoint {
+        EndpointGeometry::Box(node) => scene_box(scene, node).map(|value| value.rect),
+        EndpointGeometry::Group(group) => scene
+            .groups
+            .iter()
+            .find(|value| value.subgraph == group)
+            .map(|value| value.rect),
+    }
+}
+
+fn endpoint_contains(rect: Rect, endpoint: EndpointGeometry, point: Point) -> bool {
+    match endpoint {
+        EndpointGeometry::Box(_) => rect.contains(point),
+        EndpointGeometry::Group(_) => {
+            rect.contains(point)
+                && (point.x == rect.x
+                    || point.x == rect.right() - 1
+                    || point.y == rect.y
+                    || point.y == rect.bottom() - 1)
+        }
+    }
+}
+
+fn flow_endpoint_geometry(endpoint: FlowEndpoint) -> EndpointGeometry {
+    match endpoint {
+        FlowEndpoint::Node(node) => EndpointGeometry::Box(node),
+        FlowEndpoint::Subgraph(group) => EndpointGeometry::Group(group),
+    }
+}
+
+fn flow_endpoint_ref(graph: &Graph, endpoint: FlowEndpoint) -> String {
+    match endpoint {
+        FlowEndpoint::Node(node) => node_ref(graph, node),
+        FlowEndpoint::Subgraph(group) => format!("group:{}", graph.subgraphs[group].id),
+    }
+}
+
 fn semantic_target(edge: &RoutedEdge) -> Option<Point> {
     edge.arrow
         .as_ref()
@@ -1948,7 +2002,8 @@ fn edge_ref(graph: &Graph, edge: usize) -> String {
     let value = &graph.edges[edge];
     format!(
         "edge:{edge}({}->{})",
-        graph.nodes[value.from].id, graph.nodes[value.to].id
+        flow_endpoint_ref(graph, value.source),
+        flow_endpoint_ref(graph, value.target)
     )
 }
 

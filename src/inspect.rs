@@ -3,6 +3,7 @@
 use std::fmt::Write as _;
 
 use crate::diagram::{self, Diagram};
+use crate::parse::Endpoint as FlowEndpoint;
 use crate::quality::{QualityReport, WitnessValue};
 use crate::scene::{
     ArrowHead, CardinalityMaximum, CardinalityMinimum, EdgeKind, EndpointDecorationKind, Point,
@@ -497,8 +498,8 @@ fn edge_identity(diagram: &Diagram, edge: usize) -> EdgeIdentity {
             || anonymous_edge(edge),
             |value| EdgeIdentity {
                 element: format!("edge:{edge}"),
-                source: Some(format!("node:{}", graph.nodes[value.from].id)),
-                target: Some(format!("node:{}", graph.nodes[value.to].id)),
+                source: Some(flow_endpoint_element(graph, value.source)),
+                target: Some(flow_endpoint_element(graph, value.target)),
             },
         ),
         Diagram::Sequence(sequence) => sequence
@@ -551,6 +552,13 @@ fn edge_identity(diagram: &Diagram, edge: usize) -> EdgeIdentity {
             }
         }
         Diagram::Timeline(timeline) => timeline_edge_identity(timeline, edge),
+    }
+}
+
+fn flow_endpoint_element(graph: &crate::parse::Graph, endpoint: FlowEndpoint) -> String {
+    match endpoint {
+        FlowEndpoint::Node(node) => format!("node:{}", graph.nodes[node].id),
+        FlowEndpoint::Subgraph(group) => format!("group:{}", graph.subgraphs[group].id),
     }
 }
 

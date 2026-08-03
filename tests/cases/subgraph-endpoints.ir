@@ -1,0 +1,13 @@
+direction: LR
+nodes:
+  Source rect "Source"
+  Build rect "Build"
+  Verify rect "Verify"
+  Publish rect "Publish"
+subgraphs:
+  0 id=platform title="Platform" parent=- members=[]
+  1 id=workers title="Workers" parent=platform members=[Build,Verify]
+edges:
+  Source --> workers
+  Build --> Verify
+  workers --> Publish

@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D37.
+`CHANGELOG.md` D9–D38.
 
 ## Parsing
 
@@ -24,6 +24,15 @@ structural coverage lives beside its engine tests. Decisions behind these:
   member nodes are recorded on the subgraph and a titled frame is drawn around
   them; contents are not silently flattened, and nonmember boxes never
   intersect the frame.
+- **B39** Given an edge whose bare source or target ID names a declared
+  subgraph, including a reference before that subgraph's declaration or to a
+  nested subgraph, when parsed and rendered in any flow direction, then it
+  semantically attaches to that subgraph's titled frame rather than creating a
+  duplicate node box. Inspection identifies that endpoint as `group:<id>` and
+  independently requires its routed attachment to lie on the group border;
+  ordinary node-to-member edges keep their node identities. An endpoint named
+  for an empty group fails on its edge source line with a repairable request to
+  add a member node rather than panicking or emitting a phantom box.
 - **B37** Given a flowchart line containing semicolon-separated statements,
   quoted labels, safely-contained named or numeric character references, and
   a trailing %% comment, when parsed, then statement/comment boundaries apply
