@@ -164,6 +164,48 @@ flowchart TB
 }
 
 #[test]
+fn b37_given_quote_aware_flowchart_text_then_boundaries_and_entities_are_safe() {
+    let source = r#"flowchart LR; A["cache[key]; AT&amp;T %% literal"] --> B("call(foo); #x41;"); C[AT&amp;T #quot;] --> D[#35;]; U[&unknown;] --> M[#xzz;] %% trailing comment; Z[ignored]"#;
+    let graph = parse(source).unwrap();
+
+    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.nodes.len(), 6);
+    assert_eq!(graph.nodes[0].label, "cache[key]; AT&T %% literal");
+    assert_eq!(graph.nodes[1].label, "call(foo); A");
+    assert_eq!(graph.nodes[1].shape, Shape::Rounded);
+    assert_eq!(graph.nodes[2].label, "AT&T \"");
+    assert_eq!(graph.nodes[3].label, "#");
+    assert_eq!(graph.nodes[4].label, "&unknown;");
+    assert_eq!(graph.nodes[5].label, "#xzz;");
+    assert!(
+        graph.nodes.iter().all(|node| node.id != "Z"),
+        "a trailing comment must consume later semicolons: {:#?}",
+        graph
+    );
+
+    let encoded_literal_tag = parse("flowchart LR\nA[&lt;br&gt;]").unwrap();
+    assert_eq!(encoded_literal_tag.nodes[0].label, "<br>");
+
+    let subgraph = parse("flowchart LR; subgraph Group [AT&amp;T #35;]; A; end").unwrap();
+    assert_eq!(subgraph.subgraphs[0].title, "AT&T #");
+
+    for (entity, control) in [
+        ("#9;", "U+0009"),
+        ("#x1B;", "U+001B"),
+        ("&Tab;", "U+0009"),
+        ("&NewLine;", "U+000A"),
+    ] {
+        let error = parse(&format!("flowchart LR\nA[{entity}]")).unwrap_err();
+        assert_eq!(error.line, 2, "{entity}: {error}");
+        assert!(
+            error.msg.contains("decoded terminal control"),
+            "{entity}: {error}"
+        );
+        assert!(error.msg.contains(control), "{entity}: {error}");
+    }
+}
+
+#[test]
 fn b16_given_nested_merges_then_edges_avoid_non_endpoint_boxes() {
     let source = "\
 flowchart TB
@@ -996,6 +1038,45 @@ fn b27_given_known_unsupported_document_then_error_names_type_and_header_line() 
         stdout.contains("gitGraph") && stdout.contains("result"),
         "{stdout}"
     );
+}
+
+#[test]
+fn b38_given_supported_type_text_then_only_an_exact_header_dispatches() {
+    // A supported document name only dispatches when it is the complete
+    // engine header. A semicolon makes this a conservative headerless
+    // flowchart, matching the flowchart parser's statement grammar.
+    for name in [
+        "sequenceDiagram",
+        "stateDiagram",
+        "classDiagram",
+        "erDiagram",
+        "mindmap",
+        "timeline",
+    ] {
+        let source = format!("{name}; A --> B\n");
+        let (stdout, stderr, code) = run_llmaid(&[], &source);
+        assert_eq!(code, 0, "{name}: {stderr}");
+        assert!(
+            stdout.contains(name) && stdout.contains('A') && stdout.contains('B'),
+            "{name} should remain a headerless flowchart:\n{stdout}"
+        );
+    }
+    for source in [
+        "timeline --> A\n",
+        "sequenceDiagram --> A\n",
+        "timeline & A --> B\n",
+    ] {
+        let (stdout, stderr, code) = run_llmaid(&[], source);
+        assert_eq!(code, 0, "{source}: {stderr}");
+        assert!(
+            stdout.contains("timeline") || stdout.contains("sequenceDiagram"),
+            "{source} should remain a flowchart:\n{stdout}"
+        );
+        assert!(
+            stdout.contains('A'),
+            "{source} should retain its flowchart target:\n{stdout}"
+        );
+    }
 }
 
 #[test]

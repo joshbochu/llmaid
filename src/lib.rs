@@ -11,6 +11,7 @@ pub mod parse;
 pub mod quality;
 pub mod render;
 pub mod route;
+mod scanner;
 pub mod scene;
 pub mod sequence;
 pub mod state;

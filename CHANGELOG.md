@@ -29,6 +29,22 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   mutually exclusive machine-output modes.
 
 ### Fixed
+- Flowchart statement scanning is now quote-aware. Semicolons in double-quoted
+  labels and safely-contained entity-shaped text no longer split statements;
+  trailing %% comments apply only outside labels and consume the rest of that
+  line. Quoted shape and edge closers remain label text. Core XML named
+  entities in both `&name;` and Mermaid `#name;` spelling (including
+  `#quot;`) and valid numeric Unicode scalar references now decode in
+  flowchart labels and subgraph titles, while unknown or malformed references
+  stay literal and control-producing entities fail before rendering. Inline
+  edge closers consume their full operator run, and top-level dispatch retains
+  each engine's exact whole-line header grammar, so supported type names inside
+  flowchart statements remain headerless flowcharts.
+  Flowchart IR dumps now escape backslashes, double quotes, and line breaks in
+  node, subgraph, and edge-label text, so decoded quotes remain unambiguous in
+  deterministic snapshots.
+  B37–B38, focused scanner/parser coverage, and the
+  scanner-quoted-entities golden record the contracts.
 - Converging ER relationships now retain distinct declaration-ordered terminal
   lanes instead of collapsing their cardinalities onto one shared trunk.
   Cardinality bars and many-marks orient with horizontal or vertical endpoint
@@ -59,6 +75,29 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   roadmap, handoff, behavior, and capability docs cover the inspection loop.
 
 ### Decisions
+
+- **D36 — Flowchart label compatibility stays scanner-safe and deliberately
+  narrow.** The flowchart scanner protects outer label spans and safely-contained
+  entity-shaped references before any statement splitting or comment handling.
+  Safely-contained malformed tokens use only ASCII letters, digits, and
+  `#`, `-`, `_`, `.`, `:`, or `+`; whitespace, quotes, shape or
+  pipe delimiters, arrows, and edge operators stop recognition. Label
+  normalization decodes the five XML names plus nbsp in named `&name;` or
+  Mermaid `#name;` spelling, valid numeric `#decimal;` and `#xhex;`
+  Unicode scalars, and deliberate HTML-style numeric `&#decimal;`/`&#xhex;`
+  compatibility. Unknown names, malformed numerics, surrogates, and
+  out-of-range values remain literal. Tab and NewLine are recognized only to
+  reject the decoded terminal control on its source line. Existing literal br
+  handling remains the only formatting interpretation: Markdown and other
+  HTML-like tags remain visible text. Rejected: a broad HTML/Markdown
+  dependency or heuristic recovery that could silently reinterpret label
+  remainder as Mermaid syntax.
+
+- **D37 — Supported engine dispatch requires an exact standalone header.**
+  The top-level dispatcher compares the complete trimmed first semantic line
+  rather than its first word, leaving `timeline --> A`, `sequenceDiagram; A --> B`,
+  and similar text to the flowchart parser. Rejected: prefix dispatch, because
+  it silently changes valid headerless flowchart meaning.
 
 - **D35 — Decorated relationships preserve endpoint identity; shared trunks
   are not valid when they collapse semantic adornments.** Generic flow routing

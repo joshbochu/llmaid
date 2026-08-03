@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D34.
+`CHANGELOG.md` D9–D37.
 
 ## Parsing
 
@@ -24,6 +24,18 @@ structural coverage lives beside its engine tests. Decisions behind these:
   member nodes are recorded on the subgraph and a titled frame is drawn around
   them; contents are not silently flattened, and nonmember boxes never
   intersect the frame.
+- **B37** Given a flowchart line containing semicolon-separated statements,
+  quoted labels, safely-contained named or numeric character references, and
+  a trailing %% comment, when parsed, then statement/comment boundaries apply
+  only outside flowchart label spans (including quoted text) and entity
+  references; quoted shape closers remain label text; the core XML named
+  references in HTML `&name;` or Mermaid `#name;` spelling (including
+  `#quot;`) plus Mermaid `#decimal;`/`#xhex;`
+  numeric Unicode scalars (and deliberate HTML-style numeric compatibility)
+  decode in quoted and unquoted labels, including subgraph titles; unknown or
+  malformed references remain literal; and a decoded terminal control fails on
+  its source line. Literal br tags retain B1 behavior, while Markdown and
+  other formatting tags remain literal label text.
 
 ## CLI
 
@@ -47,6 +59,10 @@ structural coverage lives beside its engine tests. Decisions behind these:
   never silently reinterprets that document as a headerless flowchart.
   Recognized type names used inside actual headerless flowchart statements
   remain ordinary node IDs.
+- **B38** Given a first semantic line containing a supported engine type name,
+  when dispatching the document, then llmaid selects that engine only when the
+  whole trimmed line is exactly its header; a type name followed by flowchart
+  syntax or another token remains a headerless flowchart statement.
 - **B28** Given CLI input-source or width mistakes, when arguments are parsed,
   then `--width 0` and every combination of multiple FILE/`-` sources fail
   with exit 64 before input is read; one explicit `-` reads stdin normally.

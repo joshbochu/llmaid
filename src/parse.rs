@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use crate::scanner;
 pub use crate::scene::{EdgeKind, Shape};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -178,19 +179,6 @@ impl Graph {
     }
 }
 
-/// Directive keywords we recognize and deliberately ignore (with a warning).
-const IGNORED_DIRECTIVES: &[&str] = &[
-    "classDef",
-    "class",
-    "style",
-    "linkStyle",
-    "click",
-    "direction",
-    "accTitle",
-    "accDescr",
-    "title",
-];
-
 pub fn parse(src: &str) -> Result<Graph, ParseError> {
     validate_terminal_source(src)?;
     let mut g = Graph::default();
@@ -199,18 +187,17 @@ pub fn parse(src: &str) -> Result<Graph, ParseError> {
 
     for (ix, raw_line) in src.lines().enumerate() {
         let line_no = ix + 1;
-        let line = raw_line.trim();
-        if line.is_empty() || line.starts_with("%%") {
-            continue;
-        }
-        for stmt in line.split(';') {
+        for stmt in scanner::statements(raw_line) {
             let stmt = stmt.trim();
             if stmt.is_empty() {
                 continue;
             }
             let keyword = stmt.split_whitespace().next().unwrap_or("");
 
-            if keyword == "flowchart" || keyword == "graph" {
+            if matches!(
+                scanner::classify_non_edge_keyword(keyword),
+                Some(scanner::NonEdgeKeyword::Header)
+            ) {
                 if seen_header {
                     g.warnings.push(Warning {
                         line: line_no,
@@ -241,7 +228,10 @@ pub fn parse(src: &str) -> Result<Graph, ParseError> {
                 continue;
             }
 
-            if keyword == "subgraph" {
+            if matches!(
+                scanner::classify_non_edge_keyword(keyword),
+                Some(scanner::NonEdgeKeyword::Subgraph)
+            ) {
                 if !seen_header && !warned_no_header {
                     warned_no_header = true;
                     g.warnings.push(Warning {
@@ -251,18 +241,24 @@ pub fn parse(src: &str) -> Result<Graph, ParseError> {
                     });
                 }
                 let rest = stmt["subgraph".len()..].trim();
-                let (id, title) = parse_subgraph_header(rest);
-                validate_terminal_text(&title, line_no)?;
+                let (id, raw_title) = parse_subgraph_header(rest);
+                let title = clean_flowchart_label(&raw_title, line_no)?;
                 g.open_subgraph(id, title);
                 continue;
             }
 
-            if keyword == "end" {
+            if matches!(
+                scanner::classify_non_edge_keyword(keyword),
+                Some(scanner::NonEdgeKeyword::End)
+            ) {
                 g.close_subgraph(line_no);
                 continue;
             }
 
-            if IGNORED_DIRECTIVES.contains(&keyword) {
+            if matches!(
+                scanner::classify_non_edge_keyword(keyword),
+                Some(scanner::NonEdgeKeyword::IgnoredDirective)
+            ) {
                 g.warnings.push(Warning {
                     line: line_no,
                     msg: format!("`{keyword}`: directive ignored"),
@@ -360,7 +356,7 @@ fn parse_subgraph_header(rest: &str) -> (String, String) {
     }
     // Quoted title only: subgraph "My Group"
     if let Some(quoted) = rest.strip_prefix('"')
-        && let Some(end) = quoted.find('"')
+        && let Some(end) = first_unescaped_quote(quoted)
     {
         let title = quoted[..end].to_string();
         let id = title
@@ -386,6 +382,22 @@ fn parse_subgraph_header(rest: &str) -> (String, String) {
     (id, rem.to_string())
 }
 
+fn first_unescaped_quote(text: &str) -> Option<usize> {
+    text.char_indices()
+        .find(|&(index, ch)| ch == '"' && !is_escaped_quote(text, index))
+        .map(|(index, _)| index)
+}
+
+fn is_escaped_quote(text: &str, quote: usize) -> bool {
+    text.as_bytes()[..quote]
+        .iter()
+        .rev()
+        .take_while(|&&byte| byte == b'\\')
+        .count()
+        % 2
+        == 1
+}
+
 /// One statement: `group (edge group)*` where `group = node (& node)*`.
 fn parse_statement(g: &mut Graph, stmt: &str, line: usize) -> Result<(), ParseError> {
     let mut cur = Cur::new(stmt);
@@ -403,7 +415,7 @@ fn parse_statement(g: &mut Graph, stmt: &str, line: usize) -> Result<(), ParseEr
                 line,
                 msg: "unterminated edge label: expected closing `|`".to_string(),
             })?;
-            label = Some(clean_terminal_label(&text, line)?);
+            label = Some(clean_flowchart_label(&text, line)?);
         }
         cur.skip_ws();
         let next = parse_group(g, &mut cur, line)?;
@@ -462,7 +474,7 @@ fn parse_node(g: &mut Graph, cur: &mut Cur, line: usize) -> Result<usize, ParseE
                 line,
                 msg: format!("node `{id}`: unterminated `{open}` — expected closing `{close}`"),
             })?;
-            return Ok(g.add_node(&id, Some((shape, clean_terminal_label(&raw, line)?)), line));
+            return Ok(g.add_node(&id, Some((shape, clean_flowchart_label(&raw, line)?)), line));
         }
     }
     Ok(g.add_node(&id, None, line))
@@ -491,7 +503,7 @@ fn parse_edge_op(
         return Ok((
             EdgeKind::Dotted,
             arrow,
-            Some(clean_terminal_label(&text, line)?),
+            Some(clean_flowchart_label(&text, line)?),
         ));
     }
 
@@ -511,7 +523,7 @@ fn parse_edge_op(
         return Ok((
             EdgeKind::Thick,
             arrow,
-            Some(clean_terminal_label(&text, line)?),
+            Some(clean_flowchart_label(&text, line)?),
         ));
     }
 
@@ -531,7 +543,7 @@ fn parse_edge_op(
         return Ok((
             EdgeKind::Solid,
             arrow,
-            Some(clean_terminal_label(&text, line)?),
+            Some(clean_flowchart_label(&text, line)?),
         ));
     }
 
@@ -551,7 +563,10 @@ fn unterminated_edge(line: usize, open: &str, example: &str) -> ParseError {
     }
 }
 
-pub(crate) fn clean_label(raw: &str) -> String {
+/// Normalize terminal label text shared by the engines. Literal br tags are
+/// the only formatting tags interpreted; Markdown and other HTML-like tags
+/// remain visible text.
+fn clean_label(raw: &str) -> String {
     let s = raw.trim();
     let s = s
         .strip_prefix('"')
@@ -577,6 +592,107 @@ pub(crate) fn clean_terminal_label(raw: &str, line: usize) -> Result<String, Par
     let label = clean_label(raw);
     validate_terminal_text(&label, line)?;
     Ok(label)
+}
+
+fn clean_flowchart_label(raw: &str, line: usize) -> Result<String, ParseError> {
+    let normalized = normalize_flowchart_label(raw);
+    if let Some(control) = normalized.decoded_control {
+        return Err(ParseError {
+            line,
+            msg: format!(
+                "decoded terminal control U+{:04X} is not supported; remove the entity or use visible text",
+                control as u32
+            ),
+        });
+    }
+    validate_terminal_text(&normalized.text, line)?;
+    Ok(normalized.text)
+}
+
+/// Flowchart-only character-reference compatibility runs after shared text
+/// cleanup. An entity-escaped br tag therefore remains literal text rather
+/// than becoming formatting syntax.
+fn normalize_flowchart_label(raw: &str) -> NormalizedLabel {
+    decode_entities(&clean_label(raw))
+}
+
+struct NormalizedLabel {
+    text: String,
+    decoded_control: Option<char>,
+}
+
+/// Decode the small, deterministic entity subset accepted in flowchart labels.
+///
+/// The XML named references plus nbsp, Tab, and NewLine cover common Mermaid
+/// text. Valid decimal and hexadecimal scalar references also decode. Unknown
+/// names, malformed numeric values, surrogates, and out-of-range scalars are
+/// retained byte-for-byte; a typo must never turn the rest of a label into
+/// parser syntax.
+fn decode_entities(text: &str) -> NormalizedLabel {
+    let mut output = String::with_capacity(text.len());
+    let mut decoded_control = None;
+    let mut index = 0;
+
+    while index < text.len() {
+        let rest = &text[index..];
+        if matches!(rest.chars().next(), Some('&' | '#'))
+            && let Some(length) = scanner::entity_reference_len(rest)
+        {
+            let entity = &rest[..length];
+            if let Some(decoded) = decode_entity(entity) {
+                if decoded.is_control() {
+                    decoded_control.get_or_insert(decoded);
+                }
+                output.push(decoded);
+            } else {
+                output.push_str(entity);
+            }
+            index += length;
+            continue;
+        }
+
+        let ch = rest
+            .chars()
+            .next()
+            .expect("index always advances across valid UTF-8");
+        output.push(ch);
+        index += ch.len_utf8();
+    }
+
+    NormalizedLabel {
+        text: output,
+        decoded_control,
+    }
+}
+
+fn decode_entity(entity: &str) -> Option<char> {
+    let body = entity.strip_suffix(';')?;
+    let spelling = body.strip_prefix('&').or_else(|| body.strip_prefix('#'))?;
+    let named = match spelling {
+        "amp" => Some('&'),
+        "lt" => Some('<'),
+        "gt" => Some('>'),
+        "quot" => Some('"'),
+        "apos" => Some('\''),
+        "nbsp" => Some('\u{a0}'),
+        "Tab" => Some('\t'),
+        "NewLine" => Some('\n'),
+        _ => None,
+    };
+    let numeric = body.strip_prefix('&').unwrap_or(body);
+    named.or_else(|| decode_numeric_entity(numeric))
+}
+
+fn decode_numeric_entity(body: &str) -> Option<char> {
+    let digits = body
+        .strip_prefix("#x")
+        .or_else(|| body.strip_prefix("#X"))
+        .map(|digits| (digits, 16))
+        .or_else(|| body.strip_prefix('#').map(|digits| (digits, 10)))?;
+    (!digits.0.is_empty())
+        .then(|| u32::from_str_radix(digits.0, digits.1).ok())
+        .flatten()
+        .and_then(char::from_u32)
 }
 
 /// If a `<br>` / `<br/>` / `<br />` tag starts at `i`, return the index past it.
@@ -613,7 +729,7 @@ pub fn dump(g: &Graph) -> String {
             "  {} {} \"{}\"\n",
             n.id,
             n.shape.name(),
-            n.label.replace('\n', "\\n")
+            dump_text(&n.label)
         ));
     }
     if !g.subgraphs.is_empty() {
@@ -629,7 +745,7 @@ pub fn dump(g: &Graph) -> String {
                 "  {} id={} title=\"{}\" parent={} members=[{}]\n",
                 i,
                 sg.id,
-                sg.title.replace('\n', "\\n"),
+                dump_text(&sg.title),
                 parent,
                 members.join(",")
             ));
@@ -640,7 +756,7 @@ pub fn dump(g: &Graph) -> String {
         let label = e
             .label
             .as_ref()
-            .map(|l| format!("|{}|", l.replace('\n', "\\n")))
+            .map(|label| format!("|{}|", dump_text(label)))
             .unwrap_or_default();
         out.push_str(&format!(
             "  {} {}{} {}\n",
@@ -657,6 +773,12 @@ pub fn dump(g: &Graph) -> String {
         }
     }
     out
+}
+
+fn dump_text(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 /// Character cursor over a single statement.
@@ -717,11 +839,18 @@ impl Cur {
     /// Consume up to (and including) `close`; return the text before it.
     fn take_until_str(&mut self, close: &str) -> Option<String> {
         let mut k = self.i;
+        let mut quoted = false;
         while k < self.ch.len() {
-            let matches = close
-                .chars()
-                .enumerate()
-                .all(|(j, c)| self.ch.get(k + j) == Some(&c));
+            if self.ch[k] == '"' && !self.quote_is_escaped(k) {
+                quoted = !quoted;
+                k += 1;
+                continue;
+            }
+            let matches = !quoted
+                && close
+                    .chars()
+                    .enumerate()
+                    .all(|(j, c)| self.ch.get(k + j) == Some(&c));
             if matches {
                 let text: String = self.ch[self.i..k].iter().collect();
                 self.i = k + close.chars().count();
@@ -730,6 +859,16 @@ impl Cur {
             k += 1;
         }
         None
+    }
+
+    fn quote_is_escaped(&self, quote: usize) -> bool {
+        self.ch[..quote]
+            .iter()
+            .rev()
+            .take_while(|&&ch| ch == '\\')
+            .count()
+            % 2
+            == 1
     }
 
     fn rest_snippet(&self) -> String {
@@ -742,5 +881,312 @@ impl Cur {
         } else {
             rest
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn labels_decode_core_entities_once_and_preserve_unknown_references() {
+        assert_eq!(
+            clean_flowchart_label(
+                r#"AT&amp;T #quot; #65; #x41; &#66; &lt;br&gt; &unknown-name; #xzz; &nbsp;"#,
+                1
+            )
+            .unwrap(),
+            "AT&T \" A A B <br> &unknown-name; #xzz; \u{a0}"
+        );
+    }
+
+    #[test]
+    fn dump_escapes_flowchart_node_group_and_edge_text() {
+        let graph = Graph {
+            dir: Some(Dir::LR),
+            nodes: vec![
+                Node {
+                    id: "A".into(),
+                    label: "node\\\"\n".into(),
+                    shape: Shape::Rect,
+                },
+                Node {
+                    id: "B".into(),
+                    label: "B".into(),
+                    shape: Shape::Rect,
+                },
+            ],
+            edges: vec![Edge {
+                from: 0,
+                to: 1,
+                kind: EdgeKind::Solid,
+                arrow: true,
+                label: Some("edge\\\"\n".into()),
+                endpoint_reserve: 0,
+                distinct_endpoints: false,
+            }],
+            subgraphs: vec![Subgraph {
+                id: "Group".into(),
+                title: "group\\\"\n".into(),
+                parent: None,
+                members: vec![0],
+            }],
+            warnings: Vec::new(),
+            index: HashMap::new(),
+            sg_stack: Vec::new(),
+        };
+
+        let dumped = dump(&graph);
+        assert!(
+            dumped.contains(&format!("  A rect \"{}\"\n", r#"node\\\"\n"#)),
+            "{dumped}"
+        );
+        assert!(
+            dumped.contains(&format!(r#"title="{}""#, r#"group\\\"\n"#)),
+            "{dumped}"
+        );
+        assert!(
+            dumped.contains(&format!("-->|{}|", r#"edge\\\"\n"#)),
+            "{dumped}"
+        );
+    }
+
+    #[test]
+    fn decoded_entity_controls_are_rejected_before_rendering() {
+        for (entity, control) in [
+            ("#0;", "U+0000"),
+            ("#x1b;", "U+001B"),
+            ("&Tab;", "U+0009"),
+            ("&NewLine;", "U+000A"),
+        ] {
+            let error = clean_flowchart_label(entity, 7).unwrap_err();
+            assert_eq!(error.line, 7, "{entity}: {error}");
+            assert!(error.msg.contains(control), "{entity}: {error}");
+        }
+    }
+
+    #[test]
+    fn decoded_zero_column_scalars_are_rejected_before_rendering() {
+        let error = clean_flowchart_label("#x301;", 9).unwrap_err();
+        assert_eq!(error.line, 9);
+        assert!(
+            error.msg.contains("zero-column Unicode grapheme"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn quoted_shape_and_edge_closers_are_not_terminators() {
+        let graph = parse(r#"flowchart LR; A["cache[key]"] --> B("call(foo)")"#).unwrap();
+        assert_eq!(graph.nodes[0].label, "cache[key]");
+        assert_eq!(graph.nodes[1].label, "call(foo)");
+
+        let graph = parse(r#"flowchart LR; A -->|"left | right"| B"#).unwrap();
+        assert_eq!(graph.edges[0].label.as_deref(), Some("left | right"));
+    }
+
+    #[test]
+    fn inline_edge_labels_decode_entities_for_every_supported_style() {
+        for (source, label) in [
+            ("flowchart LR; A -- AT&amp;T --> B", "AT&T"),
+            ("flowchart LR; A -. AT&amp;T .-> B", "AT&T"),
+            ("flowchart LR; A == AT&amp;T ==> B", "AT&T"),
+        ] {
+            let graph = parse(source).unwrap();
+            assert_eq!(graph.edges[0].label.as_deref(), Some(label), "{source}");
+        }
+    }
+
+    #[test]
+    fn inline_edge_labels_keep_plain_boundaries_until_their_closers() {
+        for source in [
+            "flowchart LR; A -- plain; %% literal --> B; C --> D",
+            "flowchart LR; A -. plain; %% literal .-> B; C --> D",
+            "flowchart LR; A == plain; %% literal ==> B; C --> D",
+        ] {
+            let graph = parse(source).unwrap();
+            assert_eq!(graph.edges.len(), 2, "{source}");
+            assert_eq!(
+                graph.edges[0].label.as_deref(),
+                Some("plain; %% literal"),
+                "{source}"
+            );
+            assert_eq!(graph.nodes[2].id, "C", "{source}");
+            assert_eq!(graph.nodes[3].id, "D", "{source}");
+        }
+    }
+
+    #[test]
+    fn directives_and_subgraphs_do_not_open_inline_labels() {
+        let graph = parse(
+            "flowchart LR; title [release]--plan; A --> B; title A --> B -- plan; C --> D; \
+             click A href -- plan; E --> F; style A fill:#f00 -- plan; G --> H",
+        )
+        .unwrap();
+        let ids: Vec<&str> = graph.nodes.iter().map(|node| node.id.as_str()).collect();
+        assert_eq!(ids, ["A", "B", "C", "D", "E", "F", "G", "H"]);
+        assert_eq!(graph.edges.len(), 4);
+        assert_eq!(graph.warnings.len(), 4);
+
+        let graph = parse("flowchart LR; subgraph G [release]--plan; A; end; C").unwrap();
+        assert_eq!(graph.subgraphs.len(), 1);
+        assert_eq!(graph.subgraphs[0].title, "[release]--plan");
+        assert_eq!(graph.subgraphs[0].members.len(), 1);
+        assert_eq!(graph.nodes[0].id, "A");
+        assert_eq!(graph.nodes[1].id, "C");
+
+        let graph = parse("flowchart LR; titleNode[release] -- plan; %% text --> B; C").unwrap();
+        assert_eq!(graph.nodes[0].id, "titleNode");
+        assert_eq!(graph.edges[0].label.as_deref(), Some("plan; %% text"));
+        assert_eq!(graph.nodes[2].id, "C");
+    }
+
+    #[test]
+    fn dotted_and_other_predecessor_edges_enable_following_inline_labels() {
+        for (source, kind, arrow) in [
+            (
+                "flowchart LR; A -.-> B -- label; %% text --> C; C --> D",
+                EdgeKind::Dotted,
+                true,
+            ),
+            (
+                "flowchart LR; A -.- B -- label; %% text --> C; C --> D",
+                EdgeKind::Dotted,
+                false,
+            ),
+            (
+                "flowchart LR; A --> B -- label; %% text --> C; C --> D",
+                EdgeKind::Solid,
+                true,
+            ),
+            (
+                "flowchart LR; A ==> B -- label; %% text --> C; C --> D",
+                EdgeKind::Thick,
+                true,
+            ),
+            (
+                "flowchart LR; A -->|edge| B -- label; %% text --> C; C --> D",
+                EdgeKind::Solid,
+                true,
+            ),
+        ] {
+            let graph = parse(source).unwrap();
+            assert_eq!(graph.edges.len(), 3, "{source}");
+            assert_eq!(graph.edges[0].kind, kind, "{source}");
+            assert_eq!(graph.edges[0].arrow, arrow, "{source}");
+            assert_eq!(
+                graph.edges[1].label.as_deref(),
+                Some("label; %% text"),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn unicode_node_ids_support_grouped_and_chained_inline_labels() {
+        let graph = parse("flowchart LR; 源 --> 目 -- chained; %% text --> 終; 終 --> 次").unwrap();
+        assert_eq!(graph.nodes[0].id, "源");
+        assert_eq!(graph.nodes[1].id, "目");
+        assert_eq!(graph.nodes[2].id, "終");
+        assert_eq!(graph.nodes[3].id, "次");
+        assert_eq!(graph.edges[1].label.as_deref(), Some("chained; %% text"));
+
+        let graph = parse("flowchart LR; α & β -- grouped; %% text --> γ; γ --> δ").unwrap();
+        assert_eq!(graph.edges.len(), 3);
+        assert_eq!(graph.edges[0].label.as_deref(), Some("grouped; %% text"));
+        assert_eq!(graph.edges[1].label.as_deref(), Some("grouped; %% text"));
+        assert_eq!(graph.nodes[2].id, "γ");
+        assert_eq!(graph.nodes[3].id, "δ");
+    }
+
+    #[test]
+    fn unterminated_inline_edges_keep_a_parse_diagnostic() {
+        let error = parse("flowchart LR; A -- plain; %% literal; C").unwrap_err();
+        assert_eq!(error.line, 1);
+        assert!(error.msg.contains("unterminated"), "{error}");
+    }
+
+    #[test]
+    fn arrowless_inline_closers_and_long_runs_keep_following_statements() {
+        for (source, kind) in [
+            (
+                "flowchart LR; A -- AT&amp;T --- B; C --> D",
+                EdgeKind::Solid,
+            ),
+            (
+                "flowchart LR; A -. AT&amp;T .- B; C --> D",
+                EdgeKind::Dotted,
+            ),
+            (
+                "flowchart LR; A == AT&amp;T === B; C --> D",
+                EdgeKind::Thick,
+            ),
+            (
+                "flowchart LR; A -- AT&amp;T ----> B; C --> D",
+                EdgeKind::Solid,
+            ),
+            (
+                "flowchart LR; A == AT&amp;T =====> B; C --> D",
+                EdgeKind::Thick,
+            ),
+        ] {
+            let graph = parse(source).unwrap();
+            assert_eq!(graph.edges.len(), 2, "{source}");
+            assert_eq!(graph.edges[0].kind, kind, "{source}");
+            assert_eq!(graph.edges[0].label.as_deref(), Some("AT&T"), "{source}");
+            assert_eq!(graph.nodes[2].id, "C", "{source}");
+            assert_eq!(graph.nodes[3].id, "D", "{source}");
+        }
+    }
+
+    #[test]
+    fn flowchart_subgraph_titles_decode_entities() {
+        let graph = parse("flowchart LR; subgraph Group [AT&amp;T #35;]; A; end").unwrap();
+        assert_eq!(graph.subgraphs[0].title, "AT&T #");
+
+        let graph = parse("flowchart LR; subgraph AT&amp;T; A; end").unwrap();
+        assert_eq!(graph.subgraphs[0].title, "AT&T");
+        assert_eq!(graph.subgraphs[0].members.len(), 1);
+
+        for entity in [
+            "&unknown_name;",
+            "&unknown.name;",
+            "&unknown:name;",
+            "&unknown+name;",
+        ] {
+            let graph = parse(&format!("flowchart LR; subgraph G AT{entity}X; A; end")).unwrap();
+            assert_eq!(graph.subgraphs[0].title, format!("AT{entity}X"));
+            assert_eq!(graph.subgraphs[0].members.len(), 1);
+        }
+    }
+
+    #[test]
+    fn malformed_ascii_entity_tokens_stay_literal_in_inline_labels() {
+        for entity in [
+            "&unknown_name;",
+            "&unknown.name;",
+            "&unknown:name;",
+            "&unknown+name;",
+        ] {
+            let graph = parse(&format!("flowchart LR; A -- {entity} --> B; C")).unwrap();
+            assert_eq!(graph.edges[0].label.as_deref(), Some(entity));
+            assert_eq!(graph.nodes[2].id, "C");
+        }
+    }
+
+    #[test]
+    fn quote_only_subgraph_headers_honor_escaped_quotes() {
+        let graph = parse(r#"flowchart LR; subgraph "release \"plan\""; A; end"#).unwrap();
+        assert_eq!(graph.subgraphs[0].title, r#"release \"plan\""#);
+
+        let graph = parse(r#"flowchart LR; subgraph "release \\"; A; end"#).unwrap();
+        assert_eq!(graph.subgraphs[0].title, r#"release \\"#);
+    }
+
+    #[test]
+    fn semicolon_scanning_keeps_unquoted_fanout_as_flowchart_syntax() {
+        let graph = parse("flowchart LR; A&B; C").unwrap();
+        let ids: Vec<&str> = graph.nodes.iter().map(|node| node.id.as_str()).collect();
+        assert_eq!(ids, ["A", "B", "C"]);
     }
 }

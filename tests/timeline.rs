@@ -68,6 +68,13 @@ fn dispatch_empty_and_duplicate_labels_keep_timeline_semantics() {
 }
 
 #[test]
+fn flowchart_entity_normalization_does_not_change_timeline_labels() {
+    let parsed = timeline::parse("timeline\n#35; : AT&amp;T\n").unwrap();
+    assert_eq!(parsed.periods[0].label, "#35;");
+    assert_eq!(parsed.periods[0].events[0].label, "AT&amp;T");
+}
+
+#[test]
 fn malformed_timeline_syntax_names_the_line_and_exact_repair() {
     let cases = [
         ("timeline\n  : orphan\n", 2, "period before event"),

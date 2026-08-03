@@ -23,14 +23,12 @@ pub enum Diagram {
 }
 
 pub fn parse(src: &str) -> Result<Diagram, ParseError> {
-    let first = src
-        .lines()
-        .enumerate()
-        .map(|(index, line)| (index, line.trim()))
-        .find(|(_, line)| !line.is_empty() && !line.starts_with("%%"));
+    let first = src.lines().enumerate().find_map(|(index, line)| {
+        let line = line.trim();
+        (!line.is_empty() && !line.starts_with("%%")).then_some((index, line))
+    });
     let first_line = first.map(|(index, line)| (index + 1, line));
-    let first_keyword = first_line.and_then(|(_, line)| line.split_whitespace().next());
-    match first_keyword {
+    match first_line.map(|(_, line)| line) {
         Some("sequenceDiagram") => sequence::parse(src).map(Diagram::Sequence),
         Some("stateDiagram" | "stateDiagram-v2") => state::parse(src).map(Diagram::State),
         Some("classDiagram") => class::parse(src).map(Diagram::Class),
