@@ -6,6 +6,16 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Deterministic resource bounds (B41): source input is capped at 256 KiB for
+  both CLI streaming reads and `diagram::parse`; target width, semantic element
+  count, recursive nesting, raster axes, and checked canvas area have one
+  centralized policy. Canvas allocation is fallible and reserved exactly once,
+  so a hostile Scene cannot turn a wrapped product or allocator refusal into a
+  panic. Normal rendering keeps stdout empty and reports the observed value,
+  limit, and repair. `--inspect=json` remains valid for an oversized final
+  Scene, records an exact `scene.integrity` resource witness, and emits an
+  empty bounded canvas. Focused library/CLI tests cover source, width,
+  complexity/depth, checked-area, determinism, and refusal paths.
 - Semantic final-render inspection (B34): `--inspect=json` emits stable,
   dependency-free `llmaid.inspect.v1` for every shipped diagram type. The
   report combines semantic element identities with normalized final-Scene
@@ -93,6 +103,21 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   roadmap, handoff, behavior, and capability docs cover the inspection loop.
 
 ### Decisions
+
+- **D40 — Resource bounds are one fixed policy with a safe inspection
+  escape hatch.** Input, semantic complexity, recursive nesting, fit target,
+  and raster allocation all share centralized compile-time limits rather than
+  per-engine guesses or caller-configurable ceilings. The CLI streams only one
+  byte past the source cap and the public dispatcher validates the same source
+  and semantic count/depth for already-loaded library strings. Canvas work
+  validates dimensions and a checked cell product before a single fallible
+  reserve/resize; normal output uses only the fallible path. Oversized scenes
+  remain inspectable as geometry plus a named invariant witness and an empty
+  canvas, so agents can diagnose rather than receive malformed JSON or an OOM.
+  Rejected: unbounded `read_to_string`, saturating allocation arithmetic,
+  silent empty normal renders, user-tunable limits that weaken deterministic
+  safety, and failing inspection itself when the raster is intentionally
+  refused.
 
 - **D39 — Flowchart terminal marks are semantic endpoint decorations, not
   node-label glyphs or operator-string rewrites.** Each flowchart edge records

@@ -177,6 +177,7 @@ Mermaid as the only primary agent language.
 | stdout = diagram only | Y | P | P | Y | Y | — |
 | Parse errors: source + line + excerpt + expectation | Y | P | P | P | P | Y |
 | Closed downstream pipe exits cleanly | Y | ? | ? | ? | ? | — |
+| Bounded source / canvas resource refusal | Y | ? | ? | ? | ? | — |
 | Never truncate labels | Y | N | P | Y | Y | Y |
 | Behavior contracts / goldens | Y | ? | ? | N | N | — |
 | Frame invariants (tests) | Y | ? | ? | N | N | — |

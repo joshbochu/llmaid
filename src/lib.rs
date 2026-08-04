@@ -5,6 +5,7 @@ pub mod diagram;
 pub mod er;
 pub mod inspect;
 pub mod layout;
+pub mod limits;
 pub mod metrics;
 pub mod mindmap;
 pub mod parse;

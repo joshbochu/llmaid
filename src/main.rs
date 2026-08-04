@@ -2,7 +2,7 @@ use std::fmt;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
-use llmaid::{audit, diagram, inspect, render, style::Style};
+use llmaid::{audit, diagram, inspect, limits, render, style::Style};
 use unicode_width::UnicodeWidthChar;
 
 const USAGE: &str = "\
@@ -69,6 +69,7 @@ fn parse_args() -> Result<Action, String> {
                 if n == 0 {
                     return Err("--width must be at least 1, got `0`".to_string());
                 }
+                limits::validate_target_width(n).map_err(|limit| limit.to_string())?;
                 opts.width = Some(n);
             }
             "-" => {
@@ -106,15 +107,49 @@ fn set_input(opts: &mut Opts, file: Option<String>) -> Result<(), String> {
     Ok(())
 }
 
-fn read_input(file: Option<&str>) -> std::io::Result<String> {
-    match file {
-        Some(path) => std::fs::read_to_string(path),
-        None => {
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf)?;
-            Ok(buf)
+#[derive(Debug)]
+enum InputError {
+    Io(io::Error),
+    Limit(limits::ResourceLimit),
+}
+
+impl std::fmt::Display for InputError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => error.fmt(f),
+            Self::Limit(limit) => limit.fmt(f),
         }
     }
+}
+
+fn read_input(file: Option<&str>) -> Result<String, InputError> {
+    match file {
+        Some(path) => read_capped(std::fs::File::open(path).map_err(InputError::Io)?),
+        None => read_capped(io::stdin().lock()),
+    }
+}
+
+/// Read at most one byte beyond the source cap. This uses the same boundary as
+/// `diagram::parse`, but avoids `read_to_string` allocating an arbitrary input
+/// before the parser has a chance to reject it.
+fn read_capped(mut reader: impl Read) -> Result<String, InputError> {
+    let mut bytes = Vec::new();
+    let mut buffer = [0u8; 8 * 1024];
+    let cap_plus_one = limits::MAX_SOURCE_BYTES + 1;
+    while bytes.len() < cap_plus_one {
+        let remaining = cap_plus_one - bytes.len();
+        let read_len = remaining.min(buffer.len());
+        let count = reader
+            .read(&mut buffer[..read_len])
+            .map_err(InputError::Io)?;
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+    }
+    limits::validate_source_bytes(bytes.len()).map_err(InputError::Limit)?;
+    String::from_utf8(bytes)
+        .map_err(|error| InputError::Io(io::Error::new(io::ErrorKind::InvalidData, error)))
 }
 
 fn write_stdout(output: &str) -> io::Result<()> {
@@ -239,7 +274,14 @@ fn main() -> ExitCode {
     let scene = diagram::scene(&diagram, width);
     match render::render_scene_checked(&scene, Style { ascii: opts.ascii }) {
         Ok(output) => stdout_exit(write_stdout(&output)),
-        Err(failures) => {
+        Err(render::CheckedRenderError::Resource(limit)) => {
+            diagnostic(format_args!("llmaid: {limit}"));
+            diagnostic(format_args!(
+                "llmaid: diagram not written; inspect with `--inspect=json`"
+            ));
+            ExitCode::from(64)
+        }
+        Err(render::CheckedRenderError::Invariants(failures)) => {
             for failure in failures {
                 diagnostic(format_args!("llmaid: invariant failure: {failure}"));
             }

@@ -7,6 +7,7 @@ use llmaid::layout;
 use llmaid::parse::{EdgeKind, Endpoint, FlowEndpointDecoration, Shape, parse};
 use llmaid::render;
 use llmaid::style::{E, N, S, Style, W};
+use llmaid::{diagram, inspect, limits};
 use std::process::{Command, Stdio};
 
 // ---------- Parsing ----------
@@ -517,6 +518,105 @@ flowchart TB
         "B16 failures:\n  - {}",
         failures.join("\n  - ")
     );
+}
+
+#[test]
+fn b41_given_resource_boundaries_then_refusals_are_bounded_actionable_and_inspectable() {
+    let source_limit = "x".repeat(limits::MAX_SOURCE_BYTES + 1);
+    let error = diagram::parse(&source_limit).unwrap_err();
+    assert_eq!(error.line, 1);
+    assert!(
+        error.msg.contains("source bytes")
+            && error
+                .msg
+                .contains(&(limits::MAX_SOURCE_BYTES + 1).to_string())
+            && error.msg.contains(&limits::MAX_SOURCE_BYTES.to_string())
+            && error.msg.contains("split or reduce"),
+        "{error}"
+    );
+
+    let mut broad = String::from("flowchart LR\n");
+    for node in 0..=limits::MAX_SEMANTIC_ELEMENTS {
+        broad.push_str(&format!("N{node}\n"));
+    }
+    let error = diagram::parse(&broad).unwrap_err();
+    assert!(
+        error.msg.contains("semantic elements")
+            && error
+                .msg
+                .contains(&(limits::MAX_SEMANTIC_ELEMENTS + 1).to_string()),
+        "{error}"
+    );
+
+    let mut deep = String::from("mindmap\n");
+    for depth in 0..=limits::MAX_NESTING_DEPTH {
+        deep.push_str(&" ".repeat((depth + 1) * 2));
+        deep.push_str(&format!("N{depth}\n"));
+    }
+    let error = diagram::parse(&deep).unwrap_err();
+    assert!(
+        error.msg.contains("nesting depth")
+            && error
+                .msg
+                .contains(&(limits::MAX_NESTING_DEPTH + 1).to_string()),
+        "{error}"
+    );
+
+    use llmaid::scene::{Rect, Scene, SceneBox};
+    let oversized_scene = Scene {
+        boxes: vec![SceneBox {
+            node: 0,
+            rect: Rect::new(0, 0, (limits::MAX_CANVAS_DIMENSION + 1) as i32, 3),
+            lines: vec![],
+            shape: Shape::Rect,
+            table: None,
+        }],
+        ..Scene::default()
+    };
+    let limit = render::try_render_scene(&oversized_scene, Style { ascii: false }).unwrap_err();
+    assert_eq!(limit.resource, "canvas width");
+    assert_eq!(limit.observed, limits::MAX_CANVAS_DIMENSION + 1);
+    assert_eq!(limit.limit, limits::MAX_CANVAS_DIMENSION);
+    assert!(render::render_scene(&oversized_scene, Style { ascii: false }).is_empty());
+    assert_eq!(
+        limits::validate_canvas(usize::MAX, 2).unwrap_err().resource,
+        "canvas cells"
+    );
+
+    let giant_label = "x".repeat(limits::MAX_CANVAS_DIMENSION);
+    let wide_source = format!("flowchart LR\nA[{giant_label}]\n");
+    let wide = diagram::parse(&wide_source).unwrap();
+    let first = inspect::json(&wide, 100, Style { ascii: false });
+    let second = inspect::json(&wide, 100, Style { ascii: false });
+    assert_eq!(first, second);
+    assert!(first.contains("\"scene.integrity\""), "{first}");
+    assert!(first.contains("\"resource\":\"canvas width\""), "{first}");
+    assert!(
+        first.contains("\"canvas\":{\"width\":0,\"height\":0,\"rows\":[]}"),
+        "{first}"
+    );
+
+    let over_width = (limits::MAX_TARGET_WIDTH + 1).to_string();
+    let (stdout, stderr, code) = run_llmaid(&["--width", &over_width], "");
+    assert_eq!(code, 64, "{stderr}");
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("target width") && stderr.contains("use a smaller --width"));
+
+    let (stdout, stderr, code) = run_llmaid(&[], &source_limit);
+    assert_eq!(code, 64, "{stderr}");
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("source bytes") && stderr.contains("split or reduce"));
+
+    let (stdout, stderr, code) = run_llmaid(&[], &wide_source);
+    assert_eq!(code, 64, "{stderr}");
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("canvas width") && stderr.contains("diagram not written"));
+
+    let (json, stderr, code) = run_llmaid(&["--inspect=json"], &wide_source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(json.starts_with("{\"schema\":\"llmaid.inspect.v1\""));
+    assert!(json.contains("\"resource\":\"canvas width\""));
+    assert!(json.contains("\"canvas\":{\"width\":0,\"height\":0,\"rows\":[]}"));
 }
 
 // ---------- CLI ----------
@@ -1191,7 +1291,10 @@ fn b24_given_runtime_invariant_failure_then_checked_render_returns_actionable_di
         }],
         ..Scene::default()
     };
-    let failures = render::render_scene_checked(&scene, Style { ascii: false }).unwrap_err();
+    let failures = match render::render_scene_checked(&scene, Style { ascii: false }).unwrap_err() {
+        render::CheckedRenderError::Invariants(failures) => failures,
+        render::CheckedRenderError::Resource(limit) => panic!("unexpected resource limit: {limit}"),
+    };
     assert!(
         failures.iter().any(|failure| failure.contains("edge 0")
             && failure.contains("non-endpoint box 7")

@@ -231,14 +231,29 @@ pub fn evaluate_with_style(
 }
 
 fn scene_integrity(scene: &Scene, style: Style) -> CheckReport {
-    let (_, failures) = crate::render::render_scene_with_checks(scene, style);
     let mut check = CheckReport::new("scene.integrity", CheckClass::Invariant, 1);
-    for message in failures {
-        check.fail(
-            Vec::new(),
-            message.clone(),
-            vec![WitnessField::text("detail", message)],
-        );
+    match crate::render::try_render_scene_with_checks(scene, style) {
+        Ok((_, failures)) => {
+            for message in failures {
+                check.fail(
+                    Vec::new(),
+                    message.clone(),
+                    vec![WitnessField::text("detail", message)],
+                );
+            }
+        }
+        Err(limit) => {
+            check.fail(
+                Vec::new(),
+                limit.to_string(),
+                vec![
+                    WitnessField::text("resource", limit.resource),
+                    WitnessField::integer("observed", limit.observed as i64),
+                    WitnessField::integer("limit", limit.limit as i64),
+                    WitnessField::text("repair", limit.repair),
+                ],
+            );
+        }
     }
     check
 }

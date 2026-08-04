@@ -218,14 +218,30 @@ llmaid [FILE|-]            read Mermaid from FILE or stdin, write to stdout
   --version / --help
 ```
 
-Exit codes: 0 ok (including a downstream closed pipe), 64 usage/parse error,
-70 internal render-invariant failure, 74 stdout I/O error.
+Exit codes: 0 ok (including a downstream closed pipe), 64 usage/parse/resource
+refusal, 70 internal render-invariant failure, 74 stdout I/O error.
 
-Width overflow ladder (never truncate, never fail): compact inter-node gaps →
-wrap whole words → render over-width anyway. Wrapping has an eight-column
-readability floor; whitespace-free tokens remain intact, and the largest
-wrapping cap that fits wins. If no readable wrapped result fits, it is used only
-when it reduces actual overflow; otherwise the compact unwrapped result wins.
+### Resource bounds
+
+llmaid deliberately bounds untrusted work with compile-time limits: 256 KiB
+of source, a `--width` target of 4,096 columns, 4,096 total semantic elements,
+128 levels of subgraph/fragment/mindmap nesting, and a 16,384-cell raster axis
+with no more than 1,000,000 checked canvas cells. The CLI reads stdin/files
+only through the source cap; `diagram::parse` enforces the same source plus
+semantic limits for library callers. A limit diagnostic names the observed
+value, limit, and repair. Normal rendering refuses with empty stdout. Inspection
+instead returns a valid report with an exact `scene.integrity` resource failure
+and an empty canvas, preserving a bounded self-debug path without attempting a
+large allocation.
+
+Width overflow ladder (never truncate or refuse solely for missing the target):
+compact inter-node gaps → wrap whole words → render over-width anyway. Wrapping
+has an eight-column readability floor; whitespace-free tokens remain intact,
+and the largest wrapping cap that fits wins. If no readable wrapped result
+fits, it is used only when it reduces actual overflow; otherwise the compact
+unwrapped result wins. This B9 target-width policy holds while the final Scene
+remains within the separate Resource bounds above; a raster/resource excess is
+a B41 refusal rather than a width-fit failure.
 Sequence headers, messages, and notes use the same ladder. Structured class/ER
 tables keep their columns but still compact relationship channels. Labels wrap
 only under width pressure.

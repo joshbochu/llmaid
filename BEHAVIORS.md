@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D39.
+`CHANGELOG.md` D9–D40.
 
 ## Parsing
 
@@ -109,6 +109,16 @@ structural coverage lives beside its engine tests. Decisions behind these:
   without a sound predicate are listed as `unclassified` rather than treated
   as passes. `--audit=json` remains byte-compatible `llmaid.audit.v1`, and the
   two machine-output modes are mutually exclusive.
+- **B41** Given a source, target width, semantic graph/event count, recursive
+  nesting depth, or final Scene raster beyond the documented fixed bounds,
+  then llmaid refuses the normal render before unbounded parsing or allocation,
+  keeps stdout empty, and reports the exact observed value, limit, and a
+  repair. File and stdin input stop after one byte beyond the source limit, and
+  `diagram::parse` applies the same source/semantic boundary for library
+  callers. Canvas dimensions and checked cell area are validated before a
+  fallible allocation. `--inspect=json` stays byte-stable and valid for an
+  oversized final Scene: `scene.integrity` contains the exact resource witness
+  while `canvas` is empty (`width:0`, `height:0`, `rows:[]`).
 
 ## Layout & rendering
 
@@ -117,7 +127,9 @@ structural coverage lives beside its engine tests. Decisions behind these:
   render over-width anyway. Whitespace-free tokens such as identifiers stay
   intact, even when that makes overflow unavoidable. The selected fallback
   minimizes overflow without using narrower-than-eight-column text or wrapping
-  that buys no width. Never truncate a label, never fail on overflow.
+  that buys no width. Target-width overflow alone never truncates or refuses a
+  render; only an independent B41 resource bound (such as raster dimensions or
+  canvas cells) can refuse it.
 - **B10** Given a label that fits, when rendered, then it stays on one line;
   wrapping happens only under width pressure (B9), never at an arbitrary
   box-width cap. Of the readable layouts that fit, the least-wrapped one wins.

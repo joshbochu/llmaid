@@ -166,6 +166,7 @@ and maintenance cost.
 | 6.5 | Invariant failures as actionable stderr | **done** — checked runtime render, exit 70, inspection hint |
 | 6.6 | Optional JSON IR **input** (same engines) | Tools/compilers; Mermaid remains primary |
 | 6.7 | Semantic final-Scene inspection | **done** — stable `llmaid.inspect.v1`; typed applicability/status/witnesses, semantic geometry, raster rows, reviewed-gallery preference gate, generated invariant gates, and mutation tests |
+| 6.8 | Deterministic resource bounds | **done** — capped source streaming, semantic/depth limits, checked/fallible canvas allocation, and bounded inspection refusal |
 
 **Exit:** an agent can render any input, inspect exact structural violations,
 and fix failures in one retry without a human reading either the parser or the
