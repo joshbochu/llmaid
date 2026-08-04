@@ -254,6 +254,7 @@ When you ship a feature:
 
 | Date | Note |
 |------|------|
+| 2026-08-03 | Flowchart ordering now retains an earlier deterministic barycenter candidate only when its exact adjacent-rank real/dummy-segment inversion count beats the legacy final sweep; final painted-edge crossings remain independently checked. |
 | 2026-07-31 | Added stable semantic final-Scene inspection with typed applicability, exact witnesses, unclassified compositions, raster rows, and cross-engine quality gates. |
 | 2026-07-09 | Initial matrix from design + local tool probes (tw, termaid demos, diagon modes, graph-easy). |
 | 2026-07-09 | Phase 0: TB/BT labels, RL goldens, mono-chain straighten; flowchart direction cells strengthened. |

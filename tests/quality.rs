@@ -635,6 +635,42 @@ fn group_endpoint_attachment_is_independently_checked_on_the_final_scene() {
 }
 
 #[test]
+fn unrelated_flow_crossings_are_an_exact_final_scene_preference_with_mutation_proof() {
+    let parsed = diagram::parse("flowchart LR\nA --> B\nC --> D\n").unwrap();
+    let mut scene = diagram::scene(&parsed, 100);
+    let clean = quality::evaluate(&parsed, &scene, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "flow.edge_crossings")
+        .unwrap();
+    assert_eq!(clean.applicable, 1, "{clean:#?}");
+    assert_eq!(clean.status(), "pass", "{clean:#?}");
+
+    // Change only finished path geometry. The evaluator must discover the
+    // perpendicular interior intersection without consulting layout state.
+    scene.edges[0].points = vec![
+        llmaid::scene::Point::new(1, 5),
+        llmaid::scene::Point::new(9, 5),
+    ];
+    scene.edges[1].points = vec![
+        llmaid::scene::Point::new(5, 1),
+        llmaid::scene::Point::new(5, 9),
+    ];
+    let crossed = quality::evaluate(&parsed, &scene, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "flow.edge_crossings")
+        .unwrap();
+    assert_eq!(crossed.status(), "fail", "{crossed:#?}");
+    assert_eq!(crossed.failures.len(), 1, "{crossed:#?}");
+    assert_eq!(
+        crossed.failures[0].elements,
+        vec!["edge:0(node:A->node:B)", "edge:1(node:C->node:D)"]
+    );
+    assert!(crossed.failures[0].message.contains("(5,5)"));
+}
+
+#[test]
 fn flow_terminal_decorations_are_independently_checked_on_the_final_scene() {
     let parsed = diagram::parse("flowchart LR\nA o--o B\nB <--> C\n").unwrap();
     let mut scene = diagram::scene(&parsed, 100);

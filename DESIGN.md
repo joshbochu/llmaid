@@ -96,7 +96,10 @@ errors (`--strict` upgrades them). Errors carry line numbers and expectations.
 1. **Rank assignment**: longest-path, then pull-up compaction (cycles broken by
    reversing feedback edges found via DFS).
 2. **Crossing reduction**: barycenter sweeps over adjacent ranks until stable
-   (bounded iterations, deterministic tie-breaks by declaration order).
+   (bounded iterations, deterministic tie-breaks by declaration order). The
+   fixed sweeps retain the best observed integer ordering only when its exact
+   adjacent-rank real/dummy-segment inversion count is strictly below the
+   legacy final sweep; equal or worse candidates preserve legacy bytes.
 3. **Coordinates**: ranks become rows (TB) or columns (LR); cells sized by
    measured label width (`unicode-width`), centered on parents' barycenter,
    spacing consistent (min gap 2 cols / 1 row; edge-label length stretches the gap).

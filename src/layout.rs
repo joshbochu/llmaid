@@ -1514,54 +1514,276 @@ fn order_by_barycenter(
     reversed: &[bool],
     edge_spans: &[Option<(usize, usize)>],
 ) {
-    let nranks = ranks.len();
-    let pos_of =
-        |rslots: &[Slot], want: &Slot| -> Option<usize> { rslots.iter().position(|s| s == want) };
+    let mut best: Option<(u128, Vec<Vec<Slot>>)> = None;
+    consider_barycenter_candidate(g, ranks, reversed, edge_spans, &mut best);
+    let mut legacy_crossings = 0;
     for _ in 0..4 {
-        for r in 1..nranks {
-            let (before, at) = ranks.split_at_mut(r);
-            let prev = &before[r - 1];
-            let row = &mut at[0];
-            let mut keyed: Vec<(usize, usize, usize, Slot)> = row
-                .iter()
-                .enumerate()
-                .map(|(i, slot)| {
-                    let neigh = slot_neighbors(g, slot, r, reversed, edge_spans, true);
-                    let positions: Vec<usize> =
-                        neigh.iter().filter_map(|s| pos_of(prev, s)).collect();
-                    let (sum, count) = if positions.is_empty() {
-                        (i, 1)
-                    } else {
-                        (positions.iter().sum(), positions.len())
-                    };
-                    (sum, count, i, *slot)
-                })
-                .collect();
-            keyed.sort_by(compare_barycenters);
-            *row = keyed.into_iter().map(|(_, _, _, slot)| slot).collect();
+        barycenter_sweep(g, ranks, reversed, edge_spans, true);
+        consider_barycenter_candidate(g, ranks, reversed, edge_spans, &mut best);
+        barycenter_sweep(g, ranks, reversed, edge_spans, false);
+        legacy_crossings = consider_barycenter_candidate(g, ranks, reversed, edge_spans, &mut best);
+    }
+
+    // Preserve the legacy final sweep unless a previously observed complete
+    // ordering is strictly better. This makes the objective a no-regression
+    // selection layer rather than a source of arbitrary equal-score churn.
+    if let Some((best_crossings, best_ranks)) = best
+        && best_crossings < legacy_crossings
+    {
+        ranks.clone_from_slice(&best_ranks);
+    }
+}
+
+/// Score one observed complete ordering, retaining at most one full candidate
+/// clone. Long-edge dummies can be numerous, so keeping all nine sweep states
+/// would multiply the layout's peak memory without changing the decision.
+fn consider_barycenter_candidate(
+    g: &Graph,
+    ranks: &[Vec<Slot>],
+    reversed: &[bool],
+    edge_spans: &[Option<(usize, usize)>],
+    best: &mut Option<(u128, Vec<Vec<Slot>>)>,
+) -> u128 {
+    let crossings = adjacent_rank_crossings(g, ranks, reversed, edge_spans);
+    let replace = match best {
+        None => true,
+        Some((best_crossings, best_ranks)) => {
+            crossings < *best_crossings
+                || (crossings == *best_crossings
+                    && ranks_lexicographically_before(ranks, best_ranks))
         }
-        for r in (0..nranks.saturating_sub(1)).rev() {
-            let (at, after) = ranks.split_at_mut(r + 1);
-            let next = &after[0];
-            let row = &mut at[r];
-            let mut keyed: Vec<(usize, usize, usize, Slot)> = row
-                .iter()
-                .enumerate()
-                .map(|(i, slot)| {
-                    let neigh = slot_neighbors(g, slot, r, reversed, edge_spans, false);
-                    let positions: Vec<usize> =
-                        neigh.iter().filter_map(|s| pos_of(next, s)).collect();
-                    let (sum, count) = if positions.is_empty() {
-                        (i, 1)
-                    } else {
-                        (positions.iter().sum(), positions.len())
-                    };
-                    (sum, count, i, *slot)
-                })
-                .collect();
-            keyed.sort_by(compare_barycenters);
-            *row = keyed.into_iter().map(|(_, _, _, slot)| slot).collect();
+    };
+    if replace {
+        // Release the prior retained candidate before cloning long dummy rows.
+        // This keeps peak candidate storage to one complete ordering.
+        *best = None;
+        *best = Some((crossings, ranks.to_vec()));
+    }
+    crossings
+}
+
+/// Run one of the legacy barycenter passes. `toward_previous` is a forward
+/// (top-to-bottom in flow space) pass; false is the matching backward pass.
+fn barycenter_sweep(
+    g: &Graph,
+    ranks: &mut [Vec<Slot>],
+    reversed: &[bool],
+    edge_spans: &[Option<(usize, usize)>],
+    toward_previous: bool,
+) {
+    let nranks = ranks.len();
+    if toward_previous {
+        for rank in 1..nranks {
+            let (before, at) = ranks.split_at_mut(rank);
+            barycenter_reorder_row(
+                g,
+                &before[rank - 1],
+                &mut at[0],
+                rank,
+                reversed,
+                edge_spans,
+                true,
+            );
         }
+    } else {
+        for rank in (0..nranks.saturating_sub(1)).rev() {
+            let (at, after) = ranks.split_at_mut(rank + 1);
+            barycenter_reorder_row(
+                g,
+                &after[0],
+                &mut at[rank],
+                rank,
+                reversed,
+                edge_spans,
+                false,
+            );
+        }
+    }
+}
+
+fn barycenter_reorder_row(
+    g: &Graph,
+    neighbor: &[Slot],
+    row: &mut Vec<Slot>,
+    rank: usize,
+    reversed: &[bool],
+    edge_spans: &[Option<(usize, usize)>],
+    toward_previous: bool,
+) {
+    let pos_of = |want: &Slot| -> Option<usize> { neighbor.iter().position(|slot| slot == want) };
+    let mut keyed: Vec<(usize, usize, usize, Slot)> = row
+        .iter()
+        .enumerate()
+        .map(|(index, slot)| {
+            let neighbors = slot_neighbors(g, slot, rank, reversed, edge_spans, toward_previous);
+            let positions: Vec<usize> = neighbors.iter().filter_map(pos_of).collect();
+            let (sum, count) = if positions.is_empty() {
+                (index, 1)
+            } else {
+                (positions.iter().sum(), positions.len())
+            };
+            (sum, count, index, *slot)
+        })
+        .collect();
+    keyed.sort_by(compare_barycenters);
+    *row = keyed.into_iter().map(|(_, _, _, slot)| slot).collect();
+}
+
+/// Count strict inversions among every forward segment joining adjacent ranks.
+/// Each long edge contributes one real/dummy segment at every rank boundary;
+/// self loops and DFS feedback edges are absent, exactly as in barycenter
+/// ordering. Equal source or target slots at this boundary are batched/excluded,
+/// so a shared junction slot is never mistaken for a crossing. Distinct dummy
+/// lanes remain eligible and can still genuinely invert.
+fn adjacent_rank_crossings(
+    g: &Graph,
+    ranks: &[Vec<Slot>],
+    reversed: &[bool],
+    edge_spans: &[Option<(usize, usize)>],
+) -> u128 {
+    let missing = usize::MAX;
+    let mut left_real = vec![missing; g.nodes.len()];
+    let mut right_real = vec![missing; g.nodes.len()];
+    let mut left_dummy = vec![missing; g.edges.len()];
+    let mut right_dummy = vec![missing; g.edges.len()];
+    let mut total = 0u128;
+    let mut segments = Vec::with_capacity(g.edges.len());
+    let max_slots = ranks.iter().map(Vec::len).max().unwrap_or(0);
+    let mut fenwick = Fenwick::new(max_slots);
+
+    for rank in 0..ranks.len().saturating_sub(1) {
+        left_real.fill(missing);
+        right_real.fill(missing);
+        left_dummy.fill(missing);
+        right_dummy.fill(missing);
+        for (position, slot) in ranks[rank].iter().enumerate() {
+            match slot {
+                Slot::Real(node) => left_real[*node] = position,
+                Slot::Dummy(edge) => left_dummy[*edge] = position,
+            }
+        }
+        for (position, slot) in ranks[rank + 1].iter().enumerate() {
+            match slot {
+                Slot::Real(node) => right_real[*node] = position,
+                Slot::Dummy(edge) => right_dummy[*edge] = position,
+            }
+        }
+
+        segments.clear();
+        for (edge, span) in edge_spans.iter().enumerate() {
+            if reversed[edge] {
+                continue;
+            }
+            let Some((start, end)) = span else {
+                continue;
+            };
+            if *start > rank || rank >= *end {
+                continue;
+            }
+            let semantic = &g.edges[edge];
+            let source = if rank == *start {
+                left_real[semantic.from]
+            } else {
+                left_dummy[edge]
+            };
+            let target = if rank + 1 == *end {
+                right_real[semantic.to]
+            } else {
+                right_dummy[edge]
+            };
+            debug_assert_ne!(source, missing, "missing source slot for edge {edge}");
+            debug_assert_ne!(target, missing, "missing target slot for edge {edge}");
+            if source != missing && target != missing {
+                segments.push((source, target));
+            }
+        }
+        segments.sort_unstable();
+
+        fenwick.clear();
+        let mut start = 0;
+        while start < segments.len() {
+            let source = segments[start].0;
+            let mut end = start + 1;
+            while end < segments.len() && segments[end].0 == source {
+                end += 1;
+            }
+            for &(_, target) in &segments[start..end] {
+                total += fenwick.strictly_greater(target) as u128;
+            }
+            for &(_, target) in &segments[start..end] {
+                fenwick.add(target);
+            }
+            start = end;
+        }
+    }
+    total
+}
+
+/// Lexicographic candidate tie-break based only on real-node declaration
+/// indices and dummy-edge declaration indices. The discriminant is explicit:
+/// a real node sorts before a dummy edge with the same numeric index.
+fn ranks_lexicographically_before(left: &[Vec<Slot>], right: &[Vec<Slot>]) -> bool {
+    for (left_row, right_row) in left.iter().zip(right) {
+        for (left_slot, right_slot) in left_row.iter().zip(right_row) {
+            let ordering = slot_lex_key(left_slot).cmp(&slot_lex_key(right_slot));
+            if ordering != std::cmp::Ordering::Equal {
+                return ordering == std::cmp::Ordering::Less;
+            }
+        }
+        let ordering = left_row.len().cmp(&right_row.len());
+        if ordering != std::cmp::Ordering::Equal {
+            return ordering == std::cmp::Ordering::Less;
+        }
+    }
+    left.len() < right.len()
+}
+
+fn slot_lex_key(slot: &Slot) -> (u8, usize) {
+    match slot {
+        Slot::Real(index) => (0, *index),
+        Slot::Dummy(index) => (1, *index),
+    }
+}
+
+struct Fenwick {
+    tree: Vec<usize>,
+    total: usize,
+}
+
+impl Fenwick {
+    fn new(len: usize) -> Self {
+        Self {
+            tree: vec![0; len + 1],
+            total: 0,
+        }
+    }
+
+    fn add(&mut self, position: usize) {
+        self.total += 1;
+        let mut index = position + 1;
+        while index < self.tree.len() {
+            self.tree[index] += 1;
+            index += index & index.wrapping_neg();
+        }
+    }
+
+    fn clear(&mut self) {
+        self.tree.fill(0);
+        self.total = 0;
+    }
+
+    fn strictly_greater(&self, position: usize) -> usize {
+        self.total - self.prefix_inclusive(position)
+    }
+
+    fn prefix_inclusive(&self, position: usize) -> usize {
+        let mut index = position + 1;
+        let mut count = 0;
+        while index > 0 {
+            count += self.tree[index];
+            index &= index - 1;
+        }
+        count
     }
 }
 
@@ -1974,13 +2196,130 @@ fn allocate_tracks(intervals: &[(usize, usize)]) -> Vec<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::allocate_tracks;
+    use super::{
+        Slot, adjacent_rank_crossings, allocate_tracks, barycenter_sweep, order_by_barycenter,
+    };
+    use crate::parse;
 
     #[test]
     fn disjoint_bend_intervals_reuse_the_lowest_track() {
         assert_eq!(
             allocate_tracks(&[(0, 3), (2, 6), (5, 7), (8, 10)]),
             vec![0, 1, 0, 1]
+        );
+    }
+
+    #[test]
+    fn adjacent_crossings_count_straight_segments_as_zero() {
+        let graph = parse::parse("flowchart LR\nA --> B\n").unwrap();
+        assert_eq!(
+            adjacent_rank_crossings(
+                &graph,
+                &[vec![Slot::Real(0)], vec![Slot::Real(1)]],
+                &[false],
+                &[Some((0, 1))],
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn adjacent_crossings_count_one_strict_inversion() {
+        let graph = parse::parse("flowchart LR\nA --> D\nB --> C\n").unwrap();
+        assert_eq!(
+            adjacent_rank_crossings(
+                &graph,
+                &[
+                    vec![Slot::Real(0), Slot::Real(2)],
+                    vec![Slot::Real(3), Slot::Real(1)],
+                ],
+                &[false, false],
+                &[Some((0, 1)), Some((0, 1))],
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn adjacent_crossings_exclude_shared_target_boundary_slot() {
+        let graph = parse::parse("flowchart LR\nA --> C\nB --> C\n").unwrap();
+        assert_eq!(
+            adjacent_rank_crossings(
+                &graph,
+                &[vec![Slot::Real(0), Slot::Real(2)], vec![Slot::Real(1)]],
+                &[false, false],
+                &[Some((0, 1)), Some((0, 1))],
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn adjacent_crossings_exclude_shared_source_boundary_slot() {
+        let graph = parse::parse("flowchart LR\nA --> B\nA --> C\n").unwrap();
+        assert_eq!(
+            adjacent_rank_crossings(
+                &graph,
+                &[vec![Slot::Real(0)], vec![Slot::Real(2), Slot::Real(1)]],
+                &[false, false],
+                &[Some((0, 1)), Some((0, 1))],
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn adjacent_crossings_follow_long_edges_through_dummy_slots() {
+        let graph = parse::parse("flowchart LR\nA --> C\nB --> D\n").unwrap();
+        assert_eq!(
+            adjacent_rank_crossings(
+                &graph,
+                &[
+                    vec![Slot::Real(0), Slot::Real(2)],
+                    vec![Slot::Dummy(1), Slot::Dummy(0)],
+                    vec![Slot::Real(1), Slot::Real(3)],
+                ],
+                &[false, false],
+                &[Some((0, 2)), Some((0, 2))],
+            ),
+            2
+        );
+    }
+
+    #[test]
+    fn best_observed_ranking_beats_the_reproduced_legacy_final_sweep() {
+        // The last legacy sweep moves the chain's rank-1 node ahead of the
+        // fork targets, reintroducing one strict adjacent-rank inversion. An
+        // earlier observed ordering has none.
+        let graph =
+            parse::parse("flowchart LR\nA\nB\nC\nD\nE\nF\nA --> E\nA --> F\nB --> C\nC --> D\n")
+                .unwrap();
+        let initial = vec![
+            vec![Slot::Real(0), Slot::Real(1)],
+            vec![Slot::Real(2), Slot::Real(4), Slot::Real(5)],
+            vec![Slot::Real(3)],
+        ];
+        let reversed = vec![false; graph.edges.len()];
+        let spans = vec![Some((0, 1)), Some((0, 1)), Some((0, 1)), Some((1, 2))];
+        let mut legacy = initial.clone();
+        for _ in 0..4 {
+            barycenter_sweep(&graph, &mut legacy, &reversed, &spans, true);
+            barycenter_sweep(&graph, &mut legacy, &reversed, &spans, false);
+        }
+        let legacy_score = adjacent_rank_crossings(&graph, &legacy, &reversed, &spans);
+        assert_eq!(legacy_score, 1);
+
+        let mut selected = initial.clone();
+        order_by_barycenter(&graph, &mut selected, &reversed, &spans);
+        let selected_score = adjacent_rank_crossings(&graph, &selected, &reversed, &spans);
+        assert_eq!(selected_score, 0);
+        assert!(selected_score < legacy_score);
+
+        let mut repeat = initial.clone();
+        order_by_barycenter(&graph, &mut repeat, &reversed, &spans);
+        assert_eq!(
+            selected, repeat,
+            "candidate selection must be deterministic"
         );
     }
 }

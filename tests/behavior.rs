@@ -521,6 +521,31 @@ flowchart TB
 }
 
 #[test]
+fn b42_given_a_better_observed_barycenter_order_then_it_is_selected_deterministically() {
+    // The fixed legacy sweep sequence finishes with one strict adjacent-rank
+    // inversion here; layout's focused counter test records the 1 -> 0 proof.
+    let source = "flowchart LR\nA\nB\nC\nD\nE\nF\nA --> E\nA --> F\nB --> C\nC --> D\n";
+    let (first, first_stderr, first_code) = run_llmaid(&[], source);
+    let (second, second_stderr, second_code) = run_llmaid(&[], source);
+    assert_eq!(first_code, 0, "{first_stderr}");
+    assert_eq!(second_code, 0, "{second_stderr}");
+    assert_eq!(first, second);
+    for label in ["A", "B", "C", "D", "E", "F"] {
+        assert!(first.contains(label), "missing {label}:\n{first}");
+    }
+
+    let diagram = diagram::parse(source).unwrap();
+    let scene = diagram::scene(&diagram, 100);
+    let quality = llmaid::quality::evaluate(&diagram, &scene, 100);
+    let crossings = quality
+        .checks
+        .iter()
+        .find(|check| check.id == "flow.edge_crossings")
+        .unwrap();
+    assert_eq!(crossings.status(), "pass", "{crossings:#?}");
+}
+
+#[test]
 fn b41_given_resource_boundaries_then_refusals_are_bounded_actionable_and_inspectable() {
     let source_limit = "x".repeat(limits::MAX_SOURCE_BYTES + 1);
     let error = diagram::parse(&source_limit).unwrap_err();

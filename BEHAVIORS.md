@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D40.
+`CHANGELOG.md` D9–D41.
 
 ## Parsing
 
@@ -152,6 +152,14 @@ structural coverage lives beside its engine tests. Decisions behind these:
 - **B16** Given any routed edge, then its interior never intersects or rides
   the border of a non-endpoint node. Enforced from exact `Scene` geometry for
   every golden; nested and long-edge merges are explicit regression cases.
+- **B42** Given a forward layered flowchart whose bounded barycenter sweeps
+  observe an ordering with fewer strict adjacent-rank segment inversions than
+  the legacy final sweep, when laid out, then llmaid selects that best observed
+  ordering deterministically; equal or worse candidates retain the exact
+  legacy-final ordering. The integer objective follows real and long-edge dummy
+  slots, ignores self/feedback edges, and never counts pairs sharing either
+  slot at the same rank boundary. It is a layout choice, not a replacement for the independent
+  final-Scene `flow.edge_crossings` preference.
 - **B32** Given labels containing combining marks, emoji ZWJ sequences,
   legitimate ellipses, or `<br>` line breaks, when any shipped engine renders
   them, then extended grapheme clusters occupy their measured terminal cells,

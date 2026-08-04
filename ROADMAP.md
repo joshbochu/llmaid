@@ -161,7 +161,7 @@ and maintenance cost.
 |----|------|--------|
 | 6.1 | Richer per-type error catalog | **in progress** — unified source + line + excerpt + expectation diagnostics; known unsupported headers fail directly |
 | 6.2 | Machine-readable geometry audit | **done** — stable v1 JSON; named violations, exact witnesses, every shipped type |
-| 6.3 | Generated + metamorphic topology tests | **done** — 71 DAGs + 40 design-doc direction renders + 197 ordered tree shapes + 170 timeline structures |
+| 6.3 | Generated + metamorphic topology tests | **done** — 71 DAGs + 40 design-doc direction renders + 197 ordered tree shapes + 170 timeline structures; bounded barycenter sweeps retain an exact best observed rank order without equal-score churn |
 | 6.4 | Optional machine-readable parser diagnostics | e.g. `--error-format=json` |
 | 6.5 | Invariant failures as actionable stderr | **done** — checked runtime render, exit 70, inspection hint |
 | 6.6 | Optional JSON IR **input** (same engines) | Tools/compilers; Mermaid remains primary |

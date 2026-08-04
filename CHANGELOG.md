@@ -6,6 +6,14 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Deterministic best-observed barycenter selection (B42): flowchart ordering
+  scores the declaration-order candidate and every completed legacy sweep with
+  an exact, overflow-safe adjacent-rank inversion count over forward real and
+  dummy segments. A batched Fenwick traversal excludes shared boundary slots,
+  follows long edges, and leaves the legacy final byte-for-byte intact unless a
+  strictly lower-scoring candidate exists. The focused regression records the
+  reproduced 1-to-0 improvement; counter, determinism, golden, and independent
+  final-Scene crossing-mutation tests guard the seam.
 - Deterministic resource bounds (B41): source input is capped at 256 KiB for
   both CLI streaming reads and `diagram::parse`; target width, semantic element
   count, recursive nesting, raster axes, and checked canvas area have one
@@ -103,6 +111,23 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   roadmap, handoff, behavior, and capability docs cover the inspection loop.
 
 ### Decisions
+
+- **D41 — Keep the best observed ordering only as a strict no-regression
+  refinement.** Four forward/backward barycenter rounds remain the familiar,
+  bounded base algorithm. Each completed directional state and the
+  declaration-order input is measured with exact integer inversions between
+  adjacent real/dummy rank slots; a Fenwick traversal batches equal source
+  slots and asks only for strictly greater target positions, so pairs sharing
+  a boundary slot are not charged as crossings while distinct dummy lanes can
+  still invert. Feedback/self-loop edges stay outside this objective just as
+  they do in barycenter ordering. The
+  legacy final state remains the compatibility baseline: no candidate with an
+  equal or worse score may change output, while equal strict improvements use
+  a declaration-/edge-index lexical tie-break. Rejected: a floating-point
+  objective, a global visual score, quadratic edge-pair scans, and retaining
+  every long-edge candidate in memory. The final-Scene crossing predicate is
+  deliberately separate: it detects visible unrelated perpendicular paths,
+  not layout-internal rank inversions.
 
 - **D40 — Resource bounds are one fixed policy with a safe inspection
   escape hatch.** Input, semantic complexity, recursive nesting, fit target,

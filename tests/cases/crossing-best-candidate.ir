@@ -1,0 +1,13 @@
+direction: LR
+nodes:
+  A rect "A"
+  B rect "B"
+  C rect "C"
+  D rect "D"
+  E rect "E"
+  F rect "F"
+edges:
+  A --> E
+  A --> F
+  B --> C
+  C --> D
