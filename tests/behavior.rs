@@ -4,7 +4,7 @@
 //! every golden in `tests/golden.rs`.
 
 use llmaid::layout;
-use llmaid::parse::{EdgeKind, Endpoint, Shape, parse};
+use llmaid::parse::{EdgeKind, Endpoint, FlowEndpointDecoration, Shape, parse};
 use llmaid::render;
 use llmaid::style::{E, N, S, Style, W};
 use std::process::{Command, Stdio};
@@ -244,6 +244,213 @@ fn b39_given_declared_subgraph_id_as_an_edge_endpoint_then_the_frame_is_semantic
         error.msg.contains("subgraph `empty`") && error.msg.contains("member node"),
         "{error}"
     );
+}
+
+#[test]
+fn b40_given_circle_cross_and_bidirectional_flow_ends_then_every_direction_paints_exact_terminals()
+{
+    for direction in ["LR", "RL", "TB", "BT"] {
+        let source = format!(
+            "flowchart {direction}\n\
+             A o--o B\n\
+             B x--x C\n\
+             C <--> D\n"
+        );
+        let graph = parse(&source).unwrap();
+        assert_eq!(
+            (
+                graph.edges[0].source_decoration,
+                graph.edges[0].target_decoration
+            ),
+            (
+                FlowEndpointDecoration::Circle,
+                FlowEndpointDecoration::Circle
+            )
+        );
+        assert_eq!(
+            (
+                graph.edges[1].source_decoration,
+                graph.edges[1].target_decoration
+            ),
+            (FlowEndpointDecoration::Cross, FlowEndpointDecoration::Cross)
+        );
+        assert_eq!(
+            (
+                graph.edges[2].source_decoration,
+                graph.edges[2].target_decoration
+            ),
+            (FlowEndpointDecoration::Arrow, FlowEndpointDecoration::Arrow)
+        );
+
+        let semantic = llmaid::diagram::Diagram::Flowchart(graph);
+        let scene = llmaid::diagram::scene(&semantic, 100);
+        let report = llmaid::quality::evaluate(&semantic, &scene, 100);
+        let terminal_check = report
+            .checks
+            .iter()
+            .find(|check| check.id == "flow.endpoint_decorations")
+            .unwrap();
+        assert_eq!(
+            terminal_check.status(),
+            "pass",
+            "{direction}: {terminal_check:#?}"
+        );
+
+        let (unicode, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+        assert!(failures.is_empty(), "{direction}: {failures:#?}\n{unicode}");
+        assert!(
+            unicode.contains('○') && unicode.contains('×'),
+            "{direction}:\n{unicode}"
+        );
+        for arrow in if matches!(direction, "LR" | "RL") {
+            ['◀', '▶']
+        } else {
+            ['▲', '▼']
+        } {
+            assert!(
+                unicode.contains(arrow),
+                "{direction}: missing {arrow}:\n{unicode}"
+            );
+        }
+
+        let (ascii, failures) = render::render_scene_with_checks(&scene, Style { ascii: true });
+        assert!(failures.is_empty(), "{direction}: {failures:#?}\n{ascii}");
+        assert!(
+            ascii.is_ascii() && ascii.contains('o') && ascii.contains('x'),
+            "{direction}:\n{ascii}"
+        );
+        let inspect = llmaid::inspect::json(&semantic, 100, Style { ascii: false });
+        assert!(
+            inspect.contains("\"kind\":\"circle\"")
+                && inspect.contains("\"kind\":\"cross\"")
+                && inspect.contains("\"kind\":\"arrow\"")
+                && inspect.contains("\"head\":\"filled\""),
+            "{direction}: {inspect}"
+        );
+    }
+
+    let semantic = llmaid::diagram::parse("flowchart LR\nA o--o B\nA x--x B\n").unwrap();
+    let scene = llmaid::diagram::scene(&semantic, 100);
+    let mut terminals: Vec<_> = scene
+        .endpoint_decorations
+        .iter()
+        .map(|decoration| decoration.at)
+        .collect();
+    terminals.sort_by_key(|point| (point.y, point.x));
+    terminals.dedup();
+    assert_eq!(
+        terminals.len(),
+        4,
+        "parallel terminal marks collapsed: {scene:#?}"
+    );
+
+    let grouped = llmaid::diagram::parse(
+        "flowchart TB\nOutside o--o workers\nsubgraph workers\n  A --> B\nend\nworkers x--x After\n",
+    )
+    .unwrap();
+    let grouped_scene = llmaid::diagram::scene(&grouped, 100);
+    assert!(
+        !llmaid::quality::evaluate(&grouped, &grouped_scene, 100).has_quality_failures(),
+        "decorated group endpoints must retain distinct frame attachments: {grouped_scene:#?}"
+    );
+
+    // A decorated fork, merge, or self-loop must reserve a distinct terminal
+    // cell for every semantic mark, rather than merely painting the last mark
+    // that visits a shared junction.
+    for source in [
+        "flowchart LR\nA o--o B\nA x--x C\n",
+        "flowchart LR\nA o--o B\nC x--x B\n",
+        "flowchart TB\nA o--o A\nA x--x B\n",
+        "flowchart LR\nA o--o A\nA x--x B\n",
+    ] {
+        let semantic = llmaid::diagram::parse(source).unwrap();
+        let scene = llmaid::diagram::scene(&semantic, 100);
+        let mut terminals: Vec<_> = scene
+            .endpoint_decorations
+            .iter()
+            .map(|decoration| decoration.at)
+            .collect();
+        terminals.sort_by_key(|point| (point.y, point.x));
+        terminals.dedup();
+        assert_eq!(
+            terminals.len(),
+            4,
+            "terminal collision:\n{source}\n{scene:#?}"
+        );
+        assert!(
+            !llmaid::quality::evaluate(&semantic, &scene, 100).has_failures(),
+            "terminal collision:\n{source}\n{scene:#?}"
+        );
+        let (_, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+        assert!(failures.is_empty(), "{source}: {failures:#?}");
+    }
+
+    // Containment in either semantic direction gets a real gutter route when
+    // terminal marks consume both ends. Exercise circles, crosses, and
+    // arrows through every flow orientation.
+    for direction in ["LR", "RL", "TB", "BT"] {
+        for relation in ["G x--x A", "A o--o G", "G <--> A", "A <--> G"] {
+            let semantic = llmaid::diagram::parse(&format!(
+                "flowchart {direction}\nsubgraph G\nA\nend\n{relation}\n"
+            ))
+            .unwrap();
+            let scene = llmaid::diagram::scene(&semantic, 100);
+            let edge = &scene.edges[0];
+            assert!(
+                edge.points.len() >= 2 && edge.points.first() != edge.points.last(),
+                "containment route collapsed: {direction} {relation}: {scene:#?}"
+            );
+            assert!(
+                !llmaid::quality::evaluate(&semantic, &scene, 100).has_failures(),
+                "containment terminals: {direction} {relation}: {scene:#?}"
+            );
+            let (_, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+            assert!(
+                failures.is_empty(),
+                "containment collision: {direction} {relation}: {failures:#?}\n{scene:#?}"
+            );
+        }
+    }
+
+    // `o` and `x` remain ordinary one-character node IDs when they precede
+    // inline labels; a true marker still needs a preceding source operand.
+    for (source, source_id, kind, source_mark) in [
+        (
+            "flowchart LR\no -- text; still --> B\nC --> D\n",
+            "o",
+            EdgeKind::Solid,
+            FlowEndpointDecoration::None,
+        ),
+        (
+            "flowchart LR\nx -. text; still .-> B\nC --> D\n",
+            "x",
+            EdgeKind::Dotted,
+            FlowEndpointDecoration::None,
+        ),
+        (
+            "flowchart LR\nx == text; still ==> B\nC --> D\n",
+            "x",
+            EdgeKind::Thick,
+            FlowEndpointDecoration::None,
+        ),
+        (
+            "flowchart LR\nA o-- text; still --> B\nC --> D\n",
+            "A",
+            EdgeKind::Solid,
+            FlowEndpointDecoration::Circle,
+        ),
+    ] {
+        let graph = parse(source).unwrap();
+        assert_eq!(graph.edges.len(), 2, "{source}");
+        assert_eq!(graph.nodes[0].id, source_id, "{source}");
+        assert_eq!(graph.edges[0].kind, kind, "{source}");
+        assert_eq!(graph.edges[0].source_decoration, source_mark, "{source}");
+        assert_eq!(
+            graph.edges[0].label.as_deref(),
+            Some("text; still"),
+            "{source}"
+        );
+    }
 }
 
 #[test]

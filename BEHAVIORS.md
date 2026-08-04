@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D38.
+`CHANGELOG.md` D9–D39.
 
 ## Parsing
 
@@ -33,6 +33,15 @@ structural coverage lives beside its engine tests. Decisions behind these:
   ordinary node-to-member edges keep their node identities. An endpoint named
   for an empty group fails on its edge source line with a repairable request to
   add a member node rather than panicking or emitting a phantom box.
+- **B40** Given a flowchart edge with Mermaid terminal circle or cross notation
+  (`--o`, `--x`, including source-side and two-ended forms) or arrowheads at
+  both ends (`<-->`), when parsed and rendered in LR, RL, TB, or BT, then both
+  endpoint meanings remain explicit in the semantic IR and paint as distinct,
+  adjacent, direction-aware terminal marks on their own routed paths. Unicode
+  uses single-cell `○`/`×` marks and ASCII uses `o`/`x`; a bidirectional edge
+  has two filled directional arrowheads. Inspection exposes the terminal
+  decorations/arrowhead geometry, and a final-Scene invariant independently
+  requires each mark to sit one cell from its declared node or subgraph frame.
 - **B37** Given a flowchart line containing semicolon-separated statements,
   quoted labels, safely-contained named or numeric character references, and
   a trailing %% comment, when parsed, then statement/comment boundaries apply

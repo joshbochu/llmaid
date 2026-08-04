@@ -84,7 +84,8 @@ Closest to **graph-easy** parity inside Mermaid.
 | 1.1 | Real **subgraphs** (title + border + containment) | **done** — parse + bbox + frame |
 | 1.2 | Nested subgraphs (if tractable) | parent stack works; polish later if needed |
 | 1.3 | Subgraph-safe edge routing | **done** — edges may cross frames and declared subgraph IDs attach to their semantic frames without phantom nodes |
-| 1.4 | Optional terminal-safe styling subset | Still deferred |
+| 1.4 | Core terminal endpoint notation | **done** — flowchart circles, crosses, and bidirectional arrows lower as semantic endpoint decorations with inspected geometry |
+| 1.5 | Optional terminal-safe styling subset | Still deferred |
 
 **Exit met:** titled group frames around members; B15 + `subgraph-basic` / `subgraph-lr` goldens.
 

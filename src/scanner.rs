@@ -149,6 +149,18 @@ fn has_inline_left_operand(line: &str, statement_start: usize, operator_start: u
     }
 
     let prefix = line[statement_start..operator_start].trim_end();
+    // `o-- label -->` / `x-- label -->` and `<-- label -->` carry a
+    // source-side terminal mark immediately before the ordinary inline edge
+    // opener. It is syntax, not part of the previous node ID.
+    let prefix = prefix
+        .strip_suffix(['o', 'x', '<'])
+        // `o` and `x` are also valid one-character node IDs.  A terminal
+        // marker exists only after a real source operand, so never consume
+        // the entire operand while deciding whether a semicolon is inline
+        // label content.
+        .filter(|stripped| !stripped.trim_end().is_empty())
+        .unwrap_or(prefix)
+        .trim_end();
     if prefix.ends_with([']', ')', '}']) {
         return true;
     }
@@ -179,6 +191,12 @@ fn is_node_id_char(ch: char) -> bool {
 
 fn ends_after_previous_edge_closer(prefix: &str) -> bool {
     let prefix = prefix.trim_end();
+    // A circle or cross can terminate the preceding edge (`--o` / `--x`).
+    // Strip only that terminal marker before recognizing the ordinary run.
+    let (prefix, terminal_mark) = prefix
+        .strip_suffix(['o', 'x'])
+        .map(|value| (value.trim_end(), true))
+        .unwrap_or((prefix, false));
     if prefix.ends_with('|') {
         return true;
     }
@@ -194,10 +212,12 @@ fn ends_after_previous_edge_closer(prefix: &str) -> bool {
         .map(|(index, ch)| index + ch.len_utf8())
         .unwrap_or(0);
     let run = &without_arrow[run_start..];
-    let solid = run.bytes().all(|byte| byte == b'-') && run.len() >= if arrow { 2 } else { 3 };
+    let solid = run.bytes().all(|byte| byte == b'-')
+        && run.len() >= if arrow || terminal_mark { 2 } else { 3 };
     let dotted = (run.starts_with("-.") || run.starts_with(".-"))
         && run.bytes().all(|byte| matches!(byte, b'.' | b'-'));
-    let thick = run.bytes().all(|byte| byte == b'=') && run.len() >= if arrow { 2 } else { 3 };
+    let thick = run.bytes().all(|byte| byte == b'=')
+        && run.len() >= if arrow || terminal_mark { 2 } else { 3 };
     solid || dotted || thick
 }
 
@@ -223,13 +243,13 @@ enum InlineEdge {
 impl InlineEdge {
     fn opens(text: &str) -> Option<Self> {
         if let Some(rest) = text.strip_prefix("--") {
-            return (!rest.starts_with('-') && !rest.starts_with('>')).then_some(Self::Solid);
+            return (!rest.starts_with(['-', '>', 'o', 'x'])).then_some(Self::Solid);
         }
         if let Some(rest) = text.strip_prefix("-.") {
-            return (!rest.starts_with('-') && !rest.starts_with('>')).then_some(Self::Dotted);
+            return (!rest.starts_with(['-', '>', 'o', 'x'])).then_some(Self::Dotted);
         }
         if let Some(rest) = text.strip_prefix("==") {
-            return (!rest.starts_with('=') && !rest.starts_with('>')).then_some(Self::Thick);
+            return (!rest.starts_with(['=', '>', 'o', 'x'])).then_some(Self::Thick);
         }
         None
     }
@@ -256,7 +276,7 @@ fn consume_operator_run(text: &str, accepts: impl Fn(char) -> bool) -> usize {
         .take_while(|&ch| accepts(ch))
         .map(char::len_utf8)
         .sum();
-    if text[length..].starts_with('>') {
+    if text[length..].starts_with(['>', 'o', 'x']) {
         length += 1;
     }
     length
@@ -371,6 +391,38 @@ mod tests {
             ),
         ] {
             assert_eq!(statements(source), [first, " C --> D"], "{source}");
+        }
+    }
+
+    #[test]
+    fn source_terminal_marks_do_not_break_inline_or_chained_edge_scanning() {
+        assert_eq!(
+            statements("A o-- plain; %% literal --> B; C"),
+            ["A o-- plain; %% literal --> B", " C"]
+        );
+        assert_eq!(
+            statements("A --o B -- chained; %% literal --> C; D"),
+            ["A --o B -- chained; %% literal --> C", " D"]
+        );
+        assert_eq!(
+            statements("A <== note; %% literal ==> B; C"),
+            ["A <== note; %% literal ==> B", " C"]
+        );
+        for (source, first) in [
+            (
+                "o -- plain; %% literal --> B; C",
+                "o -- plain; %% literal --> B",
+            ),
+            (
+                "x -. plain; %% literal .-> B; C",
+                "x -. plain; %% literal .-> B",
+            ),
+            (
+                "x == plain; %% literal ==> B; C",
+                "x == plain; %% literal ==> B",
+            ),
+        ] {
+            assert_eq!(statements(source), [first, " C"], "{source}");
         }
     }
 

@@ -5,7 +5,7 @@
 //! then reuses the deterministic flowchart layout and routing geometry.
 
 use crate::layout;
-use crate::parse::{Dir, Edge, Endpoint, Graph, Node};
+use crate::parse::{Dir, Edge, Endpoint, FlowEndpointDecoration, Graph, Node};
 use crate::route;
 use crate::scene::{
     EdgeKind, EndpointDecoration, EndpointDecorationKind, Point, Scene, SceneText, Shape,
@@ -189,7 +189,12 @@ impl BoxDiagram {
                 source: Endpoint::Node(edge.from.0),
                 target: Endpoint::Node(edge.to.0),
                 kind: edge.kind,
-                arrow: edge.arrow,
+                source_decoration: FlowEndpointDecoration::None,
+                target_decoration: if edge.arrow {
+                    FlowEndpointDecoration::Arrow
+                } else {
+                    FlowEndpointDecoration::None
+                },
                 label: edge.label.clone(),
                 endpoint_reserve: edge.endpoint_reserve,
                 distinct_endpoints: edge.distinct_endpoints,

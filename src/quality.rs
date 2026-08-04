@@ -9,9 +9,9 @@ use crate::class::{ClassDiagram, RelationKind};
 use crate::diagram::Diagram;
 use crate::er::{AttributeKey, ErDiagram};
 use crate::mindmap::Mindmap;
-use crate::parse::{Dir, Endpoint as FlowEndpoint, Graph};
+use crate::parse::{Dir, Endpoint as FlowEndpoint, FlowEndpointDecoration, Graph};
 use crate::scene::{
-    EndpointDecorationKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneText, Shape,
+    ArrowHead, EndpointDecorationKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneText, Shape,
 };
 use crate::sequence::{SequenceDiagram, SequenceEvent};
 use crate::state::{Endpoint, StateDiagram};
@@ -272,6 +272,7 @@ fn flowchart_checks(graph: &Graph, scene: &Scene, report: &mut QualityReport) {
         flow_endpoints(graph),
         scene,
     ));
+    report.checks.push(flow_endpoint_decorations(graph, scene));
     let topology = FlowTopology::new(graph, scene);
     report
         .checks
@@ -1859,8 +1860,8 @@ fn edge_endpoint_check(
         let Some(target) = endpoint_rect(scene, expectation.target) else {
             continue;
         };
-        let first = edge.points.first().copied();
-        let last = semantic_target(edge);
+        let first = semantic_source(scene, edge);
+        let last = semantic_target(scene, edge);
         if first.is_none_or(|point| !endpoint_contains(source, expectation.source, point))
             || last.is_none_or(|point| !endpoint_contains(target, expectation.target, point))
         {
@@ -1898,6 +1899,175 @@ fn flow_endpoints(graph: &Graph) -> Vec<EndpointExpectation> {
             ],
         })
         .collect()
+}
+
+/// Check flowchart terminal notation directly from final Scene paint
+/// geometry.  The parser declares the desired terminal kind; this evaluator
+/// independently requires a matching glyph cell on the route, one cell from
+/// the semantic node or subgraph frame.
+fn flow_endpoint_decorations(graph: &Graph, scene: &Scene) -> CheckReport {
+    let applicable = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            usize::from(edge.source_decoration != FlowEndpointDecoration::None)
+                + usize::from(edge.target_decoration != FlowEndpointDecoration::None)
+        })
+        .sum();
+    let mut check = CheckReport::new(
+        "flow.endpoint_decorations",
+        CheckClass::Invariant,
+        applicable,
+    );
+    // Ordinary converging arrows may intentionally share a painted arrowhead.
+    // A source mark or circle/cross terminal, however, opts the relationship
+    // into `distinct_endpoints`; it may not overwrite any other terminal.
+    let mut occupied_terminals: Vec<(Point, usize, &'static str, bool)> = Vec::new();
+
+    for (edge_index, semantic) in graph.edges.iter().enumerate() {
+        let Some(routed) = scene.edges.iter().find(|edge| edge.edge == edge_index) else {
+            continue;
+        };
+        for (is_source, decoration, endpoint) in [
+            (true, semantic.source_decoration, semantic.source),
+            (false, semantic.target_decoration, semantic.target),
+        ] {
+            if decoration == FlowEndpointDecoration::None {
+                continue;
+            }
+            let terminal = if is_source {
+                routed.points.first().copied()
+            } else {
+                routed.points.last().copied()
+            };
+            let Some(terminal) = terminal else {
+                continue;
+            };
+            let expected_kind = flow_scene_decoration_kind(decoration);
+            let actual = if !is_source && decoration == FlowEndpointDecoration::Arrow {
+                routed
+                    .arrow
+                    .as_ref()
+                    .map(|arrow| (arrow.at, arrow.toward, None))
+            } else {
+                scene
+                    .endpoint_decorations
+                    .iter()
+                    .find(|value| {
+                        value.edge == edge_index
+                            && value.at == terminal
+                            && Some(value.kind) == expected_kind
+                    })
+                    .map(|value| (value.at, value.toward, Some(value.kind)))
+            };
+            let endpoint_name = if is_source { "source" } else { "target" };
+            let elements = vec![
+                edge_ref(graph, edge_index),
+                flow_endpoint_ref(graph, endpoint),
+            ];
+            let Some((at, toward, actual_kind)) = actual else {
+                check.fail(
+                    elements,
+                    format!(
+                        "flow edge {edge_index} is missing its {endpoint_name} {} terminal",
+                        flow_decoration_name(decoration)
+                    ),
+                    vec![
+                        WitnessField::text("endpoint", endpoint_name),
+                        WitnessField::text("expected_kind", flow_decoration_name(decoration)),
+                        WitnessField::point("route_terminal", terminal),
+                    ],
+                );
+                continue;
+            };
+            if let Some((_, other_edge, other_endpoint, other_distinct)) = occupied_terminals
+                .iter()
+                .find(|(occupied, _, _, _)| *occupied == at)
+                && (semantic.distinct_endpoints || *other_distinct)
+            {
+                check.fail(
+                    elements.clone(),
+                    format!(
+                        "flow edge {edge_index} {endpoint_name} terminal overwrites edge {other_edge} {other_endpoint} terminal"
+                    ),
+                    vec![
+                        WitnessField::text("endpoint", endpoint_name),
+                        WitnessField::point("at", at),
+                        WitnessField::integer("other_edge", *other_edge as i64),
+                        WitnessField::text("other_endpoint", *other_endpoint),
+                    ],
+                );
+            }
+            occupied_terminals.push((at, edge_index, endpoint_name, semantic.distinct_endpoints));
+            if !is_source
+                && decoration == FlowEndpointDecoration::Arrow
+                && routed
+                    .arrow
+                    .as_ref()
+                    .is_none_or(|arrow| arrow.head != ArrowHead::Filled)
+            {
+                check.fail(
+                    elements.clone(),
+                    format!("flow edge {edge_index} target arrow terminal is not filled"),
+                    vec![
+                        WitnessField::text("endpoint", endpoint_name),
+                        WitnessField::point("at", at),
+                    ],
+                );
+            }
+            let rect = endpoint_rect(scene, flow_endpoint_geometry(endpoint));
+            let distance = manhattan(at, toward);
+            if at != terminal
+                || rect.is_none_or(|rect| {
+                    !endpoint_contains(rect, flow_endpoint_geometry(endpoint), toward)
+                })
+                || distance != 1
+            {
+                let mut witness = vec![
+                    WitnessField::text("endpoint", endpoint_name),
+                    WitnessField::text("expected_kind", flow_decoration_name(decoration)),
+                    WitnessField::point("at", at),
+                    WitnessField::point("toward", toward),
+                    WitnessField::integer("distance", distance as i64),
+                ];
+                if let Some(kind) = actual_kind {
+                    witness.push(WitnessField::text(
+                        "actual_kind",
+                        decoration_kind_name(kind),
+                    ));
+                }
+                check.fail(
+                    elements,
+                    format!(
+                        "flow edge {edge_index} {} terminal is not adjacent to its semantic endpoint",
+                        endpoint_name
+                    ),
+                    witness,
+                );
+            }
+        }
+    }
+    check
+}
+
+fn flow_scene_decoration_kind(
+    decoration: FlowEndpointDecoration,
+) -> Option<EndpointDecorationKind> {
+    match decoration {
+        FlowEndpointDecoration::None => None,
+        FlowEndpointDecoration::Arrow => Some(EndpointDecorationKind::Arrow),
+        FlowEndpointDecoration::Circle => Some(EndpointDecorationKind::Circle),
+        FlowEndpointDecoration::Cross => Some(EndpointDecorationKind::Cross),
+    }
+}
+
+fn flow_decoration_name(decoration: FlowEndpointDecoration) -> &'static str {
+    match decoration {
+        FlowEndpointDecoration::None => "none",
+        FlowEndpointDecoration::Arrow => "arrow",
+        FlowEndpointDecoration::Circle => "circle",
+        FlowEndpointDecoration::Cross => "cross",
+    }
 }
 
 fn state_endpoints(state: &StateDiagram) -> Vec<EndpointExpectation> {
@@ -1987,10 +2157,28 @@ fn flow_endpoint_ref(graph: &Graph, endpoint: FlowEndpoint) -> String {
     }
 }
 
-fn semantic_target(edge: &RoutedEdge) -> Option<Point> {
+fn semantic_source(scene: &Scene, edge: &RoutedEdge) -> Option<Point> {
+    let first = edge.points.first().copied()?;
+    scene
+        .endpoint_decorations
+        .iter()
+        .find(|decoration| decoration.edge == edge.edge && decoration.at == first)
+        .map(|decoration| decoration.toward)
+        .or(Some(first))
+}
+
+fn semantic_target(scene: &Scene, edge: &RoutedEdge) -> Option<Point> {
     edge.arrow
         .as_ref()
         .map(|arrow| arrow.toward)
+        .or_else(|| {
+            let last = edge.points.last().copied()?;
+            scene
+                .endpoint_decorations
+                .iter()
+                .find(|decoration| decoration.edge == edge.edge && decoration.at == last)
+                .map(|decoration| decoration.toward)
+        })
         .or_else(|| edge.points.last().copied())
 }
 
@@ -2117,6 +2305,9 @@ fn point_rect_distance(point: Point, rect: Rect) -> usize {
 
 fn decoration_kind_name(kind: EndpointDecorationKind) -> &'static str {
     match kind {
+        EndpointDecorationKind::Arrow => "arrow",
+        EndpointDecorationKind::Circle => "circle",
+        EndpointDecorationKind::Cross => "cross",
         EndpointDecorationKind::OpenArrow => "open_arrow",
         EndpointDecorationKind::OpenTriangle => "open_triangle",
         EndpointDecorationKind::OpenDiamond => "open_diamond",

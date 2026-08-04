@@ -56,6 +56,37 @@ pub enum Endpoint {
     Subgraph(usize),
 }
 
+/// Mermaid's paint-level endpoint notation for a flowchart edge.  This stays
+/// in the semantic IR instead of being encoded in a node name or recreated by
+/// the renderer from the original operator string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlowEndpointDecoration {
+    None,
+    Arrow,
+    Circle,
+    Cross,
+}
+
+impl FlowEndpointDecoration {
+    fn prefix(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Arrow => "<",
+            Self::Circle => "o",
+            Self::Cross => "x",
+        }
+    }
+
+    fn suffix(self, undirected: &'static str) -> &'static str {
+        match self {
+            Self::None => undirected,
+            Self::Arrow => ">",
+            Self::Circle => "o",
+            Self::Cross => "x",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Edge {
     /// Real node used by the layered layout. For a subgraph endpoint this is
@@ -67,7 +98,8 @@ pub struct Edge {
     pub source: Endpoint,
     pub target: Endpoint,
     pub kind: EdgeKind,
-    pub arrow: bool,
+    pub source_decoration: FlowEndpointDecoration,
+    pub target_decoration: FlowEndpointDecoration,
     pub label: Option<String>,
     /// Extra flow-axis cells reserved for paint-level endpoint adornments.
     pub endpoint_reserve: usize,
@@ -78,16 +110,35 @@ pub struct Edge {
 }
 
 impl Edge {
-    /// Canonical textual form of the edge operator, e.g. `-.->`.
-    pub fn op(&self) -> &'static str {
-        match (self.kind, self.arrow) {
-            (EdgeKind::Solid, true) => "-->",
-            (EdgeKind::Solid, false) => "---",
-            (EdgeKind::Dotted, true) => "-.->",
-            (EdgeKind::Dotted, false) => "-.-",
-            (EdgeKind::Thick, true) => "==>",
-            (EdgeKind::Thick, false) => "===",
-        }
+    /// Canonical textual form of the edge operator, e.g. `-.->` or `o--x`.
+    pub fn op(&self) -> String {
+        let (body, undirected) = match self.kind {
+            EdgeKind::Solid => ("--", "-"),
+            // Dotted arrows spell their final run `-.->`; circles and
+            // crosses remain the compact Mermaid `-.o` / `-.x` terminals.
+            EdgeKind::Dotted if self.target_decoration == Self::arrow() => ("-.-", ""),
+            EdgeKind::Dotted => ("-.", "-"),
+            EdgeKind::Thick => ("==", "="),
+        };
+        format!(
+            "{}{}{}",
+            self.source_decoration.prefix(),
+            body,
+            self.target_decoration.suffix(undirected)
+        )
+    }
+
+    pub fn has_target_arrow(&self) -> bool {
+        self.target_decoration == Self::arrow()
+    }
+
+    pub fn has_endpoint_decoration(&self) -> bool {
+        self.source_decoration != FlowEndpointDecoration::None
+            || self.target_decoration != FlowEndpointDecoration::None
+    }
+
+    const fn arrow() -> FlowEndpointDecoration {
+        FlowEndpointDecoration::Arrow
     }
 }
 
@@ -533,7 +584,8 @@ fn parse_statement(g: &mut Graph, stmt: &str, line: usize) -> Result<(), ParseEr
         if cur.eof() {
             return Ok(());
         }
-        let (kind, arrow, mut label) = parse_edge_op(&mut cur, line)?;
+        let (kind, source_decoration, target_decoration, mut label) =
+            parse_edge_op(&mut cur, line)?;
         cur.skip_ws();
         if cur.eat('|') {
             let text = cur.take_until_str("|").ok_or_else(|| ParseError {
@@ -554,10 +606,22 @@ fn parse_statement(g: &mut Graph, stmt: &str, line: usize) -> Result<(), ParseEr
                     source,
                     target,
                     kind,
-                    arrow,
+                    source_decoration,
+                    target_decoration,
                     label: label.clone(),
-                    endpoint_reserve: 0,
-                    distinct_endpoints: false,
+                    // A decorated terminal replaces a route cell. Leave a
+                    // full visible connector run between the two endpoints,
+                    // including for a two-ended `o--o` or `<-->` relation.
+                    endpoint_reserve: usize::from(needs_terminal_reserve(
+                        source_decoration,
+                        target_decoration,
+                    )) * 2,
+                    // Parallel decorated relationships carry independent
+                    // semantic marks, so they must not share one box port.
+                    distinct_endpoints: needs_terminal_reserve(
+                        source_decoration,
+                        target_decoration,
+                    ),
                     line,
                 });
             }
@@ -617,69 +681,99 @@ fn parse_endpoint(g: &mut Graph, cur: &mut Cur, line: usize) -> Result<Endpoint,
     Ok(Endpoint::Node(g.add_node(&id, None, line)))
 }
 
-/// Edge operators, including inline-text forms:
-///   solid   -->  ---          -- text -->   -- text ---
-///   dotted  -.-> -.-          -. text .->   -. text .-
-///   thick   ==>  ===          == text ==>   == text ===
+/// Edge operators, including inline-text forms and terminal markers:
+///   solid   -->  ---  o--o    -- text -->   -- text ---
+///   dotted  -.-> -.-  o-.o    -. text .->   -. text .-
+///   thick   ==>  ===  o==o    == text ==>   == text ===
 fn parse_edge_op(
     cur: &mut Cur,
     line: usize,
-) -> Result<(EdgeKind, bool, Option<String>), ParseError> {
+) -> Result<
+    (
+        EdgeKind,
+        FlowEndpointDecoration,
+        FlowEndpointDecoration,
+        Option<String>,
+    ),
+    ParseError,
+> {
+    let source = match cur.peek() {
+        Some('<') => {
+            cur.advance(1);
+            FlowEndpointDecoration::Arrow
+        }
+        Some('o') => {
+            cur.advance(1);
+            FlowEndpointDecoration::Circle
+        }
+        Some('x') => {
+            cur.advance(1);
+            FlowEndpointDecoration::Cross
+        }
+        _ => FlowEndpointDecoration::None,
+    };
+
     if cur.starts_with("-.") {
         cur.advance(2);
-        if cur.peek() == Some('-') || cur.peek() == Some('>') {
+        if matches!(cur.peek(), Some('-' | '>' | 'o' | 'x')) {
             cur.take_while(|c| c == '-' || c == '.');
-            let arrow = cur.eat('>');
-            return Ok((EdgeKind::Dotted, arrow, None));
+            return Ok((
+                EdgeKind::Dotted,
+                source,
+                take_terminal_decoration(cur),
+                None,
+            ));
         }
         let text = cur
             .take_until_str(".-")
             .ok_or_else(|| unterminated_edge(line, "-.", ".->"))?;
         cur.take_while(|c| c == '-' || c == '.');
-        let arrow = cur.eat('>');
         return Ok((
             EdgeKind::Dotted,
-            arrow,
+            source,
+            take_terminal_decoration(cur),
             Some(clean_flowchart_label(&text, line)?),
         ));
     }
 
     if cur.starts_with("==") {
         let eqs = cur.take_while(|c| c == '=');
-        if cur.eat('>') {
-            return Ok((EdgeKind::Thick, true, None));
+        let target = take_terminal_decoration(cur);
+        if target != FlowEndpointDecoration::None {
+            return Ok((EdgeKind::Thick, source, target, None));
         }
         if eqs.len() >= 3 {
-            return Ok((EdgeKind::Thick, false, None));
+            return Ok((EdgeKind::Thick, source, FlowEndpointDecoration::None, None));
         }
         let text = cur
             .take_until_str("==")
             .ok_or_else(|| unterminated_edge(line, "==", "==>"))?;
         cur.take_while(|c| c == '=');
-        let arrow = cur.eat('>');
         return Ok((
             EdgeKind::Thick,
-            arrow,
+            source,
+            take_terminal_decoration(cur),
             Some(clean_flowchart_label(&text, line)?),
         ));
     }
 
     if cur.starts_with("--") {
         let dashes = cur.take_while(|c| c == '-');
-        if cur.eat('>') {
-            return Ok((EdgeKind::Solid, true, None));
+        let target = take_terminal_decoration(cur);
+        if target != FlowEndpointDecoration::None {
+            return Ok((EdgeKind::Solid, source, target, None));
         }
         if dashes.len() >= 3 {
-            return Ok((EdgeKind::Solid, false, None));
+            return Ok((EdgeKind::Solid, source, FlowEndpointDecoration::None, None));
         }
         let text = cur
             .take_until_str("--")
             .ok_or_else(|| unterminated_edge(line, "--", "-->"))?;
         cur.take_while(|c| c == '-');
-        let arrow = cur.eat('>');
         return Ok((
             EdgeKind::Solid,
-            arrow,
+            source,
+            take_terminal_decoration(cur),
             Some(clean_flowchart_label(&text, line)?),
         ));
     }
@@ -691,6 +785,35 @@ fn parse_edge_op(
             cur.rest_snippet()
         ),
     })
+}
+
+fn take_terminal_decoration(cur: &mut Cur) -> FlowEndpointDecoration {
+    match cur.peek() {
+        Some('>') => {
+            cur.advance(1);
+            FlowEndpointDecoration::Arrow
+        }
+        Some('o') => {
+            cur.advance(1);
+            FlowEndpointDecoration::Circle
+        }
+        Some('x') => {
+            cur.advance(1);
+            FlowEndpointDecoration::Cross
+        }
+        _ => FlowEndpointDecoration::None,
+    }
+}
+
+fn needs_terminal_reserve(source: FlowEndpointDecoration, target: FlowEndpointDecoration) -> bool {
+    // Existing one-way arrows already fit the established channel minimum.
+    // Reserve additional cells only when the source is marked or the target
+    // uses a circle/cross, so legacy `A --> B` geometry remains byte-stable.
+    source != FlowEndpointDecoration::None
+        || matches!(
+            target,
+            FlowEndpointDecoration::Circle | FlowEndpointDecoration::Cross
+        )
 }
 
 fn unterminated_edge(line: usize, open: &str, example: &str) -> ParseError {
@@ -1066,7 +1189,8 @@ mod tests {
                 source: Endpoint::Node(0),
                 target: Endpoint::Node(1),
                 kind: EdgeKind::Solid,
-                arrow: true,
+                source_decoration: FlowEndpointDecoration::None,
+                target_decoration: FlowEndpointDecoration::Arrow,
                 label: Some("edge\\\"\n".into()),
                 endpoint_reserve: 0,
                 distinct_endpoints: false,
@@ -1237,11 +1361,95 @@ mod tests {
             let graph = parse(source).unwrap();
             assert_eq!(graph.edges.len(), 3, "{source}");
             assert_eq!(graph.edges[0].kind, kind, "{source}");
-            assert_eq!(graph.edges[0].arrow, arrow, "{source}");
+            assert_eq!(graph.edges[0].has_target_arrow(), arrow, "{source}");
             assert_eq!(
                 graph.edges[1].label.as_deref(),
                 Some("label; %% text"),
                 "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn terminal_decorations_are_explicit_for_solid_dotted_thick_and_inline_edges() {
+        for (source, kind, source_mark, target_mark, label, operator) in [
+            (
+                "flowchart LR\nA o--o B",
+                EdgeKind::Solid,
+                FlowEndpointDecoration::Circle,
+                FlowEndpointDecoration::Circle,
+                None,
+                "o--o",
+            ),
+            (
+                "flowchart LR\nA x--x B",
+                EdgeKind::Solid,
+                FlowEndpointDecoration::Cross,
+                FlowEndpointDecoration::Cross,
+                None,
+                "x--x",
+            ),
+            (
+                "flowchart LR\nA <--> B",
+                EdgeKind::Solid,
+                FlowEndpointDecoration::Arrow,
+                FlowEndpointDecoration::Arrow,
+                None,
+                "<-->",
+            ),
+            (
+                "flowchart LR\nA o-.-> B",
+                EdgeKind::Dotted,
+                FlowEndpointDecoration::Circle,
+                FlowEndpointDecoration::Arrow,
+                None,
+                "o-.->",
+            ),
+            (
+                "flowchart LR\nA <==> B",
+                EdgeKind::Thick,
+                FlowEndpointDecoration::Arrow,
+                FlowEndpointDecoration::Arrow,
+                None,
+                "<==>",
+            ),
+            (
+                "flowchart LR\nA o-- travel --x B",
+                EdgeKind::Solid,
+                FlowEndpointDecoration::Circle,
+                FlowEndpointDecoration::Cross,
+                Some("travel"),
+                "o--x",
+            ),
+        ] {
+            let graph = parse(source).unwrap();
+            let edge = &graph.edges[0];
+            assert_eq!(edge.kind, kind, "{source}");
+            assert_eq!(edge.source_decoration, source_mark, "{source}");
+            assert_eq!(edge.target_decoration, target_mark, "{source}");
+            assert_eq!(edge.label.as_deref(), label, "{source}");
+            assert_eq!(edge.op(), operator, "{source}");
+            assert_eq!(edge.endpoint_reserve, 2, "{source}");
+            assert!(edge.distinct_endpoints, "{source}");
+        }
+
+        let graph = parse("flowchart LR\nA o-->|one| B & C <--> D").unwrap();
+        assert_eq!(graph.edges.len(), 4);
+        assert!(graph.edges[..2].iter().all(|edge| {
+            edge.source_decoration == FlowEndpointDecoration::Circle
+                && edge.target_decoration == FlowEndpointDecoration::Arrow
+                && edge.label.as_deref() == Some("one")
+        }));
+        assert!(graph.edges[2..].iter().all(|edge| edge.op() == "<-->"));
+    }
+
+    #[test]
+    fn mixed_terminal_prefixes_do_not_partially_parse_as_nodes() {
+        for source in ["flowchart LR\nA ox--> B", "flowchart LR\nA --ox B"] {
+            let error = parse(source).unwrap_err();
+            assert!(
+                error.msg.contains("expected an edge") || error.msg.contains("expected a node id"),
+                "{source}: {error}"
             );
         }
     }

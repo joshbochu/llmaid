@@ -62,6 +62,7 @@ Mermaid as the only primary agent language.
 |------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
 | Nodes + labels | Y | Y | Y | Y (dag) | Y | Y |
 | Directed edges | Y | Y | Y | Y | Y | Y |
+| Terminal circles / crosses / bidirectional arrows | Y | ? | Y | P | P | Y |
 | Edge labels | Y | P | P | P | Y | Y |
 | Labels **on** edge shaft | Y | N | P | P | Y | — |
 | Solid / dotted / thick edges | Y | Y | Y | P | Y | Y |

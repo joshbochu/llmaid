@@ -643,6 +643,9 @@ fn edge_kind_name(kind: EdgeKind) -> &'static str {
 
 fn decoration_name(kind: EndpointDecorationKind) -> &'static str {
     match kind {
+        EndpointDecorationKind::Arrow => "arrow",
+        EndpointDecorationKind::Circle => "circle",
+        EndpointDecorationKind::Cross => "cross",
         EndpointDecorationKind::OpenArrow => "open_arrow",
         EndpointDecorationKind::OpenTriangle => "open_triangle",
         EndpointDecorationKind::OpenDiamond => "open_diamond",

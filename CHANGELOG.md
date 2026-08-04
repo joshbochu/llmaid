@@ -29,6 +29,16 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   mutually exclusive machine-output modes.
 
 ### Fixed
+- Flowchart terminal endpoint notation now supports Mermaid circles and
+  crosses at either end (`--o`, `--x`, `o--o`, `x--x`) plus bidirectional
+  arrows (`<-->`), with the same compact parser representation available to
+  dotted and thick variants. The semantic IR retains both terminal meanings;
+  routing reserves distinct ports for decorated parallel relations and trims
+  marks next to the final node or subgraph endpoint. Unicode paints `○`/`×`
+  and ASCII paints `o`/`x`; source arrows use semantic endpoint decorations
+  while the established target-arrow geometry remains inspectable. B40, four
+  direction/ASCII behavior coverage, a final-Scene mutation, and the
+  `flow-endpoints` golden cover the contract.
 - Flowchart edges can now name declared subgraphs directly, including forward
   references and nested groups, without creating duplicate node boxes. The IR
   preserves a `Node`/`Subgraph` endpoint identity while the integer layout
@@ -83,6 +93,18 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   roadmap, handoff, behavior, and capability docs cover the inspection loop.
 
 ### Decisions
+
+- **D39 — Flowchart terminal marks are semantic endpoint decorations, not
+  node-label glyphs or operator-string rewrites.** Each flowchart edge records
+  an explicit source and target decoration (`none`, arrow, circle, or cross).
+  Routing first completes/clips the semantic polyline, then reserves one
+  terminal cell per decoration adjacent to that final node or group border;
+  decorated relations opt out of shared terminal ports. The target filled
+  arrow stays in the existing `RoutedEdge.arrow` field for compatibility,
+  while source arrows and circle/cross marks use shared Scene endpoint
+  decorations so inspection exposes both. Rejected: text substitutions after
+  rendering, node-shape hacks, and shared parallel terminals, because each
+  loses endpoint identity or can collapse distinct relationships.
 
 - **D36 — Flowchart label compatibility stays scanner-safe and deliberately
   narrow.** The flowchart scanner protects outer label spans and safely-contained

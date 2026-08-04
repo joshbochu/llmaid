@@ -361,12 +361,30 @@ fn layout_fit(g: &Graph, fit: Fit) -> Placed {
         let incoming_labels = g.edges.iter().enumerate().any(|(edge_index, edge)| {
             edge.from != edge.to && !reversed[edge_index] && edge.to == ni && edge.label.is_some()
         });
-        let out_shared = out_degree > 1 && out_parallel == 1 && !has_feedback;
+        // Decorated terminals are semantic marks rather than an interchangeable
+        // shared trunk.  Give every incident marked edge its own box-border
+        // cell, even when the peers are otherwise a simple fork or merge.
+        let out_decorated = g.edges.iter().enumerate().any(|(edge_index, edge)| {
+            edge.from != edge.to
+                && !reversed[edge_index]
+                && edge.from == ni
+                && edge.distinct_endpoints
+        });
+        let in_decorated = g.edges.iter().enumerate().any(|(edge_index, edge)| {
+            edge.from != edge.to
+                && !reversed[edge_index]
+                && edge.to == ni
+                && edge.distinct_endpoints
+        });
+        let out_shared = out_degree > 1 && out_parallel == 1 && !has_feedback && !out_decorated;
         // Horizontal merge labels need separate incoming rows: after the jog
         // every path shares the same branch, so collapsing their ports would
         // place multiple labels on top of each other.
-        let in_shared =
-            in_degree > 1 && in_parallel == 1 && !has_feedback && (!horizontal || !incoming_labels);
+        let in_shared = in_degree > 1
+            && in_parallel == 1
+            && !has_feedback
+            && !in_decorated
+            && (!horizontal || !incoming_labels);
         let outgoing_label_height = if horizontal {
             g.edges
                 .iter()

@@ -1,9 +1,10 @@
 //! Turn flow-space layout geometry into complete screen-space scene primitives.
 
 use crate::layout::{BoxGeom, CLUSTER_PAD, CLUSTER_TITLE_BAND, EDGE_LABEL_PAD, Placed};
-use crate::parse::{Edge, Endpoint, Graph};
+use crate::parse::{Edge, Endpoint, FlowEndpointDecoration, Graph};
 use crate::scene::{
-    Arrow, ArrowHead, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup, SceneText,
+    Arrow, ArrowHead, EndpointDecoration, EndpointDecorationKind, Point, Rect, RoutedEdge, Scene,
+    SceneBox, SceneGroup, SceneText,
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -65,19 +66,7 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
             }
 
             let edge = &g.edges[edge_index];
-            let arrow = if edge.arrow && points.len() >= 2 {
-                let target = *points.last().unwrap();
-                let from = points[points.len() - 2];
-                let at = cell_before(target, from);
-                *points.last_mut().unwrap() = at;
-                Some(Arrow {
-                    at,
-                    toward: target,
-                    head: ArrowHead::Filled,
-                })
-            } else {
-                None
-            };
+            let arrow = target_terminal_arrow(edge, &mut points);
 
             let first = &segs[0];
             let label = edge.label.as_deref().map(|label| {
@@ -196,6 +185,7 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
         }
     }
 
+    let endpoint_decorations = apply_flow_endpoint_decorations(g, &groups, &mut edges);
     place_group_titles(&mut groups, &boxes, &edges);
 
     let mut scene = Scene {
@@ -204,7 +194,7 @@ pub fn route(g: &Graph, placed: &Placed) -> Scene {
         groups,
         paths: Vec::new(),
         edges,
-        endpoint_decorations: Vec::new(),
+        endpoint_decorations,
         texts: Vec::new(),
     };
     scene.normalize();
@@ -284,6 +274,109 @@ fn clip_group_endpoints(
     }
 }
 
+/// Reserve the path endpoint cell for each Mermaid terminal mark after all
+/// group clipping is complete.  Keeping this final step in screen geometry
+/// makes a mark adjacent to the semantic node or frame in every direction,
+/// including feedback and nested-group routes.
+fn apply_flow_endpoint_decorations(
+    g: &Graph,
+    groups: &[SceneGroup],
+    edges: &mut [RoutedEdge],
+) -> Vec<EndpointDecoration> {
+    let mut decorations = Vec::new();
+    for edge in edges {
+        let Some(semantic) = g.edges.get(edge.edge) else {
+            continue;
+        };
+        if edge.points.len() < 2 {
+            continue;
+        }
+
+        if let Some(kind) = scene_decoration_kind(semantic.source_decoration) {
+            let toward = edge.points[0];
+            let at = cell_after(toward, edge.points[1]);
+            edge.points[0] = at;
+            decorations.push(EndpointDecoration {
+                edge: edge.edge,
+                at,
+                toward,
+                kind,
+            });
+        }
+
+        // A frame can begin one row/column after an external node. Two
+        // terminal marks would then demand the same route cell. Reattach the
+        // group side through its outer gutter before painting, retaining two
+        // distinct, adjacent semantic terminals instead of collapsing them.
+        if semantic.source_decoration != FlowEndpointDecoration::None
+            && semantic.target_decoration != FlowEndpointDecoration::None
+            && let Endpoint::Subgraph(group) = semantic.target
+            && let Some(rect) = groups
+                .iter()
+                .find(|value| value.subgraph == group)
+                .map(|value| value.rect)
+            && let Some(arrow) = edge.arrow.as_ref()
+            && edge.points.first() == Some(&arrow.at)
+        {
+            let source_at = arrow.at;
+            let approach_is_horizontal = arrow.at.y == arrow.toward.y;
+            let (target_at, target_toward, bend) = if approach_is_horizontal {
+                let toward = Point::new(rect.x + rect.w / 2, rect.y);
+                let at = Point::new(toward.x, toward.y - 1);
+                (at, toward, Point::new(source_at.x, at.y))
+            } else {
+                let toward = Point::new(rect.x, rect.y + rect.h / 2);
+                let at = Point::new(toward.x - 1, toward.y);
+                (at, toward, Point::new(at.x, source_at.y))
+            };
+            let mut points = vec![source_at, bend, target_at];
+            points.dedup();
+            edge.points = points;
+            edge.rounded = polyline_bends(&edge.points);
+            edge.arrow = Some(Arrow {
+                at: target_at,
+                toward: target_toward,
+                head: ArrowHead::Filled,
+            });
+        }
+
+        let target = semantic.target_decoration;
+        if matches!(
+            target,
+            FlowEndpointDecoration::Circle | FlowEndpointDecoration::Cross
+        ) {
+            let (at, toward) = edge.arrow.take().map_or_else(
+                || {
+                    let last = edge.points.len() - 1;
+                    let toward = edge.points[last];
+                    let at = cell_before(toward, edge.points[last - 1]);
+                    edge.points[last] = at;
+                    (at, toward)
+                },
+                |arrow| (arrow.at, arrow.toward),
+            );
+            if let Some(kind) = scene_decoration_kind(target) {
+                decorations.push(EndpointDecoration {
+                    edge: edge.edge,
+                    at,
+                    toward,
+                    kind,
+                });
+            }
+        }
+    }
+    decorations
+}
+
+fn scene_decoration_kind(decoration: FlowEndpointDecoration) -> Option<EndpointDecorationKind> {
+    match decoration {
+        FlowEndpointDecoration::None => None,
+        FlowEndpointDecoration::Arrow => Some(EndpointDecorationKind::Arrow),
+        FlowEndpointDecoration::Circle => Some(EndpointDecorationKind::Circle),
+        FlowEndpointDecoration::Cross => Some(EndpointDecorationKind::Cross),
+    }
+}
+
 /// Construct the short gutter path needed when a group endpoint contains the
 /// other endpoint. A proxy route may never leave that requested frame, so it
 /// cannot be clipped at a border. The four side candidates are all integer
@@ -304,6 +397,19 @@ fn containment_endpoint_route(
         return None;
     }
 
+    // A mark consumes the first or last route cell.  A direct containment
+    // segment can therefore leave a circle/cross/arrow with no visible run
+    // between its two terminals.  Route through the clear band immediately
+    // outside the contained endpoint instead.  This is screen-space rather
+    // than direction-specific, so LR/RL/TB/BT and either semantic direction
+    // use the same four-side construction.
+    if edge.has_endpoint_decoration()
+        && let Some(points) =
+            decorated_containment_route(edge, source, target, source_contains_target, groups, boxes)
+    {
+        return Some(points);
+    }
+
     for side in [
         ContainmentSide::Left,
         ContainmentSide::Right,
@@ -317,6 +423,154 @@ fn containment_endpoint_route(
         }
     }
     None
+}
+
+fn decorated_containment_route(
+    edge: &Edge,
+    source: Rect,
+    target: Rect,
+    source_contains_target: bool,
+    groups: &[SceneGroup],
+    boxes: &[SceneBox],
+) -> Option<Vec<Point>> {
+    let (outer, inner) = if source_contains_target {
+        (source, target)
+    } else {
+        (target, source)
+    };
+
+    // Enter through one outer-frame side and approach a perpendicular inner
+    // side.  The middle segment sits in the group padding, never on an inner
+    // frame or node border, leaving one route cell for each terminal mark.
+    for (outer_side, inner_side) in [
+        (ContainmentSide::Left, ContainmentSide::Top),
+        (ContainmentSide::Left, ContainmentSide::Bottom),
+        (ContainmentSide::Right, ContainmentSide::Top),
+        (ContainmentSide::Right, ContainmentSide::Bottom),
+        (ContainmentSide::Top, ContainmentSide::Left),
+        (ContainmentSide::Top, ContainmentSide::Right),
+        (ContainmentSide::Bottom, ContainmentSide::Left),
+        (ContainmentSide::Bottom, ContainmentSide::Right),
+    ] {
+        let (outer_anchor, inner_approach, inner_anchor) =
+            containment_gutter_anchors(outer, inner, outer_side, inner_side);
+        let mut points = vec![outer_anchor, inner_approach, inner_anchor];
+        points.dedup();
+        if points.len() < 3 || crate::scene::path_cells(&points).len() < 4 {
+            continue;
+        }
+        if !source_contains_target {
+            points.reverse();
+        }
+        if decorated_containment_path_clear(&points, edge, groups, boxes) {
+            return Some(points);
+        }
+    }
+    None
+}
+
+fn containment_gutter_anchors(
+    outer: Rect,
+    inner: Rect,
+    outer_side: ContainmentSide,
+    inner_side: ContainmentSide,
+) -> (Point, Point, Point) {
+    let inner_x = (inner.x + 1).min(inner.right() - 2);
+    let inner_y = (inner.y + 1).min(inner.bottom() - 2);
+    match (outer_side, inner_side) {
+        (ContainmentSide::Left, ContainmentSide::Top) => {
+            let approach = Point::new(inner_x, inner.y - 1);
+            (
+                Point::new(outer.x, approach.y),
+                approach,
+                Point::new(inner_x, inner.y),
+            )
+        }
+        (ContainmentSide::Left, ContainmentSide::Bottom) => {
+            let approach = Point::new(inner_x, inner.bottom());
+            (
+                Point::new(outer.x, approach.y),
+                approach,
+                Point::new(inner_x, inner.bottom() - 1),
+            )
+        }
+        (ContainmentSide::Right, ContainmentSide::Top) => {
+            let approach = Point::new(inner_x, inner.y - 1);
+            (
+                Point::new(outer.right() - 1, approach.y),
+                approach,
+                Point::new(inner_x, inner.y),
+            )
+        }
+        (ContainmentSide::Right, ContainmentSide::Bottom) => {
+            let approach = Point::new(inner_x, inner.bottom());
+            (
+                Point::new(outer.right() - 1, approach.y),
+                approach,
+                Point::new(inner_x, inner.bottom() - 1),
+            )
+        }
+        (ContainmentSide::Top, ContainmentSide::Left) => {
+            let approach = Point::new(inner.x - 1, inner_y);
+            (
+                Point::new(approach.x, outer.y),
+                approach,
+                Point::new(inner.x, inner_y),
+            )
+        }
+        (ContainmentSide::Top, ContainmentSide::Right) => {
+            let approach = Point::new(inner.right(), inner_y);
+            (
+                Point::new(approach.x, outer.y),
+                approach,
+                Point::new(inner.right() - 1, inner_y),
+            )
+        }
+        (ContainmentSide::Bottom, ContainmentSide::Left) => {
+            let approach = Point::new(inner.x - 1, inner_y);
+            (
+                Point::new(approach.x, outer.bottom() - 1),
+                approach,
+                Point::new(inner.x, inner_y),
+            )
+        }
+        (ContainmentSide::Bottom, ContainmentSide::Right) => {
+            let approach = Point::new(inner.right(), inner_y);
+            (
+                Point::new(approach.x, outer.bottom() - 1),
+                approach,
+                Point::new(inner.right() - 1, inner_y),
+            )
+        }
+        _ => unreachable!("containment sides must be perpendicular"),
+    }
+}
+
+fn decorated_containment_path_clear(
+    points: &[Point],
+    edge: &Edge,
+    groups: &[SceneGroup],
+    boxes: &[SceneBox],
+) -> bool {
+    if !containment_path_clear(points, edge, groups, boxes) {
+        return false;
+    }
+    let terminals = [
+        points[0],
+        *points.last().expect("nonempty containment route"),
+    ];
+    let cells = crate::scene::path_cells(points);
+    cells.iter().all(|&point| {
+        let touches_box = boxes.iter().any(|box_| box_.rect.contains(point));
+        let touches_frame = groups.iter().any(|group| {
+            group.rect.contains(point)
+                && (point.x == group.rect.x
+                    || point.x == group.rect.right() - 1
+                    || point.y == group.rect.y
+                    || point.y == group.rect.bottom() - 1)
+        });
+        (!touches_box && !touches_frame) || terminals.contains(&point)
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -840,6 +1094,20 @@ fn cell_before(to: Point, from: Point) -> Point {
     }
 }
 
+fn cell_after(from: Point, to: Point) -> Point {
+    if to.x > from.x {
+        Point::new(from.x + 1, from.y)
+    } else if to.x < from.x {
+        Point::new(from.x - 1, from.y)
+    } else if to.y > from.y {
+        Point::new(from.x, from.y + 1)
+    } else if to.y < from.y {
+        Point::new(from.x, from.y - 1)
+    } else {
+        from
+    }
+}
+
 fn route_self_loop(g: &Graph, placed: &Placed, edge_index: usize) -> RoutedEdge {
     let edge = &g.edges[edge_index];
     let rect = box_rect(placed, &placed.boxes[edge.from]);
@@ -848,6 +1116,33 @@ fn route_self_loop(g: &Graph, placed: &Placed, edge_index: usize) -> RoutedEdge 
         .as_deref()
         .map(|label| multiline_width(label) + 2)
         .unwrap_or(0) as i32;
+    // A decorated self-loop needs terminals that cannot be claimed by the
+    // ordinary centred ports of concurrent edges. Use off-centre top/bottom
+    // ports and keep the entire return outside the box's left perimeter. This
+    // also prevents an LR/RL successor in the next rank from occupying the
+    // old right-side loop channel.
+    if edge.distinct_endpoints {
+        let source = Point::new(rect.x + 1, rect.y);
+        let target = Point::new(rect.right() - 2, rect.bottom() - 1);
+        let upper = rect.y - 2;
+        let left = rect.x - 2;
+        let lower = rect.bottom() + 2;
+        let points = vec![
+            source,
+            Point::new(source.x, upper),
+            Point::new(left, upper),
+            Point::new(left, lower),
+            Point::new(target.x, lower),
+            target,
+        ];
+        let label = edge.label.as_deref().map(|label| {
+            let text = padded_edge_label(label);
+            let x = rect.x - multiline_width(&text) as i32 - 3;
+            SceneText::new(Point::new(x, rect.y), text)
+        });
+        return routed_screen_path(edge_index, edge, points, label);
+    }
+
     let source = Point::new(rect.right() - 1, rect.y + rect.h / 2);
     let target = Point::new(rect.x + rect.w / 2, rect.bottom() - 1);
     let loop_x = rect.right() + label_w + 3 + EDGE_LABEL_PAD as i32;
@@ -902,7 +1197,7 @@ fn route_vertical_back_edge(g: &Graph, placed: &Placed, edge_index: usize) -> Ro
     let label = edge.label.as_deref().and_then(|label| {
         let text = padded_edge_label(label);
         let at = Point::new(
-            target.x + EDGE_LABEL_PAD as i32 + if edge.arrow { 2 } else { 1 },
+            target.x + EDGE_LABEL_PAD as i32 + if edge.has_target_arrow() { 2 } else { 1 },
             target.y,
         );
         (at.x + (multiline_width(&text) as i32) < perimeter_x).then(|| SceneText::new(at, text))
@@ -965,19 +1260,7 @@ fn routed_screen_path(
     mut points: Vec<Point>,
     label: Option<SceneText>,
 ) -> RoutedEdge {
-    let arrow = if edge.arrow && points.len() >= 2 {
-        let target = *points.last().unwrap();
-        let from = points[points.len() - 2];
-        let at = cell_before(target, from);
-        *points.last_mut().unwrap() = at;
-        Some(Arrow {
-            at,
-            toward: target,
-            head: ArrowHead::Filled,
-        })
-    } else {
-        None
-    };
+    let arrow = target_terminal_arrow(edge, &mut points);
     let rounded = points
         .iter()
         .copied()
@@ -992,4 +1275,22 @@ fn routed_screen_path(
         label,
         arrow,
     }
+}
+
+/// Build the existing target-arrow geometry before group clipping. Circles
+/// and crosses use the same temporary terminal shape so clipping and title
+/// detours retain a one-cell endpoint approach; they are converted into their
+/// final Scene decoration after that geometry pass.
+fn target_terminal_arrow(edge: &Edge, points: &mut [Point]) -> Option<Arrow> {
+    (edge.target_decoration != FlowEndpointDecoration::None && points.len() >= 2).then(|| {
+        let last = points.len() - 1;
+        let target = points[last];
+        let at = cell_before(target, points[last - 1]);
+        points[last] = at;
+        Arrow {
+            at,
+            toward: target,
+            head: ArrowHead::Filled,
+        }
+    })
 }

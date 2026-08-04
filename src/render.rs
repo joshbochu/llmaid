@@ -1023,6 +1023,26 @@ fn draw_endpoint_decoration(canvas: &mut Canvas, decoration: &EndpointDecoration
         }
         kind => {
             let ch = match kind {
+                EndpointDecorationKind::Arrow => arrow_toward(
+                    point(decoration.at),
+                    point(decoration.toward),
+                    crate::scene::ArrowHead::Filled,
+                    style,
+                ),
+                EndpointDecorationKind::Circle => {
+                    if style.ascii {
+                        'o'
+                    } else {
+                        '○'
+                    }
+                }
+                EndpointDecorationKind::Cross => {
+                    if style.ascii {
+                        'x'
+                    } else {
+                        '×'
+                    }
+                }
                 EndpointDecorationKind::OpenArrow => arrow_toward(
                     point(decoration.at),
                     point(decoration.toward),

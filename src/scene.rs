@@ -271,6 +271,12 @@ pub enum CardinalityMaximum {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EndpointDecorationKind {
+    /// A filled directional flowchart arrowhead at a source-side terminal.
+    Arrow,
+    /// Mermaid flowchart terminal circle (`--o`).
+    Circle,
+    /// Mermaid flowchart terminal cross (`--x`).
+    Cross,
     OpenArrow,
     OpenTriangle,
     OpenDiamond,

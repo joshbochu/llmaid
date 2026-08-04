@@ -1,0 +1,10 @@
+direction: LR
+nodes:
+  A rect "A"
+  B rect "B"
+  C rect "C"
+  D rect "D"
+edges:
+  A o--o B
+  B x--x C
+  C <--> D

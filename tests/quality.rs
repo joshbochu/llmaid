@@ -635,6 +635,78 @@ fn group_endpoint_attachment_is_independently_checked_on_the_final_scene() {
 }
 
 #[test]
+fn flow_terminal_decorations_are_independently_checked_on_the_final_scene() {
+    let parsed = diagram::parse("flowchart LR\nA o--o B\nB <--> C\n").unwrap();
+    let mut scene = diagram::scene(&parsed, 100);
+    let decoration = scene
+        .endpoint_decorations
+        .iter_mut()
+        .find(|value| {
+            value.edge == 0 && value.kind == EndpointDecorationKind::Circle && value.at.x > 5
+        })
+        .unwrap();
+    // Damage only the final Scene, leaving the Mermaid semantic IR and all
+    // layout intermediates untouched. The terminal is now two cells from B.
+    decoration.toward.x -= 1;
+
+    let check = quality::evaluate(&parsed, &scene, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "flow.endpoint_decorations")
+        .unwrap();
+    assert_eq!(check.status(), "fail", "{check:#?}");
+    assert!(
+        check.failures[0]
+            .elements
+            .iter()
+            .any(|value| value == "edge:0(node:A->node:B)"),
+        "{check:#?}"
+    );
+
+    // A final-Scene overwrite must also fail even when both individual
+    // decoration objects still exist. This mirrors a renderer's last-write
+    // loss rather than consulting any layout intermediate.
+    let parsed = diagram::parse("flowchart LR\nA o--o B\nA x--x C\n").unwrap();
+    let mut scene = diagram::scene(&parsed, 100);
+    let source_terminal = scene.edges[0].points[0];
+    scene.edges[1].points[0] = source_terminal;
+    let overwritten = scene
+        .endpoint_decorations
+        .iter_mut()
+        .find(|value| value.edge == 1 && value.at.x == 5)
+        .unwrap();
+    overwritten.at = source_terminal;
+    let check = quality::evaluate(&parsed, &scene, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "flow.endpoint_decorations")
+        .unwrap();
+    assert!(
+        check
+            .failures
+            .iter()
+            .any(|failure| failure.message.contains("overwrites")),
+        "{check:#?}"
+    );
+
+    let parsed = diagram::parse("flowchart LR\nA --> B\n").unwrap();
+    let mut scene = diagram::scene(&parsed, 100);
+    scene.edges[0].arrow.as_mut().unwrap().head = llmaid::scene::ArrowHead::Open;
+    let check = quality::evaluate(&parsed, &scene, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "flow.endpoint_decorations")
+        .unwrap();
+    assert!(
+        check
+            .failures
+            .iter()
+            .any(|failure| failure.message.contains("not filled")),
+        "{check:#?}"
+    );
+}
+
+#[test]
 fn containment_endpoints_attach_to_exact_group_borders_in_every_direction() {
     for direction in ["LR", "RL", "TB", "BT"] {
         for (relation, source_group, target_group) in [
