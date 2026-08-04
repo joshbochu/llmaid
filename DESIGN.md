@@ -41,11 +41,13 @@ Mermaid `flowchart` / `graph`, directions `LR` `RL` `TB` `BT`:
   `--width N` fit target
 
 Subgraphs are supported (Phase 1). The core sequence slice supports
-participants/actors (including implicit participants), lifelines, `->>`
-messages, `-->>` returns, left/right/over notes, and balanced explicit
-activation bars. Balanced nested `loop`, `alt` / `else`, and `opt` control
-blocks render as labeled frames; `else` is a labeled horizontal subdivision
-inside its single containing `alt` frame. Phase 3 adds flat state diagrams,
+participants/actors (including implicit participants), lifelines, all ten
+common solid/dashed, filled/open/cross/arrowless, and bidirectional message
+operators, optional strict `autonumber` labels, message activation shorthand,
+left/right/over notes, and balanced explicit activation bars. Balanced nested
+`loop`, `alt` / `else`, and `opt` control blocks render as labeled frames;
+`else` is a labeled horizontal subdivision inside its single containing `alt`
+frame. Phase 3 adds flat state diagrams,
 core class diagrams, and core ER diagrams through separate semantic IRs and a
 shared typed-box geometry adapter. Phase 4.1 adds a core `mindmap` slice with
 one ordered indentation-defined hierarchy of plain labels. Phase 4.2 adds a

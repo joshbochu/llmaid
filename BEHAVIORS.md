@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D41.
+`CHANGELOG.md` D9–D42.
 
 ## Parsing
 
@@ -177,10 +177,10 @@ structural coverage lives beside its engine tests. Decisions behind these:
 - **B17** Given a core `sequenceDiagram` containing declared or implicit
   participants/actors plus `->>` messages and `-->>` returns, when rendered,
   then participant order is stable and the output contains padded headers,
-  dotted lifelines, ordered labeled arrows, and returns encoded with a thin
-  directional arrowhead distinct from the filled call arrowhead. Labels are
-  never truncated; Unicode and `--ascii` output are deterministic; malformed
-  statements name the source line and expected message syntax.
+  dotted lifelines, ordered labeled arrows, filled target heads, and a dotted
+  return stroke. Labels are never truncated; Unicode and `--ascii` output are
+  deterministic; malformed statements name the source line and expected
+  message syntax.
 - **B18** Given a `sequenceDiagram` containing `Note left of`, `Note right
   of`, `Note over` (one participant or a two-participant span), and balanced
   explicit `activate` / `deactivate` statements, when rendered, then source
@@ -204,6 +204,21 @@ structural coverage lives beside its engine tests. Decisions behind these:
   control fragment, when rendered, then each participant lifeline terminates
   on that frame's bottom border without a dangling row below it. If a later
   event follows the fragment, lifelines continue through the frame normally.
+- **B43** Given a `sequenceDiagram` using any of `<<-->>`, `<<->>`, `-->>`,
+  `->>`, `--x`, `-x`, `--)`, `-)`, `-->`, or `->`, optional `autonumber`,
+  and `+`/`-` message activation shorthand, when parsed and rendered, then
+  line style, target head, and bidirectional source head remain distinct in
+  the semantic IR and final Scene; arrowless messages reach their target
+  lifeline or active bar, cross/open/filled heads occupy one adjacent cell,
+  and a source head points back toward its source attachment. `autonumber`
+  initially enables `1, 2, …`; bare re-enable preserves its next counter;
+  `off` pauses it; `START [STEP]` reseeds it with u64 values and a strictly
+  positive step, incrementing saturatingly only for messages. `A->>+B` opens
+  B after its message and `A-->>-B` closes active sender A after its message;
+  shorthand and explicit activation directives balance on one stack. Unicode
+  and ASCII output are deterministic, labels retain their authored text plus
+  any rendered number without truncation, and malformed operator, numbering,
+  or activation input names its source line and repair.
 
 ## Design-document diagrams
 

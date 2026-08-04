@@ -25,13 +25,20 @@ pub fn dump(sequence: &SequenceDiagram) -> String {
             dump_control(&mut output, controls.next().unwrap());
         }
         match event {
-            SequenceEvent::Message(message) => output.push_str(&format!(
-                "  message {} {} {} \"{}\"\n",
-                sequence.participants[message.from].id,
-                message.kind.operator(),
-                sequence.participants[message.to].id,
-                message.label.replace('"', "\\\"")
-            )),
+            SequenceEvent::Message(message) => {
+                let number = message
+                    .number
+                    .map(|number| format!(" number {number}"))
+                    .unwrap_or_default();
+                output.push_str(&format!(
+                    "  message {} {} {}{} \"{}\"\n",
+                    sequence.participants[message.from].id,
+                    message.operator(),
+                    sequence.participants[message.to].id,
+                    number,
+                    message.label.replace('"', "\\\"")
+                ));
+            }
             SequenceEvent::Note(note) => {
                 let position = match note.position {
                     NotePosition::LeftOf(participant) => {

@@ -967,8 +967,12 @@ sequenceDiagram
         "call endpoint unclear:\n{unicode_a}"
     );
     assert!(
-        unicode_a.contains("┊←"),
+        unicode_a.contains("┊◀"),
         "return endpoint unclear:\n{unicode_a}"
+    );
+    assert!(
+        unicode_a.contains('┄'),
+        "return must be dashed:\n{unicode_a}"
     );
 
     let (tight, stderr, code) = run_llmaid(&["--width", "12"], source);
@@ -984,8 +988,93 @@ sequenceDiagram
     assert_eq!(code, 0, "{stderr}");
     assert!(ascii.is_ascii(), "{ascii}");
     assert!(ascii.contains(">:"), "ASCII call cue missing:\n{ascii}");
-    assert!(ascii.contains(":<--"), "ASCII return cue missing:\n{ascii}");
+    assert!(ascii.contains(":<."), "ASCII return cue missing:\n{ascii}");
     assert!(ascii.contains("request") && ascii.contains("response"));
+}
+
+#[test]
+fn b43_given_common_sequence_message_operators_numbering_and_shorthand_then_semantics_render_deterministically()
+ {
+    let source = "\
+sequenceDiagram
+  participant Client
+  participant API
+  participant Worker
+  autonumber
+  Client->>+API: call
+  API->>+Worker: work
+  Worker-->>-API: done
+  API-->>-Client: reply
+  Client->>Client: self call
+  autonumber off
+  Client->API: fire
+  API-->Client: trace
+  Client-xAPI: stop
+  API--xClient: dashed stop
+  Client-)API: open
+  API--)Client: dashed open
+  Client<<->>API: duplex
+  API<<-->>Client: dashed duplex
+  autonumber 7 2
+  Client->API: resume
+  API-->Client: finish
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    let (repeat, _, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0);
+    assert_eq!(unicode, repeat);
+    for label in [
+        "1. call",
+        "5. self call",
+        "fire",
+        "dashed stop",
+        "dashed open",
+        "duplex",
+        "dashed duplex",
+        "7. resume",
+        "9. finish",
+    ] {
+        assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
+    }
+    assert!(unicode.contains('×'), "cross terminal missing:\n{unicode}");
+    assert!(
+        unicode.contains('◀') && unicode.contains('▶'),
+        "bidirectional arrows missing:\n{unicode}"
+    );
+    assert!(unicode.contains('┄'), "dashed messages missing:\n{unicode}");
+
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+    assert!(
+        ascii.contains('x'),
+        "ASCII cross terminal missing:\n{ascii}"
+    );
+    assert!(ascii.contains("7. resume") && ascii.contains("9. finish"));
+
+    for (bad, line, expected) in [
+        (
+            "sequenceDiagram\nautonumber nope\n",
+            2,
+            "expected a u64 START",
+        ),
+        (
+            "sequenceDiagram\nautonumber 1 0\n",
+            2,
+            "expected a positive STEP",
+        ),
+        (
+            "sequenceDiagram\nparticipant A\nA->>-B: return\n",
+            3,
+            "expected a matching `activate A`",
+        ),
+    ] {
+        let (_, stderr, code) = run_llmaid(&[], bad);
+        assert_eq!(code, 64, "{stderr}");
+        assert!(stderr.contains(&format!("<stdin>:{line}:")), "{stderr}");
+        assert!(stderr.contains(expected), "{stderr}");
+    }
 }
 
 #[test]

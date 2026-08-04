@@ -25,27 +25,61 @@ pub enum MessageKind {
 }
 
 impl MessageKind {
-    pub(super) fn operator(self) -> &'static str {
-        match self {
-            MessageKind::Solid => "->>",
-            MessageKind::Dashed => "-->>",
-        }
-    }
-
     pub(super) fn scene_kind(self) -> EdgeKind {
         match self {
             MessageKind::Solid => EdgeKind::Solid,
-            MessageKind::Dashed => EdgeKind::Solid,
+            MessageKind::Dashed => EdgeKind::Dotted,
         }
     }
+}
+
+/// Target-side terminal semantics for a sequence message.  Line style stays
+/// separate in [`MessageKind`] so the Mermaid operator is not treated as a
+/// rendering-only string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageHead {
+    None,
+    Filled,
+    Cross,
+    Open,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     pub from: usize,
     pub to: usize,
+    /// Authored text, deliberately separate from an optional autonumber.
     pub label: String,
     pub kind: MessageKind,
+    pub head: MessageHead,
+    pub bidirectional: bool,
+    pub number: Option<u64>,
+}
+
+impl Message {
+    pub(super) fn operator(&self) -> &'static str {
+        match (self.kind, self.head, self.bidirectional) {
+            (MessageKind::Dashed, MessageHead::Filled, true) => "<<-->>",
+            (MessageKind::Solid, MessageHead::Filled, true) => "<<->>",
+            (MessageKind::Dashed, MessageHead::Filled, false) => "-->>",
+            (MessageKind::Solid, MessageHead::Filled, false) => "->>",
+            (MessageKind::Dashed, MessageHead::Cross, false) => "--x",
+            (MessageKind::Solid, MessageHead::Cross, false) => "-x",
+            (MessageKind::Dashed, MessageHead::Open, false) => "--)",
+            (MessageKind::Solid, MessageHead::Open, false) => "-)",
+            (MessageKind::Dashed, MessageHead::None, false) => "-->",
+            (MessageKind::Solid, MessageHead::None, false) => "->",
+            // The parser constructs only the ten supported forms above.
+            _ => unreachable!("invalid sequence message terminal combination"),
+        }
+    }
+
+    pub(super) fn display_label(&self) -> String {
+        match self.number {
+            Some(number) => format!("{number}. {}", self.label),
+            None => self.label.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

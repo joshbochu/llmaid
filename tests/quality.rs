@@ -122,6 +122,255 @@ fn final_sequence_fragment_terminates_lifelines_on_its_bottom_border() {
 }
 
 #[test]
+fn sequence_message_terminals_are_independently_checked_on_the_final_scene() {
+    let parsed = diagram::parse(
+        "sequenceDiagram\nparticipant A\nparticipant B\nA->B: plain\nA--xB: stop\nA<<->>B: both\n",
+    )
+    .unwrap();
+    let scene = diagram::scene(&parsed, 100);
+    let clean = quality::evaluate(&parsed, &scene, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert_eq!(clean.applicable, 3, "{clean:#?}");
+    assert_eq!(clean.status(), "pass", "{clean:#?}");
+
+    let mut reordered_paths = scene.clone();
+    reordered_paths.paths.swap(0, 1);
+    let reordered = quality::evaluate(&parsed, &reordered_paths, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert_eq!(
+        reordered.status(),
+        "pass",
+        "lifelines must resolve by ScenePath.path identity: {reordered:#?}"
+    );
+
+    // Change only the final Scene's dotted stroke: the semantic IR still says
+    // `--x`, so the evaluator must catch the lost line-style distinction.
+    let mut wrong_style = scene.clone();
+    wrong_style.edges[1].kind = llmaid::scene::EdgeKind::Solid;
+    let check = quality::evaluate(&parsed, &wrong_style, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert!(
+        check
+            .failures
+            .iter()
+            .any(|failure| failure.message.contains("wrong line style")),
+        "{check:#?}"
+    );
+
+    // Remove only the final paint decoration, leaving route geometry intact.
+    let mut missing_cross = scene.clone();
+    missing_cross
+        .endpoint_decorations
+        .retain(|decoration| decoration.edge != 1);
+    let check = quality::evaluate(&parsed, &missing_cross, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert!(
+        check
+            .failures
+            .iter()
+            .any(|failure| failure.message.contains("cross target terminal")),
+        "{check:#?}"
+    );
+
+    // Move the completed arrowless route as one unit.  It remains a valid
+    // horizontal line, but no longer reaches A/B's lifelines or activation.
+    let mut detached = scene.clone();
+    detached.edges[0].points = vec![
+        llmaid::scene::Point::new(40, 20),
+        llmaid::scene::Point::new(50, 20),
+    ];
+    let check = quality::evaluate(&parsed, &detached, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert!(
+        check
+            .failures
+            .iter()
+            .any(|failure| failure.message.contains("detached")),
+        "{check:#?}"
+    );
+
+    let mut missing = scene.clone();
+    missing.edges.pop();
+    let check = quality::evaluate(&parsed, &missing, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert!(
+        check
+            .failures
+            .iter()
+            .any(|failure| failure.message.contains("message count"))
+            && check
+                .failures
+                .iter()
+                .any(|failure| failure.message.contains("no routed edge")),
+        "{check:#?}"
+    );
+
+    let mut extra = scene.clone();
+    let mut extra_edge = extra.edges[0].clone();
+    extra_edge.edge = 3;
+    extra.edges.push(extra_edge);
+    let check = quality::evaluate(&parsed, &extra, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert!(
+        check
+            .failures
+            .iter()
+            .any(|failure| failure.message.contains("message count"))
+            && check
+                .failures
+                .iter()
+                .any(|failure| failure.message.contains("no semantic message")),
+        "{check:#?}"
+    );
+
+    let mut wrong_identity = scene.clone();
+    wrong_identity.edges[0].edge = 2;
+    let check = quality::evaluate(&parsed, &wrong_identity, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert!(
+        check
+            .failures
+            .iter()
+            .any(|failure| failure.message.contains("identity")),
+        "{check:#?}"
+    );
+
+    // Keep the source arrow Manhattan-adjacent but move it below the route.
+    let mut off_route_source = scene.clone();
+    let source = off_route_source.edges[2].points[0];
+    let source_arrow = off_route_source
+        .endpoint_decorations
+        .iter_mut()
+        .find(|decoration| decoration.edge == 2 && decoration.kind == EndpointDecorationKind::Arrow)
+        .unwrap();
+    source_arrow.at = llmaid::scene::Point::new(source.x, source.y + 1);
+    source_arrow.toward = source;
+    let check = quality::evaluate(&parsed, &off_route_source, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert!(
+        check
+            .failures
+            .iter()
+            .any(|failure| failure.message.contains("source-facing arrow")),
+        "{check:#?}"
+    );
+
+    // Keep the cross adjacent but turn it perpendicular to the final segment.
+    let mut perpendicular_target = scene.clone();
+    let cross = perpendicular_target
+        .endpoint_decorations
+        .iter_mut()
+        .find(|decoration| decoration.edge == 1 && decoration.kind == EndpointDecorationKind::Cross)
+        .unwrap();
+    cross.toward = llmaid::scene::Point::new(cross.at.x, cross.at.y + 1);
+    let check = quality::evaluate(&parsed, &perpendicular_target, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert!(
+        check
+            .failures
+            .iter()
+            .any(|failure| failure.message.contains("cross target terminal")),
+        "{check:#?}"
+    );
+}
+
+#[test]
+fn sequence_active_attachments_require_the_exact_owned_bar_face() {
+    let parsed = diagram::parse(
+        "sequenceDiagram\nparticipant A\nparticipant B\nactivate A\nA->>+B: first\nactivate B\nB-->>-A: nested return\ndeactivate B\ndeactivate A\n",
+    )
+    .unwrap();
+    let scene = diagram::scene(&parsed, 100);
+    let clean = quality::evaluate(&parsed, &scene, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert_eq!(clean.status(), "pass", "{clean:#?}");
+
+    // Move the source from the active bar's outward face onto the covered
+    // lifeline center. It is still on a lifeline and inside the right box,
+    // but it is not the exact semantic attachment face.
+    let mut covered_center = scene.clone();
+    covered_center.edges[0].points[0].x = covered_center.paths[0].points[0].x;
+    let check = quality::evaluate(&parsed, &covered_center, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert!(
+        check.failures.iter().any(|failure| {
+            failure
+                .message
+                .contains("source is detached from its exact lifeline or activation face")
+        }),
+        "{check:#?}"
+    );
+
+    // Move A's owned activation away, then place B's unrelated activation on
+    // A's still-correct endpoint. Proximity and paint coverage are unchanged;
+    // only semantic activation ownership is wrong.
+    let mut wrong_owner = scene.clone();
+    let source = wrong_owner.edges[0].points[0];
+    let owned = wrong_owner
+        .foreground_boxes
+        .iter()
+        .position(|box_| box_.lines.is_empty() && box_.rect.contains(source))
+        .unwrap();
+    let unrelated = wrong_owner
+        .foreground_boxes
+        .iter()
+        .position(|box_| box_.lines.is_empty() && !box_.rect.contains(source))
+        .unwrap();
+    wrong_owner.foreground_boxes[owned].rect.x += 20;
+    wrong_owner.foreground_boxes[unrelated].rect =
+        llmaid::scene::Rect::new(source.x - 2, source.y - 1, 3, 3);
+    let check = quality::evaluate(&parsed, &wrong_owner, 100)
+        .checks
+        .into_iter()
+        .find(|check| check.id == "sequence.message_terminals")
+        .unwrap();
+    assert!(
+        check.failures.iter().any(|failure| {
+            failure
+                .message
+                .contains("source is detached from its exact lifeline or activation face")
+        }),
+        "{check:#?}"
+    );
+}
+
+#[test]
 fn pipeline_quality_contract_is_an_exact_centerline_without_bends() {
     let audit = audit_source("flowchart LR\nA[source] --> B[tokens] --> C[ast]\n");
 

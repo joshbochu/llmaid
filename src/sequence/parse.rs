@@ -47,6 +47,7 @@ pub fn parse(src: &str) -> Result<SequenceDiagram, ParseError> {
     let mut seen_header = false;
     let mut active: Vec<Vec<usize>> = Vec::new();
     let mut fragments: Vec<(FragmentKind, usize, bool)> = Vec::new();
+    let mut autonumber = Autonumber::default();
 
     for (line_index, raw_line) in src.lines().enumerate() {
         let line_number = line_index + 1;
@@ -87,8 +88,16 @@ pub fn parse(src: &str) -> Result<SequenceDiagram, ParseError> {
             parse_fragment_end(&mut sequence, &mut fragments, line, line_number)?;
         } else if keyword == "activate" || keyword == "deactivate" {
             parse_activation(&mut sequence, &mut active, line, line_number, keyword)?;
+        } else if keyword == "autonumber" {
+            parse_autonumber(&mut autonumber, line, line_number)?;
         } else {
-            parse_message(&mut sequence, line, line_number)?;
+            parse_message(
+                &mut sequence,
+                &mut active,
+                &mut autonumber,
+                line,
+                line_number,
+            )?;
         }
     }
 
@@ -119,6 +128,74 @@ pub fn parse(src: &str) -> Result<SequenceDiagram, ParseError> {
         });
     }
     Ok(sequence)
+}
+
+/// Autonumbering is intentionally parser state rather than layout state: the
+/// IR retains both the authored label and the exact number applied to it.
+#[derive(Debug, Clone, Copy)]
+struct Autonumber {
+    enabled: bool,
+    next: u64,
+    step: u64,
+}
+
+impl Default for Autonumber {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            next: 1,
+            step: 1,
+        }
+    }
+}
+
+fn parse_autonumber(
+    autonumber: &mut Autonumber,
+    line: &str,
+    line_number: usize,
+) -> Result<(), ParseError> {
+    let rest = line["autonumber".len()..].trim();
+    if rest.is_empty() {
+        autonumber.enabled = true;
+        return Ok(());
+    }
+    if rest == "off" {
+        autonumber.enabled = false;
+        return Ok(());
+    }
+    let mut values = rest.split_whitespace();
+    let start = values.next().unwrap();
+    let step = values.next();
+    if values.next().is_some() {
+        return Err(ParseError {
+            line: line_number,
+            msg: "expected `autonumber`, `autonumber off`, or `autonumber START [STEP]`"
+                .to_string(),
+        });
+    }
+    let next = start.parse::<u64>().map_err(|_| ParseError {
+        line: line_number,
+        msg: "expected a u64 START after `autonumber`".to_string(),
+    })?;
+    let step = match step {
+        Some(step) => step.parse::<u64>().map_err(|_| ParseError {
+            line: line_number,
+            msg: "expected a u64 STEP after `autonumber START`".to_string(),
+        })?,
+        None => 1,
+    };
+    if step == 0 {
+        return Err(ParseError {
+            line: line_number,
+            msg: "expected a positive STEP after `autonumber START`".to_string(),
+        });
+    }
+    *autonumber = Autonumber {
+        enabled: true,
+        next,
+        step,
+    };
+    Ok(())
 }
 
 fn parse_fragment_start(
@@ -374,11 +451,13 @@ fn parse_activation(
 
 fn parse_message(
     sequence: &mut SequenceDiagram,
+    active: &mut Vec<Vec<usize>>,
+    autonumber: &mut Autonumber,
     line: &str,
     line_number: usize,
 ) -> Result<(), ParseError> {
     let Some((head, label)) = line.split_once(':') else {
-        if line.contains("->>") || line.contains("-->>") {
+        if message_operator(line).is_some() || has_message_operator_before_unlabeled_text(line) {
             return Err(ParseError {
                 line: line_number,
                 msg: "expected `:` followed by a message label".to_string(),
@@ -387,20 +466,11 @@ fn parse_message(
         return Err(message_arrow_error(line_number, line));
     };
 
-    let (from, to, kind) = if let Some((from, to)) = head.split_once("-->>") {
-        (from.trim(), to.trim(), MessageKind::Dashed)
-    } else if let Some((from, to)) = head.split_once("->>") {
-        (from.trim(), to.trim(), MessageKind::Solid)
-    } else {
+    let Some((from, to, activation, kind, head_kind, bidirectional)) = message_operator(head)
+    else {
         return Err(message_arrow_error(line_number, head));
     };
 
-    if !valid_id(from) || !valid_id(to) {
-        return Err(ParseError {
-            line: line_number,
-            msg: "expected participant ids on both sides of the message arrow".to_string(),
-        });
-    }
     let label = label.trim();
     if label.is_empty() {
         return Err(ParseError {
@@ -410,22 +480,139 @@ fn parse_message(
     }
     validate_terminal_text(label, line_number)?;
 
+    // A shorthand deactivate must be valid before an implicit participant or
+    // message can mutate the semantic diagram.  This keeps line errors
+    // atomic and lets explicit and shorthand activations share one stack.
+    if activation == Some(ActivationKind::Deactivate) {
+        let Some(&participant) = sequence.index.get(from) else {
+            return Err(ParseError {
+                line: line_number,
+                msg: format!("expected a matching `activate {from}` before `-{to}`"),
+            });
+        };
+        if active.get(participant).is_none_or(|stack| stack.is_empty()) {
+            return Err(ParseError {
+                line: line_number,
+                msg: format!("expected a matching `activate {from}` before `-{to}`"),
+            });
+        }
+    }
+
     let from = sequence.participant(from, None, line_number);
     let to = sequence.participant(to, None, line_number);
+    active.resize_with(sequence.participants.len(), Vec::new);
+    let number = autonumber.enabled.then_some(autonumber.next);
     sequence.events.push(SequenceEvent::Message(Message {
         from,
         to,
         label: label.to_string(),
         kind,
+        head: head_kind,
+        bidirectional,
+        number,
     }));
+    if let Some(kind) = activation {
+        let participant = match kind {
+            ActivationKind::Activate => to,
+            ActivationKind::Deactivate => from,
+        };
+        match kind {
+            ActivationKind::Activate => active[participant].push(line_number),
+            ActivationKind::Deactivate => {
+                let popped = active[participant].pop();
+                debug_assert!(popped.is_some(), "validated before mutating message state");
+            }
+        }
+        sequence.events.push(SequenceEvent::Activation(Activation {
+            participant,
+            kind,
+            line: line_number,
+        }));
+    }
+    if autonumber.enabled {
+        autonumber.next = autonumber.next.saturating_add(autonumber.step);
+    }
     Ok(())
+}
+
+fn has_message_operator_before_unlabeled_text(line: &str) -> bool {
+    const SPELLINGS: [&str; 10] = [
+        "<<-->>", "<<->>", "-->>", "->>", "--x", "-x", "--)", "-)", "-->", "->",
+    ];
+    SPELLINGS.iter().any(|operator| {
+        line.match_indices(operator).any(|(at, _)| {
+            let from = line[..at].trim();
+            let raw_to = line[at + operator.len()..].trim();
+            let raw_to = raw_to
+                .strip_prefix('+')
+                .or_else(|| raw_to.strip_prefix('-'))
+                .unwrap_or(raw_to)
+                .trim();
+            let to = raw_to.split_whitespace().next().unwrap_or("");
+            valid_id(from) && valid_id(to)
+        })
+    })
+}
+
+type MessageOperatorMatch<'a> = (
+    &'a str,
+    &'a str,
+    Option<ActivationKind>,
+    MessageKind,
+    MessageHead,
+    bool,
+);
+
+/// Parse the only supported message operators. Matching is deliberately
+/// longest-first, while each spelling tries its occurrences from right to
+/// left. A candidate is accepted only when both IDs remain valid after the
+/// optional target activation marker, so `foo-x->bar` cannot mistake the
+/// hyphen in `foo-x` for a cross terminal.
+fn message_operator(head: &str) -> Option<MessageOperatorMatch<'_>> {
+    const OPERATORS: [(&str, MessageKind, MessageHead, bool); 10] = [
+        ("<<-->>", MessageKind::Dashed, MessageHead::Filled, true),
+        ("<<->>", MessageKind::Solid, MessageHead::Filled, true),
+        ("-->>", MessageKind::Dashed, MessageHead::Filled, false),
+        ("->>", MessageKind::Solid, MessageHead::Filled, false),
+        ("--x", MessageKind::Dashed, MessageHead::Cross, false),
+        ("-x", MessageKind::Solid, MessageHead::Cross, false),
+        ("--)", MessageKind::Dashed, MessageHead::Open, false),
+        ("-)", MessageKind::Solid, MessageHead::Open, false),
+        ("-->", MessageKind::Dashed, MessageHead::None, false),
+        ("->", MessageKind::Solid, MessageHead::None, false),
+    ];
+    OPERATORS
+        .iter()
+        .find_map(|&(operator, kind, head_kind, bidirectional)| {
+            head.match_indices(operator)
+                .filter_map(|(at, _)| {
+                    let from = head[..at].trim();
+                    let raw_to = head[at + operator.len()..].trim();
+                    let (activation, to) = match raw_to.strip_prefix('+') {
+                        Some(to) => (Some(ActivationKind::Activate), to.trim()),
+                        None => match raw_to.strip_prefix('-') {
+                            Some(to) => (Some(ActivationKind::Deactivate), to.trim()),
+                            None => (None, raw_to),
+                        },
+                    };
+                    (valid_id(from) && valid_id(to)).then_some((
+                        from,
+                        to,
+                        activation,
+                        kind,
+                        head_kind,
+                        bidirectional,
+                    ))
+                })
+                .last()
+        })
 }
 
 fn message_arrow_error(line: usize, found: &str) -> ParseError {
     ParseError {
         line,
         msg: format!(
-            "expected a message arrow `->>` or `-->>`, found `{}`",
+            "expected a supported sequence message arrow (for example `->>` or `-->>`), found `{}`",
             found.trim()
         ),
     }

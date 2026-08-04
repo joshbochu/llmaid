@@ -6,6 +6,20 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Sequence terminal compatibility (B43): the focused sequence slice now
+  recognizes the ten common Mermaid message operators in longest-first order,
+  retaining orthogonal solid/dotted line style, filled/open/cross/none target
+  head, and bidirectional source head semantics through IR and shared Scene.
+  Strict `autonumber` keeps authored labels separate from optional rendered
+  u64 prefixes, accepts a positive reseed step with saturating advancement,
+  and message `+`/`-` shorthand shares the explicit activation stack without
+  partial semantic mutation on underflow. Arrowless paths attach directly;
+  decorated terminals reserve an adjacent cell. The final-Scene evaluator
+  independently checks line style, terminal kind/orientation, and lifeline or
+  activation attachment, including mutations; parser, behavior, and
+  `sequence-compat` golden coverage record the bounded scope. Existing
+  `-->>` goldens intentionally change from a solid open-headed return to the
+  faithful dotted, filled-headed Mermaid form.
 - Deterministic best-observed barycenter selection (B42): flowchart ordering
   scores the declaration-order candidate and every completed legacy sweep with
   an exact, overflow-safe adjacent-rank inversion count over forward real and
@@ -111,6 +125,27 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   roadmap, handoff, behavior, and capability docs cover the inspection loop.
 
 ### Decisions
+
+- **D42 — Sequence operators are structured terminal semantics, not visual
+  aliases.** The parser accepts exactly the ten commonly emitted Mermaid
+  spellings by longest match; each occurrence must leave valid normalized
+  endpoint IDs and a rightmost-valid tie-break preserves hyphenated IDs. It
+  then stores line style, target head, and source bidirectionality
+  independently. The spellings and bounded feature selection were
+  cross-checked against xAI Grok Build's vendored `mermaid-to-svg` sequence
+  parser; llmaid keeps stricter repairable errors and independent final-Scene
+  verification. The shared Scene remains the only painter:
+  target filled/open heads use its arrow geometry; crosses and source arrows
+  use endpoint decorations; headless paths reach the actual attachment cell.
+  `autonumber` stores a number beside—not inside—the authored label so IR,
+  width fitting, and dumps remain explainable. Bare `autonumber` initially
+  starts at 1/step 1 and later resumes its retained next value; `off` pauses;
+  a numeric directive reseeds; zero step is a strict repairable error rather
+  than silently repeating labels. Shorthand activation is committed only
+  after its source stack is validated. Rejected: raw operator-string
+  rendering, a separate return-line renderer, implicit zero-step repetition,
+  and broad sequence features such as create/destroy, boxes, parallel or
+  critical blocks in this compatibility commit.
 
 - **D41 — Keep the best observed ordering only as a strict no-regression
   refinement.** Four forward/backward barycenter rounds remain the familiar,

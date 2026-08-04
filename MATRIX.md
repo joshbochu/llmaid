@@ -91,8 +91,9 @@ Mermaid as the only primary agent language.
 |------------|:------:|:---------:|:-------:|:------:|:----------:|:----------:|
 | Participants / actors | Y | N | Y | Y | N | Y |
 | Lifelines | Y | N | Y | Y | N | Y |
-| Sync / async messages | P | N | Y | Y | N | Y |
+| Sync / async messages | Y | N | Y | Y | N | Y |
 | Dashed return | Y | N | Y | Y | N | Y |
+| Arrowless / cross / open / bidirectional terminals | Y | N | Y | P | N | Y |
 | Notes | Y | N | Y | P | N | Y |
 | Activate / deactivate | Y | N | P | P | N | Y |
 | Loops / alt / opt | Y | N | P | P | N | Y |
@@ -219,7 +220,7 @@ What layout *kind* each tool implements — independent of syntax.
 | Edge labels & styles | `-->` `-.->` `==>` \|label\| | **Y** |
 | Node shapes | `[ ] ( ) { }` … | **Y** (hints) |
 | Groups / machines | `subgraph` | **Y** |
-| Sequence | `sequenceDiagram` | **P** (participants, messages, notes, activation, loop/alt/opt) |
+| Sequence | `sequenceDiagram` | **P** (participants, common terminals, autonumber, activation shorthand, notes, loop/alt/opt) |
 | Tree | `mindmap` or flowchart TB | **P** (one plain-label root hierarchy) |
 | Class / ER / state | respective types | **P** (core subsets) |
 | Timeline | `timeline` | **P** (title, periods/events, sections) |
@@ -254,6 +255,7 @@ When you ship a feature:
 
 | Date | Note |
 |------|------|
+| 2026-08-03 | Sequence compatibility now separates the ten common solid/dashed and filled/open/cross/arrowless/bidirectional message forms, with strict autonumbering and shorthand activation; the bounded syntax slice was cross-checked against Grok Build's vendored Mermaid parser. |
 | 2026-08-03 | Flowchart ordering now retains an earlier deterministic barycenter candidate only when its exact adjacent-rank real/dummy-segment inversion count beats the legacy final sweep; final painted-edge crossings remain independently checked. |
 | 2026-07-31 | Added stable semantic final-Scene inspection with typed applicability, exact witnesses, unclassified compositions, raster rows, and cross-engine quality gates. |
 | 2026-07-09 | Initial matrix from design + local tool probes (tw, termaid demos, diagon modes, graph-easy). |
