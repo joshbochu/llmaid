@@ -4,7 +4,7 @@ Every behavior here is a promise to users (mostly: coding agents piping Mermaid
 through llmaid). Each has a given/when/then test named `b<N>_...` — parser and
 CLI and cross-engine behaviors live in `tests/behavior.rs`; engine-specific
 structural coverage lives beside its engine tests. Decisions behind these:
-`CHANGELOG.md` D9–D34.
+`CHANGELOG.md` D9–D42.
 
 ## Parsing
 
@@ -24,6 +24,36 @@ structural coverage lives beside its engine tests. Decisions behind these:
   member nodes are recorded on the subgraph and a titled frame is drawn around
   them; contents are not silently flattened, and nonmember boxes never
   intersect the frame.
+- **B39** Given an edge whose bare source or target ID names a declared
+  subgraph, including a reference before that subgraph's declaration or to a
+  nested subgraph, when parsed and rendered in any flow direction, then it
+  semantically attaches to that subgraph's titled frame rather than creating a
+  duplicate node box. Inspection identifies that endpoint as `group:<id>` and
+  independently requires its routed attachment to lie on the group border;
+  ordinary node-to-member edges keep their node identities. An endpoint named
+  for an empty group fails on its edge source line with a repairable request to
+  add a member node rather than panicking or emitting a phantom box.
+- **B40** Given a flowchart edge with Mermaid terminal circle or cross notation
+  (`--o`, `--x`, including source-side and two-ended forms) or arrowheads at
+  both ends (`<-->`), when parsed and rendered in LR, RL, TB, or BT, then both
+  endpoint meanings remain explicit in the semantic IR and paint as distinct,
+  adjacent, direction-aware terminal marks on their own routed paths. Unicode
+  uses single-cell `○`/`×` marks and ASCII uses `o`/`x`; a bidirectional edge
+  has two filled directional arrowheads. Inspection exposes the terminal
+  decorations/arrowhead geometry, and a final-Scene invariant independently
+  requires each mark to sit one cell from its declared node or subgraph frame.
+- **B37** Given a flowchart line containing semicolon-separated statements,
+  quoted labels, safely-contained named or numeric character references, and
+  a trailing %% comment, when parsed, then statement/comment boundaries apply
+  only outside flowchart label spans (including quoted text) and entity
+  references; quoted shape closers remain label text; the core XML named
+  references in HTML `&name;` or Mermaid `#name;` spelling (including
+  `#quot;`) plus Mermaid `#decimal;`/`#xhex;`
+  numeric Unicode scalars (and deliberate HTML-style numeric compatibility)
+  decode in quoted and unquoted labels, including subgraph titles; unknown or
+  malformed references remain literal; and a decoded terminal control fails on
+  its source line. Literal br tags retain B1 behavior, while Markdown and
+  other formatting tags remain literal label text.
 
 ## CLI
 
@@ -47,6 +77,10 @@ structural coverage lives beside its engine tests. Decisions behind these:
   never silently reinterprets that document as a headerless flowchart.
   Recognized type names used inside actual headerless flowchart statements
   remain ordinary node IDs.
+- **B38** Given a first semantic line containing a supported engine type name,
+  when dispatching the document, then llmaid selects that engine only when the
+  whole trimmed line is exactly its header; a type name followed by flowchart
+  syntax or another token remains a headerless flowchart statement.
 - **B28** Given CLI input-source or width mistakes, when arguments are parsed,
   then `--width 0` and every combination of multiple FILE/`-` sources fail
   with exit 64 before input is read; one explicit `-` reads stdin normally.
@@ -75,6 +109,16 @@ structural coverage lives beside its engine tests. Decisions behind these:
   without a sound predicate are listed as `unclassified` rather than treated
   as passes. `--audit=json` remains byte-compatible `llmaid.audit.v1`, and the
   two machine-output modes are mutually exclusive.
+- **B41** Given a source, target width, semantic graph/event count, recursive
+  nesting depth, or final Scene raster beyond the documented fixed bounds,
+  then llmaid refuses the normal render before unbounded parsing or allocation,
+  keeps stdout empty, and reports the exact observed value, limit, and a
+  repair. File and stdin input stop after one byte beyond the source limit, and
+  `diagram::parse` applies the same source/semantic boundary for library
+  callers. Canvas dimensions and checked cell area are validated before a
+  fallible allocation. `--inspect=json` stays byte-stable and valid for an
+  oversized final Scene: `scene.integrity` contains the exact resource witness
+  while `canvas` is empty (`width:0`, `height:0`, `rows:[]`).
 
 ## Layout & rendering
 
@@ -83,7 +127,9 @@ structural coverage lives beside its engine tests. Decisions behind these:
   render over-width anyway. Whitespace-free tokens such as identifiers stay
   intact, even when that makes overflow unavoidable. The selected fallback
   minimizes overflow without using narrower-than-eight-column text or wrapping
-  that buys no width. Never truncate a label, never fail on overflow.
+  that buys no width. Target-width overflow alone never truncates or refuses a
+  render; only an independent B41 resource bound (such as raster dimensions or
+  canvas cells) can refuse it.
 - **B10** Given a label that fits, when rendered, then it stays on one line;
   wrapping happens only under width pressure (B9), never at an arbitrary
   box-width cap. Of the readable layouts that fit, the least-wrapped one wins.
@@ -106,6 +152,14 @@ structural coverage lives beside its engine tests. Decisions behind these:
 - **B16** Given any routed edge, then its interior never intersects or rides
   the border of a non-endpoint node. Enforced from exact `Scene` geometry for
   every golden; nested and long-edge merges are explicit regression cases.
+- **B42** Given a forward layered flowchart whose bounded barycenter sweeps
+  observe an ordering with fewer strict adjacent-rank segment inversions than
+  the legacy final sweep, when laid out, then llmaid selects that best observed
+  ordering deterministically; equal or worse candidates retain the exact
+  legacy-final ordering. The integer objective follows real and long-edge dummy
+  slots, ignores self/feedback edges, and never counts pairs sharing either
+  slot at the same rank boundary. It is a layout choice, not a replacement for the independent
+  final-Scene `flow.edge_crossings` preference.
 - **B32** Given labels containing combining marks, emoji ZWJ sequences,
   legitimate ellipses, or `<br>` line breaks, when any shipped engine renders
   them, then extended grapheme clusters occupy their measured terminal cells,
@@ -123,10 +177,10 @@ structural coverage lives beside its engine tests. Decisions behind these:
 - **B17** Given a core `sequenceDiagram` containing declared or implicit
   participants/actors plus `->>` messages and `-->>` returns, when rendered,
   then participant order is stable and the output contains padded headers,
-  dotted lifelines, ordered labeled arrows, and returns encoded with a thin
-  directional arrowhead distinct from the filled call arrowhead. Labels are
-  never truncated; Unicode and `--ascii` output are deterministic; malformed
-  statements name the source line and expected message syntax.
+  dotted lifelines, ordered labeled arrows, filled target heads, and a dotted
+  return stroke. Labels are never truncated; Unicode and `--ascii` output are
+  deterministic; malformed statements name the source line and expected
+  message syntax.
 - **B18** Given a `sequenceDiagram` containing `Note left of`, `Note right
   of`, `Note over` (one participant or a two-participant span), and balanced
   explicit `activate` / `deactivate` statements, when rendered, then source
@@ -150,6 +204,21 @@ structural coverage lives beside its engine tests. Decisions behind these:
   control fragment, when rendered, then each participant lifeline terminates
   on that frame's bottom border without a dangling row below it. If a later
   event follows the fragment, lifelines continue through the frame normally.
+- **B43** Given a `sequenceDiagram` using any of `<<-->>`, `<<->>`, `-->>`,
+  `->>`, `--x`, `-x`, `--)`, `-)`, `-->`, or `->`, optional `autonumber`,
+  and `+`/`-` message activation shorthand, when parsed and rendered, then
+  line style, target head, and bidirectional source head remain distinct in
+  the semantic IR and final Scene; arrowless messages reach their target
+  lifeline or active bar, cross/open/filled heads occupy one adjacent cell,
+  and a source head points back toward its source attachment. `autonumber`
+  initially enables `1, 2, …`; bare re-enable preserves its next counter;
+  `off` pauses it; `START [STEP]` reseeds it with u64 values and a strictly
+  positive step, incrementing saturatingly only for messages. `A->>+B` opens
+  B after its message and `A-->>-B` closes active sender A after its message;
+  shorthand and explicit activation directives balance on one stack. Unicode
+  and ASCII output are deterministic, labels retain their authored text plus
+  any rendered number without truncation, and malformed operator, numbering,
+  or activation input names its source line and repair.
 
 ## Design-document diagrams
 

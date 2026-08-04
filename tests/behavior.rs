@@ -4,9 +4,10 @@
 //! every golden in `tests/golden.rs`.
 
 use llmaid::layout;
-use llmaid::parse::{EdgeKind, Shape, parse};
+use llmaid::parse::{EdgeKind, Endpoint, FlowEndpointDecoration, Shape, parse};
 use llmaid::render;
 use llmaid::style::{E, N, S, Style, W};
+use llmaid::{diagram, inspect, limits};
 use std::process::{Command, Stdio};
 
 // ---------- Parsing ----------
@@ -164,6 +165,338 @@ flowchart TB
 }
 
 #[test]
+fn b39_given_declared_subgraph_id_as_an_edge_endpoint_then_the_frame_is_semantic_endpoint() {
+    for direction in ["LR", "RL", "TB", "BT"] {
+        let source = format!(
+            "flowchart {direction}\n\
+             Outside -.->|enter| inner\n\
+             subgraph outer [Outer]\n\
+               subgraph inner [Inner]\n\
+                 A --> B\n\
+               end\n\
+             end\n\
+             inner ==>|leave| After\n"
+        );
+        let graph = parse(&source).unwrap();
+        let inner = graph
+            .subgraphs
+            .iter()
+            .position(|group| group.id == "inner")
+            .unwrap();
+        assert!(
+            graph.nodes.iter().all(|node| node.id != "inner"),
+            "{direction}: a subgraph endpoint must not create a node"
+        );
+        assert!(matches!(graph.edges[0].target, Endpoint::Subgraph(group) if group == inner));
+        assert!(matches!(graph.edges[2].source, Endpoint::Subgraph(group) if group == inner));
+        assert_eq!(graph.edges[0].kind, EdgeKind::Dotted);
+        assert_eq!(graph.edges[0].label.as_deref(), Some("enter"));
+        assert_eq!(graph.edges[2].kind, EdgeKind::Thick);
+        assert_eq!(graph.edges[2].label.as_deref(), Some("leave"));
+
+        let placed = layout::layout(&graph, 100);
+        let scene = llmaid::route::route(&graph, &placed);
+        let frame = scene
+            .groups
+            .iter()
+            .find(|group| group.subgraph == inner)
+            .unwrap()
+            .rect;
+        for edge in [
+            scene.edges.iter().find(|edge| edge.edge == 0).unwrap(),
+            scene.edges.iter().find(|edge| edge.edge == 2).unwrap(),
+        ] {
+            let source = edge.points.first().copied().unwrap();
+            let target = edge
+                .arrow
+                .as_ref()
+                .map(|arrow| arrow.toward)
+                .or_else(|| edge.points.last().copied())
+                .unwrap();
+            assert!(
+                [source, target].iter().any(|point| {
+                    frame.contains(*point)
+                        && (point.x == frame.x
+                            || point.x == frame.right() - 1
+                            || point.y == frame.y
+                            || point.y == frame.bottom() - 1)
+                }),
+                "{direction}: group endpoint must lie on its frame: {edge:?}"
+            );
+        }
+        let semantic = llmaid::diagram::Diagram::Flowchart(graph);
+        let inspected = llmaid::inspect::json(&semantic, 100, Style { ascii: false });
+        assert!(
+            inspected.contains("\"source\":\"group:inner\"")
+                && inspected.contains("\"target\":\"group:inner\"")
+                && !inspected.contains("node:inner"),
+            "{direction}: {inspected}"
+        );
+        let scene = llmaid::diagram::scene(&semantic, 100);
+        assert!(
+            !llmaid::quality::evaluate(&semantic, &scene, 100).has_quality_failures(),
+            "{direction}"
+        );
+    }
+
+    let error = parse("flowchart LR\nSource --> empty\nsubgraph empty\nend\n").unwrap_err();
+    assert_eq!(error.line, 2);
+    assert!(
+        error.msg.contains("subgraph `empty`") && error.msg.contains("member node"),
+        "{error}"
+    );
+}
+
+#[test]
+fn b40_given_circle_cross_and_bidirectional_flow_ends_then_every_direction_paints_exact_terminals()
+{
+    for direction in ["LR", "RL", "TB", "BT"] {
+        let source = format!(
+            "flowchart {direction}\n\
+             A o--o B\n\
+             B x--x C\n\
+             C <--> D\n"
+        );
+        let graph = parse(&source).unwrap();
+        assert_eq!(
+            (
+                graph.edges[0].source_decoration,
+                graph.edges[0].target_decoration
+            ),
+            (
+                FlowEndpointDecoration::Circle,
+                FlowEndpointDecoration::Circle
+            )
+        );
+        assert_eq!(
+            (
+                graph.edges[1].source_decoration,
+                graph.edges[1].target_decoration
+            ),
+            (FlowEndpointDecoration::Cross, FlowEndpointDecoration::Cross)
+        );
+        assert_eq!(
+            (
+                graph.edges[2].source_decoration,
+                graph.edges[2].target_decoration
+            ),
+            (FlowEndpointDecoration::Arrow, FlowEndpointDecoration::Arrow)
+        );
+
+        let semantic = llmaid::diagram::Diagram::Flowchart(graph);
+        let scene = llmaid::diagram::scene(&semantic, 100);
+        let report = llmaid::quality::evaluate(&semantic, &scene, 100);
+        let terminal_check = report
+            .checks
+            .iter()
+            .find(|check| check.id == "flow.endpoint_decorations")
+            .unwrap();
+        assert_eq!(
+            terminal_check.status(),
+            "pass",
+            "{direction}: {terminal_check:#?}"
+        );
+
+        let (unicode, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+        assert!(failures.is_empty(), "{direction}: {failures:#?}\n{unicode}");
+        assert!(
+            unicode.contains('○') && unicode.contains('×'),
+            "{direction}:\n{unicode}"
+        );
+        for arrow in if matches!(direction, "LR" | "RL") {
+            ['◀', '▶']
+        } else {
+            ['▲', '▼']
+        } {
+            assert!(
+                unicode.contains(arrow),
+                "{direction}: missing {arrow}:\n{unicode}"
+            );
+        }
+
+        let (ascii, failures) = render::render_scene_with_checks(&scene, Style { ascii: true });
+        assert!(failures.is_empty(), "{direction}: {failures:#?}\n{ascii}");
+        assert!(
+            ascii.is_ascii() && ascii.contains('o') && ascii.contains('x'),
+            "{direction}:\n{ascii}"
+        );
+        let inspect = llmaid::inspect::json(&semantic, 100, Style { ascii: false });
+        assert!(
+            inspect.contains("\"kind\":\"circle\"")
+                && inspect.contains("\"kind\":\"cross\"")
+                && inspect.contains("\"kind\":\"arrow\"")
+                && inspect.contains("\"head\":\"filled\""),
+            "{direction}: {inspect}"
+        );
+    }
+
+    let semantic = llmaid::diagram::parse("flowchart LR\nA o--o B\nA x--x B\n").unwrap();
+    let scene = llmaid::diagram::scene(&semantic, 100);
+    let mut terminals: Vec<_> = scene
+        .endpoint_decorations
+        .iter()
+        .map(|decoration| decoration.at)
+        .collect();
+    terminals.sort_by_key(|point| (point.y, point.x));
+    terminals.dedup();
+    assert_eq!(
+        terminals.len(),
+        4,
+        "parallel terminal marks collapsed: {scene:#?}"
+    );
+
+    let grouped = llmaid::diagram::parse(
+        "flowchart TB\nOutside o--o workers\nsubgraph workers\n  A --> B\nend\nworkers x--x After\n",
+    )
+    .unwrap();
+    let grouped_scene = llmaid::diagram::scene(&grouped, 100);
+    assert!(
+        !llmaid::quality::evaluate(&grouped, &grouped_scene, 100).has_quality_failures(),
+        "decorated group endpoints must retain distinct frame attachments: {grouped_scene:#?}"
+    );
+
+    // A decorated fork, merge, or self-loop must reserve a distinct terminal
+    // cell for every semantic mark, rather than merely painting the last mark
+    // that visits a shared junction.
+    for source in [
+        "flowchart LR\nA o--o B\nA x--x C\n",
+        "flowchart LR\nA o--o B\nC x--x B\n",
+        "flowchart TB\nA o--o A\nA x--x B\n",
+        "flowchart LR\nA o--o A\nA x--x B\n",
+    ] {
+        let semantic = llmaid::diagram::parse(source).unwrap();
+        let scene = llmaid::diagram::scene(&semantic, 100);
+        let mut terminals: Vec<_> = scene
+            .endpoint_decorations
+            .iter()
+            .map(|decoration| decoration.at)
+            .collect();
+        terminals.sort_by_key(|point| (point.y, point.x));
+        terminals.dedup();
+        assert_eq!(
+            terminals.len(),
+            4,
+            "terminal collision:\n{source}\n{scene:#?}"
+        );
+        assert!(
+            !llmaid::quality::evaluate(&semantic, &scene, 100).has_failures(),
+            "terminal collision:\n{source}\n{scene:#?}"
+        );
+        let (_, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+        assert!(failures.is_empty(), "{source}: {failures:#?}");
+    }
+
+    // Containment in either semantic direction gets a real gutter route when
+    // terminal marks consume both ends. Exercise circles, crosses, and
+    // arrows through every flow orientation.
+    for direction in ["LR", "RL", "TB", "BT"] {
+        for relation in ["G x--x A", "A o--o G", "G <--> A", "A <--> G"] {
+            let semantic = llmaid::diagram::parse(&format!(
+                "flowchart {direction}\nsubgraph G\nA\nend\n{relation}\n"
+            ))
+            .unwrap();
+            let scene = llmaid::diagram::scene(&semantic, 100);
+            let edge = &scene.edges[0];
+            assert!(
+                edge.points.len() >= 2 && edge.points.first() != edge.points.last(),
+                "containment route collapsed: {direction} {relation}: {scene:#?}"
+            );
+            assert!(
+                !llmaid::quality::evaluate(&semantic, &scene, 100).has_failures(),
+                "containment terminals: {direction} {relation}: {scene:#?}"
+            );
+            let (_, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+            assert!(
+                failures.is_empty(),
+                "containment collision: {direction} {relation}: {failures:#?}\n{scene:#?}"
+            );
+        }
+    }
+
+    // `o` and `x` remain ordinary one-character node IDs when they precede
+    // inline labels; a true marker still needs a preceding source operand.
+    for (source, source_id, kind, source_mark) in [
+        (
+            "flowchart LR\no -- text; still --> B\nC --> D\n",
+            "o",
+            EdgeKind::Solid,
+            FlowEndpointDecoration::None,
+        ),
+        (
+            "flowchart LR\nx -. text; still .-> B\nC --> D\n",
+            "x",
+            EdgeKind::Dotted,
+            FlowEndpointDecoration::None,
+        ),
+        (
+            "flowchart LR\nx == text; still ==> B\nC --> D\n",
+            "x",
+            EdgeKind::Thick,
+            FlowEndpointDecoration::None,
+        ),
+        (
+            "flowchart LR\nA o-- text; still --> B\nC --> D\n",
+            "A",
+            EdgeKind::Solid,
+            FlowEndpointDecoration::Circle,
+        ),
+    ] {
+        let graph = parse(source).unwrap();
+        assert_eq!(graph.edges.len(), 2, "{source}");
+        assert_eq!(graph.nodes[0].id, source_id, "{source}");
+        assert_eq!(graph.edges[0].kind, kind, "{source}");
+        assert_eq!(graph.edges[0].source_decoration, source_mark, "{source}");
+        assert_eq!(
+            graph.edges[0].label.as_deref(),
+            Some("text; still"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn b37_given_quote_aware_flowchart_text_then_boundaries_and_entities_are_safe() {
+    let source = r#"flowchart LR; A["cache[key]; AT&amp;T %% literal"] --> B("call(foo); #x41;"); C[AT&amp;T #quot;] --> D[#35;]; U[&unknown;] --> M[#xzz;] %% trailing comment; Z[ignored]"#;
+    let graph = parse(source).unwrap();
+
+    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.nodes.len(), 6);
+    assert_eq!(graph.nodes[0].label, "cache[key]; AT&T %% literal");
+    assert_eq!(graph.nodes[1].label, "call(foo); A");
+    assert_eq!(graph.nodes[1].shape, Shape::Rounded);
+    assert_eq!(graph.nodes[2].label, "AT&T \"");
+    assert_eq!(graph.nodes[3].label, "#");
+    assert_eq!(graph.nodes[4].label, "&unknown;");
+    assert_eq!(graph.nodes[5].label, "#xzz;");
+    assert!(
+        graph.nodes.iter().all(|node| node.id != "Z"),
+        "a trailing comment must consume later semicolons: {:#?}",
+        graph
+    );
+
+    let encoded_literal_tag = parse("flowchart LR\nA[&lt;br&gt;]").unwrap();
+    assert_eq!(encoded_literal_tag.nodes[0].label, "<br>");
+
+    let subgraph = parse("flowchart LR; subgraph Group [AT&amp;T #35;]; A; end").unwrap();
+    assert_eq!(subgraph.subgraphs[0].title, "AT&T #");
+
+    for (entity, control) in [
+        ("#9;", "U+0009"),
+        ("#x1B;", "U+001B"),
+        ("&Tab;", "U+0009"),
+        ("&NewLine;", "U+000A"),
+    ] {
+        let error = parse(&format!("flowchart LR\nA[{entity}]")).unwrap_err();
+        assert_eq!(error.line, 2, "{entity}: {error}");
+        assert!(
+            error.msg.contains("decoded terminal control"),
+            "{entity}: {error}"
+        );
+        assert!(error.msg.contains(control), "{entity}: {error}");
+    }
+}
+
+#[test]
 fn b16_given_nested_merges_then_edges_avoid_non_endpoint_boxes() {
     let source = "\
 flowchart TB
@@ -185,6 +518,130 @@ flowchart TB
         "B16 failures:\n  - {}",
         failures.join("\n  - ")
     );
+}
+
+#[test]
+fn b42_given_a_better_observed_barycenter_order_then_it_is_selected_deterministically() {
+    // The fixed legacy sweep sequence finishes with one strict adjacent-rank
+    // inversion here; layout's focused counter test records the 1 -> 0 proof.
+    let source = "flowchart LR\nA\nB\nC\nD\nE\nF\nA --> E\nA --> F\nB --> C\nC --> D\n";
+    let (first, first_stderr, first_code) = run_llmaid(&[], source);
+    let (second, second_stderr, second_code) = run_llmaid(&[], source);
+    assert_eq!(first_code, 0, "{first_stderr}");
+    assert_eq!(second_code, 0, "{second_stderr}");
+    assert_eq!(first, second);
+    for label in ["A", "B", "C", "D", "E", "F"] {
+        assert!(first.contains(label), "missing {label}:\n{first}");
+    }
+
+    let diagram = diagram::parse(source).unwrap();
+    let scene = diagram::scene(&diagram, 100);
+    let quality = llmaid::quality::evaluate(&diagram, &scene, 100);
+    let crossings = quality
+        .checks
+        .iter()
+        .find(|check| check.id == "flow.edge_crossings")
+        .unwrap();
+    assert_eq!(crossings.status(), "pass", "{crossings:#?}");
+}
+
+#[test]
+fn b41_given_resource_boundaries_then_refusals_are_bounded_actionable_and_inspectable() {
+    let source_limit = "x".repeat(limits::MAX_SOURCE_BYTES + 1);
+    let error = diagram::parse(&source_limit).unwrap_err();
+    assert_eq!(error.line, 1);
+    assert!(
+        error.msg.contains("source bytes")
+            && error
+                .msg
+                .contains(&(limits::MAX_SOURCE_BYTES + 1).to_string())
+            && error.msg.contains(&limits::MAX_SOURCE_BYTES.to_string())
+            && error.msg.contains("split or reduce"),
+        "{error}"
+    );
+
+    let mut broad = String::from("flowchart LR\n");
+    for node in 0..=limits::MAX_SEMANTIC_ELEMENTS {
+        broad.push_str(&format!("N{node}\n"));
+    }
+    let error = diagram::parse(&broad).unwrap_err();
+    assert!(
+        error.msg.contains("semantic elements")
+            && error
+                .msg
+                .contains(&(limits::MAX_SEMANTIC_ELEMENTS + 1).to_string()),
+        "{error}"
+    );
+
+    let mut deep = String::from("mindmap\n");
+    for depth in 0..=limits::MAX_NESTING_DEPTH {
+        deep.push_str(&" ".repeat((depth + 1) * 2));
+        deep.push_str(&format!("N{depth}\n"));
+    }
+    let error = diagram::parse(&deep).unwrap_err();
+    assert!(
+        error.msg.contains("nesting depth")
+            && error
+                .msg
+                .contains(&(limits::MAX_NESTING_DEPTH + 1).to_string()),
+        "{error}"
+    );
+
+    use llmaid::scene::{Rect, Scene, SceneBox};
+    let oversized_scene = Scene {
+        boxes: vec![SceneBox {
+            node: 0,
+            rect: Rect::new(0, 0, (limits::MAX_CANVAS_DIMENSION + 1) as i32, 3),
+            lines: vec![],
+            shape: Shape::Rect,
+            table: None,
+        }],
+        ..Scene::default()
+    };
+    let limit = render::try_render_scene(&oversized_scene, Style { ascii: false }).unwrap_err();
+    assert_eq!(limit.resource, "canvas width");
+    assert_eq!(limit.observed, limits::MAX_CANVAS_DIMENSION + 1);
+    assert_eq!(limit.limit, limits::MAX_CANVAS_DIMENSION);
+    assert!(render::render_scene(&oversized_scene, Style { ascii: false }).is_empty());
+    assert_eq!(
+        limits::validate_canvas(usize::MAX, 2).unwrap_err().resource,
+        "canvas cells"
+    );
+
+    let giant_label = "x".repeat(limits::MAX_CANVAS_DIMENSION);
+    let wide_source = format!("flowchart LR\nA[{giant_label}]\n");
+    let wide = diagram::parse(&wide_source).unwrap();
+    let first = inspect::json(&wide, 100, Style { ascii: false });
+    let second = inspect::json(&wide, 100, Style { ascii: false });
+    assert_eq!(first, second);
+    assert!(first.contains("\"scene.integrity\""), "{first}");
+    assert!(first.contains("\"resource\":\"canvas width\""), "{first}");
+    assert!(
+        first.contains("\"canvas\":{\"width\":0,\"height\":0,\"rows\":[]}"),
+        "{first}"
+    );
+
+    let over_width = (limits::MAX_TARGET_WIDTH + 1).to_string();
+    let (stdout, stderr, code) = run_llmaid(&["--width", &over_width], "");
+    assert_eq!(code, 64, "{stderr}");
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("target width") && stderr.contains("use a smaller --width"));
+
+    let (stdout, stderr, code) = run_llmaid(&[], &source_limit);
+    assert_eq!(code, 64, "{stderr}");
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("source bytes") && stderr.contains("split or reduce"));
+
+    let (stdout, stderr, code) = run_llmaid(&[], &wide_source);
+    assert_eq!(code, 64, "{stderr}");
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("canvas width") && stderr.contains("diagram not written"));
+
+    let (json, stderr, code) = run_llmaid(&["--inspect=json"], &wide_source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(json.starts_with("{\"schema\":\"llmaid.inspect.v1\""));
+    assert!(json.contains("\"resource\":\"canvas width\""));
+    assert!(json.contains("\"canvas\":{\"width\":0,\"height\":0,\"rows\":[]}"));
 }
 
 // ---------- CLI ----------
@@ -510,8 +967,12 @@ sequenceDiagram
         "call endpoint unclear:\n{unicode_a}"
     );
     assert!(
-        unicode_a.contains("┊←"),
+        unicode_a.contains("┊◀"),
         "return endpoint unclear:\n{unicode_a}"
+    );
+    assert!(
+        unicode_a.contains('┄'),
+        "return must be dashed:\n{unicode_a}"
     );
 
     let (tight, stderr, code) = run_llmaid(&["--width", "12"], source);
@@ -527,8 +988,93 @@ sequenceDiagram
     assert_eq!(code, 0, "{stderr}");
     assert!(ascii.is_ascii(), "{ascii}");
     assert!(ascii.contains(">:"), "ASCII call cue missing:\n{ascii}");
-    assert!(ascii.contains(":<--"), "ASCII return cue missing:\n{ascii}");
+    assert!(ascii.contains(":<."), "ASCII return cue missing:\n{ascii}");
     assert!(ascii.contains("request") && ascii.contains("response"));
+}
+
+#[test]
+fn b43_given_common_sequence_message_operators_numbering_and_shorthand_then_semantics_render_deterministically()
+ {
+    let source = "\
+sequenceDiagram
+  participant Client
+  participant API
+  participant Worker
+  autonumber
+  Client->>+API: call
+  API->>+Worker: work
+  Worker-->>-API: done
+  API-->>-Client: reply
+  Client->>Client: self call
+  autonumber off
+  Client->API: fire
+  API-->Client: trace
+  Client-xAPI: stop
+  API--xClient: dashed stop
+  Client-)API: open
+  API--)Client: dashed open
+  Client<<->>API: duplex
+  API<<-->>Client: dashed duplex
+  autonumber 7 2
+  Client->API: resume
+  API-->Client: finish
+";
+    let (unicode, stderr, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0, "{stderr}");
+    let (repeat, _, code) = run_llmaid(&[], source);
+    assert_eq!(code, 0);
+    assert_eq!(unicode, repeat);
+    for label in [
+        "1. call",
+        "5. self call",
+        "fire",
+        "dashed stop",
+        "dashed open",
+        "duplex",
+        "dashed duplex",
+        "7. resume",
+        "9. finish",
+    ] {
+        assert!(unicode.contains(label), "missing {label:?}:\n{unicode}");
+    }
+    assert!(unicode.contains('×'), "cross terminal missing:\n{unicode}");
+    assert!(
+        unicode.contains('◀') && unicode.contains('▶'),
+        "bidirectional arrows missing:\n{unicode}"
+    );
+    assert!(unicode.contains('┄'), "dashed messages missing:\n{unicode}");
+
+    let (ascii, stderr, code) = run_llmaid(&["--ascii"], source);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(ascii.is_ascii(), "{ascii}");
+    assert!(
+        ascii.contains('x'),
+        "ASCII cross terminal missing:\n{ascii}"
+    );
+    assert!(ascii.contains("7. resume") && ascii.contains("9. finish"));
+
+    for (bad, line, expected) in [
+        (
+            "sequenceDiagram\nautonumber nope\n",
+            2,
+            "expected a u64 START",
+        ),
+        (
+            "sequenceDiagram\nautonumber 1 0\n",
+            2,
+            "expected a positive STEP",
+        ),
+        (
+            "sequenceDiagram\nparticipant A\nA->>-B: return\n",
+            3,
+            "expected a matching `activate A`",
+        ),
+    ] {
+        let (_, stderr, code) = run_llmaid(&[], bad);
+        assert_eq!(code, 64, "{stderr}");
+        assert!(stderr.contains(&format!("<stdin>:{line}:")), "{stderr}");
+        assert!(stderr.contains(expected), "{stderr}");
+    }
 }
 
 #[test]
@@ -859,7 +1405,10 @@ fn b24_given_runtime_invariant_failure_then_checked_render_returns_actionable_di
         }],
         ..Scene::default()
     };
-    let failures = render::render_scene_checked(&scene, Style { ascii: false }).unwrap_err();
+    let failures = match render::render_scene_checked(&scene, Style { ascii: false }).unwrap_err() {
+        render::CheckedRenderError::Invariants(failures) => failures,
+        render::CheckedRenderError::Resource(limit) => panic!("unexpected resource limit: {limit}"),
+    };
     assert!(
         failures.iter().any(|failure| failure.contains("edge 0")
             && failure.contains("non-endpoint box 7")
@@ -996,6 +1545,45 @@ fn b27_given_known_unsupported_document_then_error_names_type_and_header_line() 
         stdout.contains("gitGraph") && stdout.contains("result"),
         "{stdout}"
     );
+}
+
+#[test]
+fn b38_given_supported_type_text_then_only_an_exact_header_dispatches() {
+    // A supported document name only dispatches when it is the complete
+    // engine header. A semicolon makes this a conservative headerless
+    // flowchart, matching the flowchart parser's statement grammar.
+    for name in [
+        "sequenceDiagram",
+        "stateDiagram",
+        "classDiagram",
+        "erDiagram",
+        "mindmap",
+        "timeline",
+    ] {
+        let source = format!("{name}; A --> B\n");
+        let (stdout, stderr, code) = run_llmaid(&[], &source);
+        assert_eq!(code, 0, "{name}: {stderr}");
+        assert!(
+            stdout.contains(name) && stdout.contains('A') && stdout.contains('B'),
+            "{name} should remain a headerless flowchart:\n{stdout}"
+        );
+    }
+    for source in [
+        "timeline --> A\n",
+        "sequenceDiagram --> A\n",
+        "timeline & A --> B\n",
+    ] {
+        let (stdout, stderr, code) = run_llmaid(&[], source);
+        assert_eq!(code, 0, "{source}: {stderr}");
+        assert!(
+            stdout.contains("timeline") || stdout.contains("sequenceDiagram"),
+            "{source} should remain a flowchart:\n{stdout}"
+        );
+        assert!(
+            stdout.contains('A'),
+            "{source} should retain its flowchart target:\n{stdout}"
+        );
+    }
 }
 
 #[test]

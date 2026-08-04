@@ -6,6 +6,38 @@ Decision entries explain *why*, so future work doesn't relitigate them.
 ## [Unreleased]
 
 ### Added
+- Sequence terminal compatibility (B43): the focused sequence slice now
+  recognizes the ten common Mermaid message operators in longest-first order,
+  retaining orthogonal solid/dotted line style, filled/open/cross/none target
+  head, and bidirectional source head semantics through IR and shared Scene.
+  Strict `autonumber` keeps authored labels separate from optional rendered
+  u64 prefixes, accepts a positive reseed step with saturating advancement,
+  and message `+`/`-` shorthand shares the explicit activation stack without
+  partial semantic mutation on underflow. Arrowless paths attach directly;
+  decorated terminals reserve an adjacent cell. The final-Scene evaluator
+  independently checks line style, terminal kind/orientation, and lifeline or
+  activation attachment, including mutations; parser, behavior, and
+  `sequence-compat` golden coverage record the bounded scope. Existing
+  `-->>` goldens intentionally change from a solid open-headed return to the
+  faithful dotted, filled-headed Mermaid form.
+- Deterministic best-observed barycenter selection (B42): flowchart ordering
+  scores the declaration-order candidate and every completed legacy sweep with
+  an exact, overflow-safe adjacent-rank inversion count over forward real and
+  dummy segments. A batched Fenwick traversal excludes shared boundary slots,
+  follows long edges, and leaves the legacy final byte-for-byte intact unless a
+  strictly lower-scoring candidate exists. The focused regression records the
+  reproduced 1-to-0 improvement; counter, determinism, golden, and independent
+  final-Scene crossing-mutation tests guard the seam.
+- Deterministic resource bounds (B41): source input is capped at 256 KiB for
+  both CLI streaming reads and `diagram::parse`; target width, semantic element
+  count, recursive nesting, raster axes, and checked canvas area have one
+  centralized policy. Canvas allocation is fallible and reserved exactly once,
+  so a hostile Scene cannot turn a wrapped product or allocator refusal into a
+  panic. Normal rendering keeps stdout empty and reports the observed value,
+  limit, and repair. `--inspect=json` remains valid for an oversized final
+  Scene, records an exact `scene.integrity` resource witness, and emits an
+  empty bounded canvas. Focused library/CLI tests cover source, width,
+  complexity/depth, checked-area, determinism, and refusal paths.
 - Semantic final-render inspection (B34): `--inspect=json` emits stable,
   dependency-free `llmaid.inspect.v1` for every shipped diagram type. The
   report combines semantic element identities with normalized final-Scene
@@ -29,6 +61,40 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   mutually exclusive machine-output modes.
 
 ### Fixed
+- Flowchart terminal endpoint notation now supports Mermaid circles and
+  crosses at either end (`--o`, `--x`, `o--o`, `x--x`) plus bidirectional
+  arrows (`<-->`), with the same compact parser representation available to
+  dotted and thick variants. The semantic IR retains both terminal meanings;
+  routing reserves distinct ports for decorated parallel relations and trims
+  marks next to the final node or subgraph endpoint. Unicode paints `○`/`×`
+  and ASCII paints `o`/`x`; source arrows use semantic endpoint decorations
+  while the established target-arrow geometry remains inspectable. B40, four
+  direction/ASCII behavior coverage, a final-Scene mutation, and the
+  `flow-endpoints` golden cover the contract.
+- Flowchart edges can now name declared subgraphs directly, including forward
+  references and nested groups, without creating duplicate node boxes. The IR
+  preserves a `Node`/`Subgraph` endpoint identity while the integer layout
+  uses a deterministic member proxy that is clipped back to the actual frame
+  during routing. `--inspect=json` emits `group:<id>` endpoints, and the
+  final-Scene endpoint invariant independently requires them on the frame
+  border. B39, a four-direction nested behavior corpus, a final-Scene
+  mutation, and the `subgraph-endpoints` golden cover the contract.
+- Flowchart statement scanning is now quote-aware. Semicolons in double-quoted
+  labels and safely-contained entity-shaped text no longer split statements;
+  trailing %% comments apply only outside labels and consume the rest of that
+  line. Quoted shape and edge closers remain label text. Core XML named
+  entities in both `&name;` and Mermaid `#name;` spelling (including
+  `#quot;`) and valid numeric Unicode scalar references now decode in
+  flowchart labels and subgraph titles, while unknown or malformed references
+  stay literal and control-producing entities fail before rendering. Inline
+  edge closers consume their full operator run, and top-level dispatch retains
+  each engine's exact whole-line header grammar, so supported type names inside
+  flowchart statements remain headerless flowcharts.
+  Flowchart IR dumps now escape backslashes, double quotes, and line breaks in
+  node, subgraph, and edge-label text, so decoded quotes remain unambiguous in
+  deterministic snapshots.
+  B37–B38, focused scanner/parser coverage, and the
+  scanner-quoted-entities golden record the contracts.
 - Converging ER relationships now retain distinct declaration-ordered terminal
   lanes instead of collapsing their cardinalities onto one shared trunk.
   Cardinality bars and many-marks orient with horizontal or vertical endpoint
@@ -59,6 +125,106 @@ Decision entries explain *why*, so future work doesn't relitigate them.
   roadmap, handoff, behavior, and capability docs cover the inspection loop.
 
 ### Decisions
+
+- **D42 — Sequence operators are structured terminal semantics, not visual
+  aliases.** The parser accepts exactly the ten commonly emitted Mermaid
+  spellings by longest match; each occurrence must leave valid normalized
+  endpoint IDs and a rightmost-valid tie-break preserves hyphenated IDs. It
+  then stores line style, target head, and source bidirectionality
+  independently. The spellings and bounded feature selection were
+  cross-checked against xAI Grok Build's vendored `mermaid-to-svg` sequence
+  parser; llmaid keeps stricter repairable errors and independent final-Scene
+  verification. The shared Scene remains the only painter:
+  target filled/open heads use its arrow geometry; crosses and source arrows
+  use endpoint decorations; headless paths reach the actual attachment cell.
+  `autonumber` stores a number beside—not inside—the authored label so IR,
+  width fitting, and dumps remain explainable. Bare `autonumber` initially
+  starts at 1/step 1 and later resumes its retained next value; `off` pauses;
+  a numeric directive reseeds; zero step is a strict repairable error rather
+  than silently repeating labels. Shorthand activation is committed only
+  after its source stack is validated. Rejected: raw operator-string
+  rendering, a separate return-line renderer, implicit zero-step repetition,
+  and broad sequence features such as create/destroy, boxes, parallel or
+  critical blocks in this compatibility commit.
+
+- **D41 — Keep the best observed ordering only as a strict no-regression
+  refinement.** Four forward/backward barycenter rounds remain the familiar,
+  bounded base algorithm. Each completed directional state and the
+  declaration-order input is measured with exact integer inversions between
+  adjacent real/dummy rank slots; a Fenwick traversal batches equal source
+  slots and asks only for strictly greater target positions, so pairs sharing
+  a boundary slot are not charged as crossings while distinct dummy lanes can
+  still invert. Feedback/self-loop edges stay outside this objective just as
+  they do in barycenter ordering. The
+  legacy final state remains the compatibility baseline: no candidate with an
+  equal or worse score may change output, while equal strict improvements use
+  a declaration-/edge-index lexical tie-break. Rejected: a floating-point
+  objective, a global visual score, quadratic edge-pair scans, and retaining
+  every long-edge candidate in memory. The final-Scene crossing predicate is
+  deliberately separate: it detects visible unrelated perpendicular paths,
+  not layout-internal rank inversions.
+
+- **D40 — Resource bounds are one fixed policy with a safe inspection
+  escape hatch.** Input, semantic complexity, recursive nesting, fit target,
+  and raster allocation all share centralized compile-time limits rather than
+  per-engine guesses or caller-configurable ceilings. The CLI streams only one
+  byte past the source cap and the public dispatcher validates the same source
+  and semantic count/depth for already-loaded library strings. Canvas work
+  validates dimensions and a checked cell product before a single fallible
+  reserve/resize; normal output uses only the fallible path. Oversized scenes
+  remain inspectable as geometry plus a named invariant witness and an empty
+  canvas, so agents can diagnose rather than receive malformed JSON or an OOM.
+  Rejected: unbounded `read_to_string`, saturating allocation arithmetic,
+  silent empty normal renders, user-tunable limits that weaken deterministic
+  safety, and failing inspection itself when the raster is intentionally
+  refused.
+
+- **D39 — Flowchart terminal marks are semantic endpoint decorations, not
+  node-label glyphs or operator-string rewrites.** Each flowchart edge records
+  an explicit source and target decoration (`none`, arrow, circle, or cross).
+  Routing first completes/clips the semantic polyline, then reserves one
+  terminal cell per decoration adjacent to that final node or group border;
+  decorated relations opt out of shared terminal ports. The target filled
+  arrow stays in the existing `RoutedEdge.arrow` field for compatibility,
+  while source arrows and circle/cross marks use shared Scene endpoint
+  decorations so inspection exposes both. Rejected: text substitutions after
+  rendering, node-shape hacks, and shared parallel terminals, because each
+  loses endpoint identity or can collapse distinct relationships.
+
+- **D36 — Flowchart label compatibility stays scanner-safe and deliberately
+  narrow.** The flowchart scanner protects outer label spans and safely-contained
+  entity-shaped references before any statement splitting or comment handling.
+  Safely-contained malformed tokens use only ASCII letters, digits, and
+  `#`, `-`, `_`, `.`, `:`, or `+`; whitespace, quotes, shape or
+  pipe delimiters, arrows, and edge operators stop recognition. Label
+  normalization decodes the five XML names plus nbsp in named `&name;` or
+  Mermaid `#name;` spelling, valid numeric `#decimal;` and `#xhex;`
+  Unicode scalars, and deliberate HTML-style numeric `&#decimal;`/`&#xhex;`
+  compatibility. Unknown names, malformed numerics, surrogates, and
+  out-of-range values remain literal. Tab and NewLine are recognized only to
+  reject the decoded terminal control on its source line. Existing literal br
+  handling remains the only formatting interpretation: Markdown and other
+  HTML-like tags remain visible text. Rejected: a broad HTML/Markdown
+  dependency or heuristic recovery that could silently reinterpret label
+  remainder as Mermaid syntax.
+
+- **D37 — Supported engine dispatch requires an exact standalone header.**
+  The top-level dispatcher compares the complete trimmed first semantic line
+  rather than its first word, leaving `timeline --> A`, `sequenceDiagram; A --> B`,
+  and similar text to the flowchart parser. Rejected: prefix dispatch, because
+  it silently changes valid headerless flowchart meaning.
+
+- **D38 — Subgraph endpoints retain semantic frame identity.** A flowchart
+  edge endpoint is explicitly a node or subgraph, rather than overloading a
+  node ID and later hiding a duplicate box. A parser pre-scan records declared
+  group IDs so forward references resolve deterministically. The layered
+  engine remains node-native by choosing a declaration-stable internal entry
+  or exit member proxy after parsing; routing clips completed paths to named
+  frames and uses a checked integer side-gutter route when one endpoint
+  contains the other, while inspection and final-Scene quality checks retain
+  the group identity and require a border attachment. Rejected: a phantom node
+  later suppressed only by the painter, textual endpoint rewrites, and a
+  second compound-graph layout engine for this focused compatibility slice.
 
 - **D35 — Decorated relationships preserve endpoint identity; shared trunks
   are not valid when they collapse semantic adornments.** Generic flow routing

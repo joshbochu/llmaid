@@ -9,11 +9,11 @@ use crate::class::{ClassDiagram, RelationKind};
 use crate::diagram::Diagram;
 use crate::er::{AttributeKey, ErDiagram};
 use crate::mindmap::Mindmap;
-use crate::parse::{Dir, Graph};
+use crate::parse::{Dir, Endpoint as FlowEndpoint, FlowEndpointDecoration, Graph};
 use crate::scene::{
-    EndpointDecorationKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneText, Shape,
+    ArrowHead, EndpointDecorationKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneText, Shape,
 };
-use crate::sequence::{SequenceDiagram, SequenceEvent};
+use crate::sequence::{MessageHead, MessageKind, SequenceDiagram, SequenceEvent};
 use crate::state::{Endpoint, StateDiagram};
 use crate::style::Style;
 use crate::timeline::Timeline;
@@ -231,14 +231,29 @@ pub fn evaluate_with_style(
 }
 
 fn scene_integrity(scene: &Scene, style: Style) -> CheckReport {
-    let (_, failures) = crate::render::render_scene_with_checks(scene, style);
     let mut check = CheckReport::new("scene.integrity", CheckClass::Invariant, 1);
-    for message in failures {
-        check.fail(
-            Vec::new(),
-            message.clone(),
-            vec![WitnessField::text("detail", message)],
-        );
+    match crate::render::try_render_scene_with_checks(scene, style) {
+        Ok((_, failures)) => {
+            for message in failures {
+                check.fail(
+                    Vec::new(),
+                    message.clone(),
+                    vec![WitnessField::text("detail", message)],
+                );
+            }
+        }
+        Err(limit) => {
+            check.fail(
+                Vec::new(),
+                limit.to_string(),
+                vec![
+                    WitnessField::text("resource", limit.resource),
+                    WitnessField::integer("observed", limit.observed as i64),
+                    WitnessField::integer("limit", limit.limit as i64),
+                    WitnessField::text("repair", limit.repair),
+                ],
+            );
+        }
     }
     check
 }
@@ -272,6 +287,7 @@ fn flowchart_checks(graph: &Graph, scene: &Scene, report: &mut QualityReport) {
         flow_endpoints(graph),
         scene,
     ));
+    report.checks.push(flow_endpoint_decorations(graph, scene));
     let topology = FlowTopology::new(graph, scene);
     report
         .checks
@@ -307,6 +323,11 @@ fn flowchart_checks(graph: &Graph, scene: &Scene, report: &mut QualityReport) {
         }
     }
     for (edge, value) in graph.edges.iter().enumerate() {
+        if !matches!(value.source, FlowEndpoint::Node(_))
+            || !matches!(value.target, FlowEndpoint::Node(_))
+        {
+            continue;
+        }
         if value.from == value.to || !topology.forward[edge] {
             report.unclassified.push(UnclassifiedComposition {
                 kind: if value.from == value.to {
@@ -339,6 +360,11 @@ impl FlowTopology {
             forward: vec![false; graph.edges.len()],
         };
         for (edge, value) in graph.edges.iter().enumerate() {
+            if !matches!(value.source, FlowEndpoint::Node(_))
+                || !matches!(value.target, FlowEndpoint::Node(_))
+            {
+                continue;
+            }
             if value.from == value.to {
                 continue;
             }
@@ -670,6 +696,9 @@ fn flow_groups(graph: &Graph, scene: &Scene) -> CheckReport {
 fn sequence_checks(sequence: &SequenceDiagram, scene: &Scene, report: &mut QualityReport) {
     report.checks.push(sequence_lifelines(sequence, scene));
     report.checks.push(sequence_messages(sequence, scene));
+    report
+        .checks
+        .push(sequence_terminal_semantics(sequence, scene));
     report.checks.push(sequence_fragments(sequence, scene));
     report
         .checks
@@ -792,14 +821,14 @@ fn sequence_messages(sequence: &SequenceDiagram, scene: &Scene) -> CheckReport {
         if message.from == message.to {
             continue;
         }
-        let Some(arrow) = &edge.arrow else {
-            continue;
-        };
         let Some(label) = &edge.label else {
             continue;
         };
+        let Some(target_attachment) = sequence_target_attachment(scene, edge) else {
+            continue;
+        };
         let label_center2 = 2 * label.at.x + label.width() as i32 - 1;
-        let shaft_center2 = first.x + arrow.toward.x;
+        let shaft_center2 = first.x + target_attachment.x;
         let residual2 = (label_center2 - shaft_center2).unsigned_abs() as usize;
         if residual2 > 1 {
             check.fail(
@@ -821,6 +850,476 @@ fn sequence_messages(sequence: &SequenceDiagram, scene: &Scene) -> CheckReport {
         }
     }
     check
+}
+
+/// Sequence terminal spelling is a semantic distinction, so verify it from
+/// the completed shared Scene rather than trusting the parser or layout.  The
+/// check is deliberately about terminal objects and their adjacent path cells;
+/// it does not prescribe a global sequence placement grid.
+fn sequence_terminal_semantics(sequence: &SequenceDiagram, scene: &Scene) -> CheckReport {
+    let messages: Vec<(usize, &crate::sequence::Message)> = sequence
+        .events
+        .iter()
+        .enumerate()
+        .filter_map(|(event, value)| match value {
+            SequenceEvent::Message(message) => Some((event, message)),
+            _ => None,
+        })
+        .collect();
+    let mut check = CheckReport::new(
+        "sequence.message_terminals",
+        CheckClass::Invariant,
+        messages.len(),
+    );
+    if scene.edges.len() != messages.len() {
+        check.fail(
+            Vec::new(),
+            "semantic message count does not match routed message count",
+            vec![
+                WitnessField::integer("expected", messages.len() as i64),
+                WitnessField::integer("actual", scene.edges.len() as i64),
+            ],
+        );
+    }
+    let attachments = sequence_message_attachments(sequence, scene);
+    for (edge_index, (event, message)) in messages.into_iter().enumerate() {
+        let Some(edge) = scene.edges.get(edge_index) else {
+            check.fail(
+                vec![format!("event:{event}"), format!("message:{edge_index}")],
+                format!("sequence message {edge_index} has no routed edge"),
+                vec![WitnessField::integer("expected_edge", edge_index as i64)],
+            );
+            continue;
+        };
+        if edge.edge != edge_index {
+            check.fail(
+                vec![format!("event:{event}"), format!("message:{edge_index}")],
+                format!(
+                    "routed sequence edge identity {} does not match semantic message {edge_index}",
+                    edge.edge
+                ),
+                vec![
+                    WitnessField::integer("expected_edge", edge_index as i64),
+                    WitnessField::integer("actual_edge", edge.edge as i64),
+                ],
+            );
+            continue;
+        }
+        let Some(route_terminal) = edge.points.last().copied() else {
+            check.fail(
+                vec![format!("event:{event}"), format!("message:{edge_index}")],
+                "sequence message has no terminal path cell",
+                Vec::new(),
+            );
+            continue;
+        };
+        let elements = vec![
+            format!("event:{event}"),
+            format!("participant:{}", sequence.participants[message.from].id),
+            format!("participant:{}", sequence.participants[message.to].id),
+        ];
+        let expected_kind = match message.kind {
+            MessageKind::Solid => crate::scene::EdgeKind::Solid,
+            MessageKind::Dashed => crate::scene::EdgeKind::Dotted,
+        };
+        if edge.kind != expected_kind {
+            check.fail(
+                elements.clone(),
+                format!("sequence message {edge_index} has the wrong line style"),
+                vec![
+                    WitnessField::text("expected_kind", sequence_edge_kind_name(expected_kind)),
+                    WitnessField::text("actual_kind", sequence_edge_kind_name(edge.kind)),
+                ],
+            );
+        }
+        let Some(source_attachment) = edge.points.first().copied() else {
+            continue;
+        };
+        let Some(attachment) = attachments.get(edge_index) else {
+            check.fail(
+                elements.clone(),
+                format!("sequence message {edge_index} has no semantic attachment plan"),
+                Vec::new(),
+            );
+            continue;
+        };
+        if !sequence_attachment_matches(scene, attachment.source, source_attachment) {
+            check.fail(
+                elements.clone(),
+                format!(
+                    "sequence message {edge_index} source is detached from its exact lifeline or activation face"
+                ),
+                sequence_attachment_witness(attachment.source, source_attachment),
+            );
+        }
+        let cross = scene.endpoint_decorations.iter().find(|decoration| {
+            decoration.edge == edge_index && decoration.kind == EndpointDecorationKind::Cross
+        });
+        match message.head {
+            MessageHead::Filled | MessageHead::Open => {
+                let expected = if message.head == MessageHead::Filled {
+                    ArrowHead::Filled
+                } else {
+                    ArrowHead::Open
+                };
+                let valid = edge.arrow.as_ref().is_some_and(|arrow| {
+                    arrow.at == route_terminal
+                        && arrow.head == expected
+                        && terminal_continues_final_segment(edge, arrow.at, arrow.toward)
+                        && sequence_attachment_matches(scene, attachment.target, arrow.toward)
+                });
+                if !valid {
+                    check.fail(
+                        elements.clone(),
+                        format!(
+                            "sequence message {edge_index} is missing its {} target terminal",
+                            if message.head == MessageHead::Filled {
+                                "filled"
+                            } else {
+                                "open"
+                            }
+                        ),
+                        vec![WitnessField::point("route_terminal", route_terminal)],
+                    );
+                }
+                if cross.is_some() {
+                    check.fail(
+                        elements.clone(),
+                        format!("sequence message {edge_index} has an unexpected cross terminal"),
+                        vec![WitnessField::point("route_terminal", route_terminal)],
+                    );
+                }
+            }
+            MessageHead::Cross => {
+                let valid = edge.arrow.is_none()
+                    && cross.is_some_and(|decoration| {
+                        decoration.at == route_terminal
+                            && terminal_continues_final_segment(
+                                edge,
+                                decoration.at,
+                                decoration.toward,
+                            )
+                            && sequence_attachment_matches(
+                                scene,
+                                attachment.target,
+                                decoration.toward,
+                            )
+                    });
+                if !valid {
+                    check.fail(
+                        elements.clone(),
+                        format!(
+                            "sequence message {edge_index} is missing its cross target terminal"
+                        ),
+                        vec![WitnessField::point("route_terminal", route_terminal)],
+                    );
+                }
+            }
+            MessageHead::None => {
+                if edge.arrow.is_some()
+                    || cross.is_some()
+                    || !sequence_attachment_matches(scene, attachment.target, route_terminal)
+                {
+                    check.fail(
+                        elements.clone(),
+                        format!(
+                            "sequence message {edge_index} arrowless terminal does not reach its exact target attachment"
+                        ),
+                        sequence_attachment_witness(attachment.target, route_terminal),
+                    );
+                }
+            }
+        }
+        let source_arrow = scene.endpoint_decorations.iter().find(|decoration| {
+            decoration.edge == edge_index && decoration.kind == EndpointDecorationKind::Arrow
+        });
+        if message.bidirectional {
+            let valid = source_arrow.is_some_and(|decoration| {
+                decoration.toward == source_attachment
+                    && first_route_adjacent(edge) == Some(decoration.at)
+            });
+            if !valid {
+                check.fail(
+                    elements.clone(),
+                    format!("sequence message {edge_index} is missing its source-facing arrow"),
+                    vec![WitnessField::point("route_terminal", route_terminal)],
+                );
+            }
+        } else if source_arrow.is_some() {
+            check.fail(
+                elements.clone(),
+                format!("sequence message {edge_index} has an unexpected source-facing arrow"),
+                vec![WitnessField::point("route_terminal", route_terminal)],
+            );
+        }
+    }
+    for (scene_index, edge) in scene
+        .edges
+        .iter()
+        .enumerate()
+        .skip(sequence_message_count(sequence))
+    {
+        check.fail(
+            vec![format!("edge:{}", edge.edge)],
+            format!("routed sequence edge at scene index {scene_index} has no semantic message"),
+            vec![
+                WitnessField::integer("scene_index", scene_index as i64),
+                WitnessField::integer("edge", edge.edge as i64),
+            ],
+        );
+    }
+    check
+}
+
+#[derive(Clone, Copy)]
+struct SequenceAttachmentExpectation {
+    participant: usize,
+    x: Option<i32>,
+    activation_node: Option<usize>,
+    face_direction: i32,
+}
+
+#[derive(Clone, Copy)]
+struct SequenceMessageAttachments {
+    source: SequenceAttachmentExpectation,
+    target: SequenceAttachmentExpectation,
+}
+
+fn sequence_message_count(sequence: &SequenceDiagram) -> usize {
+    sequence
+        .events
+        .iter()
+        .filter(|event| matches!(event, SequenceEvent::Message(_)))
+        .count()
+}
+
+/// Reconstruct the node identity assigned to every activation start from the
+/// semantic event stream. Notes consume node IDs first; activation boxes then
+/// receive IDs in deactivation order before the finished Scene sorts them.
+fn sequence_activation_nodes(sequence: &SequenceDiagram) -> Vec<Option<usize>> {
+    let note_count = sequence
+        .events
+        .iter()
+        .filter(|event| matches!(event, SequenceEvent::Note(_)))
+        .count();
+    let mut next_node = sequence.participants.len() + note_count;
+    let mut open = vec![Vec::<usize>::new(); sequence.participants.len()];
+    let mut nodes = vec![None; sequence.events.len()];
+    for (event_index, event) in sequence.events.iter().enumerate() {
+        let SequenceEvent::Activation(activation) = event else {
+            continue;
+        };
+        match activation.kind {
+            crate::sequence::ActivationKind::Activate => {
+                open[activation.participant].push(event_index);
+            }
+            crate::sequence::ActivationKind::Deactivate => {
+                if let Some(start) = open[activation.participant].pop() {
+                    nodes[start] = Some(next_node);
+                    next_node += 1;
+                }
+            }
+        }
+    }
+    nodes
+}
+
+fn sequence_message_attachments(
+    sequence: &SequenceDiagram,
+    scene: &Scene,
+) -> Vec<SequenceMessageAttachments> {
+    let centers: Vec<Option<i32>> = (0..sequence.participants.len())
+        .map(|participant| {
+            scene
+                .paths
+                .iter()
+                .find(|path| path.path == participant)
+                .and_then(|path| path.points.first())
+                .map(|point| point.x)
+        })
+        .collect();
+    let activation_nodes = sequence_activation_nodes(sequence);
+    let mut active = vec![Vec::<usize>::new(); sequence.participants.len()];
+    let mut attachments = Vec::with_capacity(sequence_message_count(sequence));
+    for (event_index, event) in sequence.events.iter().enumerate() {
+        match event {
+            SequenceEvent::Message(message) => {
+                let direction = if message.from == message.to {
+                    1
+                } else {
+                    centers[message.from]
+                        .zip(centers[message.to])
+                        .map_or(1, |(source, target)| (target - source).signum())
+                };
+                let source = sequence_attachment_expectation(
+                    message.from,
+                    centers[message.from],
+                    &active[message.from],
+                    direction,
+                );
+                let target = if message.from == message.to {
+                    source
+                } else {
+                    sequence_attachment_expectation(
+                        message.to,
+                        centers[message.to],
+                        &active[message.to],
+                        -direction,
+                    )
+                };
+                attachments.push(SequenceMessageAttachments { source, target });
+            }
+            SequenceEvent::Activation(activation) => match activation.kind {
+                crate::sequence::ActivationKind::Activate => {
+                    if let Some(node) = activation_nodes[event_index] {
+                        active[activation.participant].push(node);
+                    }
+                }
+                crate::sequence::ActivationKind::Deactivate => {
+                    active[activation.participant].pop();
+                }
+            },
+            SequenceEvent::Note(_) => {}
+        }
+    }
+    attachments
+}
+
+fn sequence_attachment_expectation(
+    participant: usize,
+    center: Option<i32>,
+    active: &[usize],
+    direction: i32,
+) -> SequenceAttachmentExpectation {
+    let x = center.map(|center| {
+        if active.is_empty() {
+            center
+        } else {
+            let left = center - 1 + (active.len() as i32 - 1) * 2;
+            if direction < 0 { left } else { left + 2 }
+        }
+    });
+    SequenceAttachmentExpectation {
+        participant,
+        x,
+        activation_node: active.last().copied(),
+        face_direction: direction,
+    }
+}
+
+fn sequence_attachment_matches(
+    scene: &Scene,
+    expected: SequenceAttachmentExpectation,
+    actual: Point,
+) -> bool {
+    let Some(expected_x) = expected.x else {
+        return false;
+    };
+    if actual.x != expected_x {
+        return false;
+    }
+    if let Some(node) = expected.activation_node {
+        return scene.foreground_boxes.iter().any(|box_| {
+            let face_x = if expected.face_direction < 0 {
+                box_.rect.x
+            } else {
+                box_.rect.right() - 1
+            };
+            box_.node == node
+                && box_.lines.is_empty()
+                && box_.rect.contains(actual)
+                && face_x == actual.x
+        });
+    }
+    let on_lifeline = scene
+        .paths
+        .iter()
+        .find(|path| path.path == expected.participant)
+        .is_some_and(|path| point_on_sequence_path(path.points.as_slice(), actual));
+    on_lifeline
+        && !scene
+            .foreground_boxes
+            .iter()
+            .any(|box_| box_.lines.is_empty() && box_.rect.contains(actual))
+}
+
+fn sequence_attachment_witness(
+    expected: SequenceAttachmentExpectation,
+    actual: Point,
+) -> Vec<WitnessField> {
+    let mut witness = vec![
+        WitnessField::point("actual_attachment", actual),
+        WitnessField::integer("participant", expected.participant as i64),
+    ];
+    if let Some(x) = expected.x {
+        witness.push(WitnessField::integer("expected_x", x as i64));
+    }
+    if let Some(node) = expected.activation_node {
+        witness.push(WitnessField::integer("activation_node", node as i64));
+    }
+    witness
+}
+
+fn point_on_sequence_path(points: &[Point], point: Point) -> bool {
+    points.windows(2).any(|segment| {
+        let (from, to) = (segment[0], segment[1]);
+        (from.x == to.x
+            && point.x == from.x
+            && point.y >= from.y.min(to.y)
+            && point.y <= from.y.max(to.y))
+            || (from.y == to.y
+                && point.y == from.y
+                && point.x >= from.x.min(to.x)
+                && point.x <= from.x.max(to.x))
+    })
+}
+
+fn first_route_adjacent(edge: &RoutedEdge) -> Option<Point> {
+    let from = *edge.points.first()?;
+    let to = *edge.points.get(1)?;
+    ((from.x != to.x || from.y != to.y) && (from.x == to.x || from.y == to.y)).then_some(
+        Point::new(
+            from.x + (to.x - from.x).signum(),
+            from.y + (to.y - from.y).signum(),
+        ),
+    )
+}
+
+fn terminal_continues_final_segment(edge: &RoutedEdge, at: Point, toward: Point) -> bool {
+    let Some(&terminal) = edge.points.last() else {
+        return false;
+    };
+    let Some(&previous) = edge.points.iter().rev().nth(1) else {
+        return false;
+    };
+    terminal == at
+        && (previous.x == at.x || previous.y == at.y)
+        && previous != at
+        && toward
+            == Point::new(
+                at.x + (at.x - previous.x).signum(),
+                at.y + (at.y - previous.y).signum(),
+            )
+}
+
+fn sequence_target_attachment(scene: &Scene, edge: &RoutedEdge) -> Option<Point> {
+    if let Some(arrow) = &edge.arrow {
+        return Some(arrow.toward);
+    }
+    if let Some(cross) = scene.endpoint_decorations.iter().find(|decoration| {
+        decoration.edge == edge.edge && decoration.kind == EndpointDecorationKind::Cross
+    }) {
+        return Some(cross.toward);
+    }
+    edge.points.last().copied()
+}
+
+fn sequence_edge_kind_name(kind: crate::scene::EdgeKind) -> &'static str {
+    match kind {
+        crate::scene::EdgeKind::Solid => "solid",
+        crate::scene::EdgeKind::Dotted => "dotted",
+        crate::scene::EdgeKind::Thick => "thick",
+    }
 }
 
 fn sequence_fragments(sequence: &SequenceDiagram, scene: &Scene) -> CheckReport {
@@ -965,8 +1464,8 @@ fn class_checks(class: &ClassDiagram, scene: &Scene, report: &mut QualityReport)
             .enumerate()
             .map(|(edge, relation)| EndpointExpectation {
                 edge,
-                source: relation.from,
-                target: relation.to,
+                source: EndpointGeometry::Box(relation.from),
+                target: EndpointGeometry::Box(relation.to),
                 elements: vec![
                     format!("relation:{edge}"),
                     format!("class:{}", class.classes[relation.from].id),
@@ -1141,8 +1640,8 @@ fn er_checks(er: &ErDiagram, scene: &Scene, report: &mut QualityReport) {
             .enumerate()
             .map(|(edge, relation)| EndpointExpectation {
                 edge,
-                source: relation.from,
-                target: relation.to,
+                source: EndpointGeometry::Box(relation.from),
+                target: EndpointGeometry::Box(relation.to),
                 elements: vec![
                     format!("relationship:{edge}"),
                     format!("entity:{}", er.entities[relation.from].id),
@@ -1807,11 +2306,17 @@ fn timeline_title(timeline: &Timeline, scene: &Scene) -> CheckReport {
     check
 }
 
+#[derive(Clone, Copy)]
+enum EndpointGeometry {
+    Box(usize),
+    Group(usize),
+}
+
 #[derive(Clone)]
 struct EndpointExpectation {
     edge: usize,
-    source: usize,
-    target: usize,
+    source: EndpointGeometry,
+    target: EndpointGeometry,
     elements: Vec<String>,
 }
 
@@ -1837,16 +2342,16 @@ fn edge_endpoint_check(
             );
             continue;
         };
-        let Some(source) = scene_box(scene, expectation.source) else {
+        let Some(source) = endpoint_rect(scene, expectation.source) else {
             continue;
         };
-        let Some(target) = scene_box(scene, expectation.target) else {
+        let Some(target) = endpoint_rect(scene, expectation.target) else {
             continue;
         };
-        let first = edge.points.first().copied();
-        let last = semantic_target(edge);
-        if first.is_none_or(|point| !source.rect.contains(point))
-            || last.is_none_or(|point| !target.rect.contains(point))
+        let first = semantic_source(scene, edge);
+        let last = semantic_target(scene, edge);
+        if first.is_none_or(|point| !endpoint_contains(source, expectation.source, point))
+            || last.is_none_or(|point| !endpoint_contains(target, expectation.target, point))
         {
             check.fail(
                 expectation.elements,
@@ -1855,8 +2360,8 @@ fn edge_endpoint_check(
                     expectation.edge
                 ),
                 vec![
-                    WitnessField::rect("source", source.rect),
-                    WitnessField::rect("target", target.rect),
+                    WitnessField::rect("source", source),
+                    WitnessField::rect("target", target),
                     WitnessField::point("actual_source", first.unwrap_or_default()),
                     WitnessField::point("actual_target", last.unwrap_or_default()),
                 ],
@@ -1873,15 +2378,184 @@ fn flow_endpoints(graph: &Graph) -> Vec<EndpointExpectation> {
         .enumerate()
         .map(|(edge, value)| EndpointExpectation {
             edge,
-            source: value.from,
-            target: value.to,
+            source: flow_endpoint_geometry(value.source),
+            target: flow_endpoint_geometry(value.target),
             elements: vec![
                 edge_ref(graph, edge),
-                node_ref(graph, value.from),
-                node_ref(graph, value.to),
+                flow_endpoint_ref(graph, value.source),
+                flow_endpoint_ref(graph, value.target),
             ],
         })
         .collect()
+}
+
+/// Check flowchart terminal notation directly from final Scene paint
+/// geometry.  The parser declares the desired terminal kind; this evaluator
+/// independently requires a matching glyph cell on the route, one cell from
+/// the semantic node or subgraph frame.
+fn flow_endpoint_decorations(graph: &Graph, scene: &Scene) -> CheckReport {
+    let applicable = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            usize::from(edge.source_decoration != FlowEndpointDecoration::None)
+                + usize::from(edge.target_decoration != FlowEndpointDecoration::None)
+        })
+        .sum();
+    let mut check = CheckReport::new(
+        "flow.endpoint_decorations",
+        CheckClass::Invariant,
+        applicable,
+    );
+    // Ordinary converging arrows may intentionally share a painted arrowhead.
+    // A source mark or circle/cross terminal, however, opts the relationship
+    // into `distinct_endpoints`; it may not overwrite any other terminal.
+    let mut occupied_terminals: Vec<(Point, usize, &'static str, bool)> = Vec::new();
+
+    for (edge_index, semantic) in graph.edges.iter().enumerate() {
+        let Some(routed) = scene.edges.iter().find(|edge| edge.edge == edge_index) else {
+            continue;
+        };
+        for (is_source, decoration, endpoint) in [
+            (true, semantic.source_decoration, semantic.source),
+            (false, semantic.target_decoration, semantic.target),
+        ] {
+            if decoration == FlowEndpointDecoration::None {
+                continue;
+            }
+            let terminal = if is_source {
+                routed.points.first().copied()
+            } else {
+                routed.points.last().copied()
+            };
+            let Some(terminal) = terminal else {
+                continue;
+            };
+            let expected_kind = flow_scene_decoration_kind(decoration);
+            let actual = if !is_source && decoration == FlowEndpointDecoration::Arrow {
+                routed
+                    .arrow
+                    .as_ref()
+                    .map(|arrow| (arrow.at, arrow.toward, None))
+            } else {
+                scene
+                    .endpoint_decorations
+                    .iter()
+                    .find(|value| {
+                        value.edge == edge_index
+                            && value.at == terminal
+                            && Some(value.kind) == expected_kind
+                    })
+                    .map(|value| (value.at, value.toward, Some(value.kind)))
+            };
+            let endpoint_name = if is_source { "source" } else { "target" };
+            let elements = vec![
+                edge_ref(graph, edge_index),
+                flow_endpoint_ref(graph, endpoint),
+            ];
+            let Some((at, toward, actual_kind)) = actual else {
+                check.fail(
+                    elements,
+                    format!(
+                        "flow edge {edge_index} is missing its {endpoint_name} {} terminal",
+                        flow_decoration_name(decoration)
+                    ),
+                    vec![
+                        WitnessField::text("endpoint", endpoint_name),
+                        WitnessField::text("expected_kind", flow_decoration_name(decoration)),
+                        WitnessField::point("route_terminal", terminal),
+                    ],
+                );
+                continue;
+            };
+            if let Some((_, other_edge, other_endpoint, other_distinct)) = occupied_terminals
+                .iter()
+                .find(|(occupied, _, _, _)| *occupied == at)
+                && (semantic.distinct_endpoints || *other_distinct)
+            {
+                check.fail(
+                    elements.clone(),
+                    format!(
+                        "flow edge {edge_index} {endpoint_name} terminal overwrites edge {other_edge} {other_endpoint} terminal"
+                    ),
+                    vec![
+                        WitnessField::text("endpoint", endpoint_name),
+                        WitnessField::point("at", at),
+                        WitnessField::integer("other_edge", *other_edge as i64),
+                        WitnessField::text("other_endpoint", *other_endpoint),
+                    ],
+                );
+            }
+            occupied_terminals.push((at, edge_index, endpoint_name, semantic.distinct_endpoints));
+            if !is_source
+                && decoration == FlowEndpointDecoration::Arrow
+                && routed
+                    .arrow
+                    .as_ref()
+                    .is_none_or(|arrow| arrow.head != ArrowHead::Filled)
+            {
+                check.fail(
+                    elements.clone(),
+                    format!("flow edge {edge_index} target arrow terminal is not filled"),
+                    vec![
+                        WitnessField::text("endpoint", endpoint_name),
+                        WitnessField::point("at", at),
+                    ],
+                );
+            }
+            let rect = endpoint_rect(scene, flow_endpoint_geometry(endpoint));
+            let distance = manhattan(at, toward);
+            if at != terminal
+                || rect.is_none_or(|rect| {
+                    !endpoint_contains(rect, flow_endpoint_geometry(endpoint), toward)
+                })
+                || distance != 1
+            {
+                let mut witness = vec![
+                    WitnessField::text("endpoint", endpoint_name),
+                    WitnessField::text("expected_kind", flow_decoration_name(decoration)),
+                    WitnessField::point("at", at),
+                    WitnessField::point("toward", toward),
+                    WitnessField::integer("distance", distance as i64),
+                ];
+                if let Some(kind) = actual_kind {
+                    witness.push(WitnessField::text(
+                        "actual_kind",
+                        decoration_kind_name(kind),
+                    ));
+                }
+                check.fail(
+                    elements,
+                    format!(
+                        "flow edge {edge_index} {} terminal is not adjacent to its semantic endpoint",
+                        endpoint_name
+                    ),
+                    witness,
+                );
+            }
+        }
+    }
+    check
+}
+
+fn flow_scene_decoration_kind(
+    decoration: FlowEndpointDecoration,
+) -> Option<EndpointDecorationKind> {
+    match decoration {
+        FlowEndpointDecoration::None => None,
+        FlowEndpointDecoration::Arrow => Some(EndpointDecorationKind::Arrow),
+        FlowEndpointDecoration::Circle => Some(EndpointDecorationKind::Circle),
+        FlowEndpointDecoration::Cross => Some(EndpointDecorationKind::Cross),
+    }
+}
+
+fn flow_decoration_name(decoration: FlowEndpointDecoration) -> &'static str {
+    match decoration {
+        FlowEndpointDecoration::None => "none",
+        FlowEndpointDecoration::Arrow => "arrow",
+        FlowEndpointDecoration::Circle => "circle",
+        FlowEndpointDecoration::Cross => "cross",
+    }
 }
 
 fn state_endpoints(state: &StateDiagram) -> Vec<EndpointExpectation> {
@@ -1909,8 +2583,8 @@ fn state_endpoints(state: &StateDiagram) -> Vec<EndpointExpectation> {
             };
             EndpointExpectation {
                 edge,
-                source,
-                target,
+                source: EndpointGeometry::Box(source),
+                target: EndpointGeometry::Box(target),
                 elements: vec![
                     format!("transition:{edge}"),
                     state_box_ref(state, source),
@@ -1933,10 +2607,66 @@ fn scene_box(scene: &Scene, node: usize) -> Option<&SceneBox> {
     scene.boxes.iter().find(|box_| box_.node == node)
 }
 
-fn semantic_target(edge: &RoutedEdge) -> Option<Point> {
+fn endpoint_rect(scene: &Scene, endpoint: EndpointGeometry) -> Option<Rect> {
+    match endpoint {
+        EndpointGeometry::Box(node) => scene_box(scene, node).map(|value| value.rect),
+        EndpointGeometry::Group(group) => scene
+            .groups
+            .iter()
+            .find(|value| value.subgraph == group)
+            .map(|value| value.rect),
+    }
+}
+
+fn endpoint_contains(rect: Rect, endpoint: EndpointGeometry, point: Point) -> bool {
+    match endpoint {
+        EndpointGeometry::Box(_) => rect.contains(point),
+        EndpointGeometry::Group(_) => {
+            rect.contains(point)
+                && (point.x == rect.x
+                    || point.x == rect.right() - 1
+                    || point.y == rect.y
+                    || point.y == rect.bottom() - 1)
+        }
+    }
+}
+
+fn flow_endpoint_geometry(endpoint: FlowEndpoint) -> EndpointGeometry {
+    match endpoint {
+        FlowEndpoint::Node(node) => EndpointGeometry::Box(node),
+        FlowEndpoint::Subgraph(group) => EndpointGeometry::Group(group),
+    }
+}
+
+fn flow_endpoint_ref(graph: &Graph, endpoint: FlowEndpoint) -> String {
+    match endpoint {
+        FlowEndpoint::Node(node) => node_ref(graph, node),
+        FlowEndpoint::Subgraph(group) => format!("group:{}", graph.subgraphs[group].id),
+    }
+}
+
+fn semantic_source(scene: &Scene, edge: &RoutedEdge) -> Option<Point> {
+    let first = edge.points.first().copied()?;
+    scene
+        .endpoint_decorations
+        .iter()
+        .find(|decoration| decoration.edge == edge.edge && decoration.at == first)
+        .map(|decoration| decoration.toward)
+        .or(Some(first))
+}
+
+fn semantic_target(scene: &Scene, edge: &RoutedEdge) -> Option<Point> {
     edge.arrow
         .as_ref()
         .map(|arrow| arrow.toward)
+        .or_else(|| {
+            let last = edge.points.last().copied()?;
+            scene
+                .endpoint_decorations
+                .iter()
+                .find(|decoration| decoration.edge == edge.edge && decoration.at == last)
+                .map(|decoration| decoration.toward)
+        })
         .or_else(|| edge.points.last().copied())
 }
 
@@ -1948,7 +2678,8 @@ fn edge_ref(graph: &Graph, edge: usize) -> String {
     let value = &graph.edges[edge];
     format!(
         "edge:{edge}({}->{})",
-        graph.nodes[value.from].id, graph.nodes[value.to].id
+        flow_endpoint_ref(graph, value.source),
+        flow_endpoint_ref(graph, value.target)
     )
 }
 
@@ -2062,6 +2793,9 @@ fn point_rect_distance(point: Point, rect: Rect) -> usize {
 
 fn decoration_kind_name(kind: EndpointDecorationKind) -> &'static str {
     match kind {
+        EndpointDecorationKind::Arrow => "arrow",
+        EndpointDecorationKind::Circle => "circle",
+        EndpointDecorationKind::Cross => "cross",
         EndpointDecorationKind::OpenArrow => "open_arrow",
         EndpointDecorationKind::OpenTriangle => "open_triangle",
         EndpointDecorationKind::OpenDiamond => "open_diamond",

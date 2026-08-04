@@ -3,6 +3,7 @@
 use std::fmt::Write as _;
 
 use crate::diagram::{self, Diagram};
+use crate::parse::Endpoint as FlowEndpoint;
 use crate::quality::{QualityReport, WitnessValue};
 use crate::scene::{
     ArrowHead, CardinalityMaximum, CardinalityMinimum, EdgeKind, EndpointDecorationKind, Point,
@@ -21,7 +22,10 @@ pub fn json(diagram: &Diagram, target_width: usize, style: Style) -> String {
     scene.normalize();
     let quality = crate::quality::evaluate_with_style(diagram, &scene, target_width, style);
     let bounds = scene.bounds();
-    let raster = crate::render::render_scene(&scene, style);
+    // Inspection remains valid when the final Scene is too large to rasterize:
+    // `quality::scene_integrity` records the exact ResourceLimit while this
+    // report deliberately emits an empty bounded canvas.
+    let raster = crate::render::try_render_scene(&scene, style).ok();
 
     let mut output = String::new();
     let _ = write!(
@@ -38,7 +42,7 @@ pub fn json(diagram: &Diagram, target_width: usize, style: Style) -> String {
     push_checks(&mut output, &quality);
     push_unclassified(&mut output, &quality);
     push_geometry(&mut output, diagram, &scene);
-    push_canvas(&mut output, bounds, &raster);
+    push_canvas(&mut output, bounds, raster.as_deref());
     output.push_str("}\n");
     output
 }
@@ -324,14 +328,20 @@ fn push_texts(output: &mut String, scene: &Scene) {
     output.push(']');
 }
 
-fn push_canvas(output: &mut String, bounds: Rect, raster: &str) {
+fn push_canvas(output: &mut String, bounds: Rect, raster: Option<&str>) {
+    let (width, height) = if raster.is_some() {
+        (bounds.w.max(0), bounds.h.max(0))
+    } else {
+        (0, 0)
+    };
     let _ = write!(
         output,
         ",\"canvas\":{{\"width\":{},\"height\":{},\"rows\":[",
-        bounds.w.max(0),
-        bounds.h.max(0)
+        width, height
     );
-    push_string_values(output, raster.lines());
+    if let Some(raster) = raster {
+        push_string_values(output, raster.lines());
+    }
     output.push_str("]}");
 }
 
@@ -497,8 +507,8 @@ fn edge_identity(diagram: &Diagram, edge: usize) -> EdgeIdentity {
             || anonymous_edge(edge),
             |value| EdgeIdentity {
                 element: format!("edge:{edge}"),
-                source: Some(format!("node:{}", graph.nodes[value.from].id)),
-                target: Some(format!("node:{}", graph.nodes[value.to].id)),
+                source: Some(flow_endpoint_element(graph, value.source)),
+                target: Some(flow_endpoint_element(graph, value.target)),
             },
         ),
         Diagram::Sequence(sequence) => sequence
@@ -551,6 +561,13 @@ fn edge_identity(diagram: &Diagram, edge: usize) -> EdgeIdentity {
             }
         }
         Diagram::Timeline(timeline) => timeline_edge_identity(timeline, edge),
+    }
+}
+
+fn flow_endpoint_element(graph: &crate::parse::Graph, endpoint: FlowEndpoint) -> String {
+    match endpoint {
+        FlowEndpoint::Node(node) => format!("node:{}", graph.nodes[node].id),
+        FlowEndpoint::Subgraph(group) => format!("group:{}", graph.subgraphs[group].id),
     }
 }
 
@@ -635,6 +652,9 @@ fn edge_kind_name(kind: EdgeKind) -> &'static str {
 
 fn decoration_name(kind: EndpointDecorationKind) -> &'static str {
     match kind {
+        EndpointDecorationKind::Arrow => "arrow",
+        EndpointDecorationKind::Circle => "circle",
+        EndpointDecorationKind::Cross => "cross",
         EndpointDecorationKind::OpenArrow => "open_arrow",
         EndpointDecorationKind::OpenTriangle => "open_triangle",
         EndpointDecorationKind::OpenDiamond => "open_diamond",

@@ -1,0 +1,9 @@
+direction: LR
+nodes:
+  A rect "cache[key]; AT&T %% literal"
+  B rounded "call(foo); A"
+  C rect "AT&T \""
+  D rect "#"
+edges:
+  A --> B
+  C --> D

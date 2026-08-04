@@ -4,8 +4,8 @@ use unicode_width::UnicodeWidthStr;
 
 use super::ir::*;
 use crate::scene::{
-    Arrow, ArrowHead, EdgeKind, Point, Rect, RoutedEdge, Scene, SceneBox, SceneGroup,
-    SceneGroupSeparator, ScenePath, SceneText, Shape,
+    Arrow, ArrowHead, EdgeKind, EndpointDecoration, EndpointDecorationKind, Point, Rect,
+    RoutedEdge, Scene, SceneBox, SceneGroup, SceneGroupSeparator, ScenePath, SceneText, Shape,
 };
 use crate::wrapping::{self, MIN_READABLE_COLUMNS};
 
@@ -55,7 +55,9 @@ pub fn scene(sequence: &SequenceDiagram, max_width: usize) -> Scene {
         .iter()
         .map(|participant| wrapping::max_line_width(&participant.label))
         .chain(sequence.events.iter().filter_map(|event| match event {
-            SequenceEvent::Message(message) => Some(wrapping::max_line_width(&message.label)),
+            SequenceEvent::Message(message) => {
+                Some(wrapping::max_line_width(&message.display_label()))
+            }
             SequenceEvent::Note(note) => Some(wrapping::max_line_width(&note.text)),
             SequenceEvent::Activation(_) => None,
         }))
@@ -117,7 +119,7 @@ fn lower(sequence: &SequenceDiagram, fit: Fit) -> Scene {
         .events
         .iter()
         .map(|event| match event {
-            SequenceEvent::Message(message) => Some(label_lines(&message.label, fit)),
+            SequenceEvent::Message(message) => Some(label_lines(&message.display_label(), fit)),
             SequenceEvent::Note(note) => Some(label_lines(&note.text, fit)),
             SequenceEvent::Activation(_) => None,
         })
@@ -432,6 +434,7 @@ fn lower(sequence: &SequenceDiagram, fit: Fit) -> Scene {
         .collect();
 
     let mut edges = Vec::new();
+    let mut endpoint_decorations = Vec::new();
     let mut active_depths = vec![0; sequence.participants.len()];
     for (event_index, (event, &y)) in sequence.events.iter().zip(&event_rows).enumerate() {
         if let SequenceEvent::Activation(activation) = event {
@@ -458,43 +461,54 @@ fn lower(sequence: &SequenceDiagram, fit: Fit) -> Scene {
         } else {
             active_attachment(raw_target_x, active_depths[message.to], -direction)
         };
-        let (points, rounded, arrow) = if self_message {
+        let edge_id = edges.len();
+        let (points, rounded, arrow, source_decoration, target_decoration) = if self_message {
             let label_width = line_width(event_lines[event_index].as_ref().unwrap());
             let loop_x = source_x + label_width + 5;
-            let arrow_at = Point::new(source_x + 1, y + 2);
+            let target_at = Point::new(source_x + 1, y + 2);
+            let target_attachment = Point::new(source_x, y + 2);
+            let terminal = if message.head == MessageHead::None {
+                target_attachment
+            } else {
+                target_at
+            };
             (
                 vec![
                     Point::new(source_x, y),
                     Point::new(loop_x, y),
                     Point::new(loop_x, y + 2),
-                    arrow_at,
+                    terminal,
                 ],
                 vec![Point::new(loop_x, y), Point::new(loop_x, y + 2)],
-                Arrow {
-                    at: arrow_at,
-                    toward: Point::new(source_x, y + 2),
-                    head: if message.kind == MessageKind::Dashed {
-                        ArrowHead::Open
-                    } else {
-                        ArrowHead::Filled
-                    },
-                },
+                message_head_arrow(message.head, target_at, target_attachment),
+                message.bidirectional.then_some(EndpointDecoration {
+                    edge: edge_id,
+                    at: Point::new(source_x + 1, y),
+                    toward: Point::new(source_x, y),
+                    kind: EndpointDecorationKind::Arrow,
+                }),
+                message_head_decoration(message.head, edge_id, target_at, target_attachment),
             )
         } else {
             let step = (target_x - source_x).signum();
-            let arrow_at = Point::new(target_x - step, y);
+            let target_at = Point::new(target_x - step, y);
+            let target_attachment = Point::new(target_x, y);
+            let terminal = if message.head == MessageHead::None {
+                target_attachment
+            } else {
+                target_at
+            };
             (
-                vec![Point::new(source_x, y), arrow_at],
+                vec![Point::new(source_x, y), terminal],
                 Vec::new(),
-                Arrow {
-                    at: arrow_at,
-                    toward: Point::new(target_x, y),
-                    head: if message.kind == MessageKind::Dashed {
-                        ArrowHead::Open
-                    } else {
-                        ArrowHead::Filled
-                    },
-                },
+                message_head_arrow(message.head, target_at, target_attachment),
+                message.bidirectional.then_some(EndpointDecoration {
+                    edge: edge_id,
+                    at: Point::new(source_x + step, y),
+                    toward: Point::new(source_x, y),
+                    kind: EndpointDecorationKind::Arrow,
+                }),
+                message_head_decoration(message.head, edge_id, target_at, target_attachment),
             )
         };
         let lines = event_lines[event_index].as_ref().unwrap();
@@ -515,8 +529,14 @@ fn lower(sequence: &SequenceDiagram, fit: Fit) -> Scene {
                 Point::new(label_x, y - lines.len() as i32),
                 lines.join("\n"),
             )),
-            arrow: Some(arrow),
+            arrow,
         };
+        if let Some(decoration) = source_decoration {
+            endpoint_decorations.push(decoration);
+        }
+        if let Some(decoration) = target_decoration {
+            endpoint_decorations.push(decoration);
+        }
         edges.push(edge);
     }
 
@@ -601,9 +621,32 @@ fn lower(sequence: &SequenceDiagram, fit: Fit) -> Scene {
         groups,
         paths,
         edges,
-        endpoint_decorations: Vec::new(),
+        endpoint_decorations,
         texts: Vec::new(),
     }
+}
+
+fn message_head_arrow(head: MessageHead, at: Point, toward: Point) -> Option<Arrow> {
+    let head = match head {
+        MessageHead::Filled => ArrowHead::Filled,
+        MessageHead::Open => ArrowHead::Open,
+        MessageHead::None | MessageHead::Cross => return None,
+    };
+    Some(Arrow { at, toward, head })
+}
+
+fn message_head_decoration(
+    head: MessageHead,
+    edge: usize,
+    at: Point,
+    toward: Point,
+) -> Option<EndpointDecoration> {
+    (head == MessageHead::Cross).then_some(EndpointDecoration {
+        edge,
+        at,
+        toward,
+        kind: EndpointDecorationKind::Cross,
+    })
 }
 
 fn label_lines(label: &str, fit: Fit) -> Vec<String> {

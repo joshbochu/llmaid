@@ -1,0 +1,25 @@
+type: sequence
+participants:
+  participant Client "Client"
+  participant API "API"
+  participant Worker "Worker"
+events:
+  message Client ->> API number 1 "call"
+  activate API
+  message API ->> Worker number 2 "work"
+  activate Worker
+  message Worker -->> API number 3 "done"
+  deactivate Worker
+  message API -->> Client number 4 "reply"
+  deactivate API
+  message Client ->> Client number 5 "self call"
+  message Client -> API "fire"
+  message API --> Client "trace"
+  message Client -x API "stop"
+  message API --x Client "dashed stop"
+  message Client -) API "open"
+  message API --) Client "dashed open"
+  message Client <<->> API "duplex"
+  message API <<-->> Client "dashed duplex"
+  message Client -> API number 7 "resume"
+  message API --> Client number 9 "finish"

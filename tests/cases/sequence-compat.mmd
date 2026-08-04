@@ -1,0 +1,22 @@
+sequenceDiagram
+  participant Client
+  participant API
+  participant Worker
+  autonumber
+  Client->>+API: call
+  API->>+Worker: work
+  Worker-->>-API: done
+  API-->>-Client: reply
+  Client->>Client: self call
+  autonumber off
+  Client->API: fire
+  API-->Client: trace
+  Client-xAPI: stop
+  API--xClient: dashed stop
+  Client-)API: open
+  API--)Client: dashed open
+  Client<<->>API: duplex
+  API<<-->>Client: dashed duplex
+  autonumber 7 2
+  Client->API: resume
+  API-->Client: finish

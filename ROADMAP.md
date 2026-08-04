@@ -83,8 +83,9 @@ Closest to **graph-easy** parity inside Mermaid.
 |----|------|--------|
 | 1.1 | Real **subgraphs** (title + border + containment) | **done** — parse + bbox + frame |
 | 1.2 | Nested subgraphs (if tractable) | parent stack works; polish later if needed |
-| 1.3 | Subgraph-safe edge routing | Edges may cross frames (acceptable) |
-| 1.4 | Optional terminal-safe styling subset | Still deferred |
+| 1.3 | Subgraph-safe edge routing | **done** — edges may cross frames and declared subgraph IDs attach to their semantic frames without phantom nodes |
+| 1.4 | Core terminal endpoint notation | **done** — flowchart circles, crosses, and bidirectional arrows lower as semantic endpoint decorations with inspected geometry |
+| 1.5 | Optional terminal-safe styling subset | Still deferred |
 
 **Exit met:** titled group frames around members; B15 + `subgraph-basic` / `subgraph-lr` goldens.
 
@@ -96,15 +97,15 @@ Highest-value second type (agents + **diagon seq**).
 
 | ID | Item | Notes |
 |----|------|--------|
-| 2.1 | `sequenceDiagram` parse → IR | **done** — participants/actors, implicit participants, `->>` / `-->>` |
-| 2.2 | Layout: actors, lifelines, messages, `-->>` returns | **done** — first end-to-end shared-Scene slice |
+| 2.1 | `sequenceDiagram` parse → IR | **done** — participants/actors, implicit participants, ten common message operators, strict `autonumber`, shorthand activation |
+| 2.2 | Layout: actors, lifelines, messages, terminal semantics | **done** — shared solid/dotted paths and structured terminal heads |
 | 2.3 | Notes / activate (core subset) | **done** — left/right/over notes + balanced explicit activation bars |
 | 2.4 | Goldens + invariants + agent errors | **done** — core, notes, activation, ordering, and malformed-input coverage |
 | 2.5 | Control blocks: `loop` / `alt` / `opt` | **done** — balanced nesting, `else`, framed Unicode/ASCII output |
 
-**Exit met:** API/protocol diagrams are viewable and self-debuggable; B17/B18/B20
-plus `sequence-core`, `sequence-notes`, `sequence-activation`, and
-`sequence-blocks` goldens.
+**Exit met:** API/protocol diagrams are viewable and self-debuggable;
+B17/B18/B20/B36/B43 plus `sequence-core`, `sequence-notes`,
+`sequence-activation`, `sequence-blocks`, and `sequence-compat` goldens.
 
 ---
 
@@ -160,11 +161,12 @@ and maintenance cost.
 |----|------|--------|
 | 6.1 | Richer per-type error catalog | **in progress** — unified source + line + excerpt + expectation diagnostics; known unsupported headers fail directly |
 | 6.2 | Machine-readable geometry audit | **done** — stable v1 JSON; named violations, exact witnesses, every shipped type |
-| 6.3 | Generated + metamorphic topology tests | **done** — 71 DAGs + 40 design-doc direction renders + 197 ordered tree shapes + 170 timeline structures |
+| 6.3 | Generated + metamorphic topology tests | **done** — 71 DAGs + 40 design-doc direction renders + 197 ordered tree shapes + 170 timeline structures; bounded barycenter sweeps retain an exact best observed rank order without equal-score churn |
 | 6.4 | Optional machine-readable parser diagnostics | e.g. `--error-format=json` |
 | 6.5 | Invariant failures as actionable stderr | **done** — checked runtime render, exit 70, inspection hint |
 | 6.6 | Optional JSON IR **input** (same engines) | Tools/compilers; Mermaid remains primary |
 | 6.7 | Semantic final-Scene inspection | **done** — stable `llmaid.inspect.v1`; typed applicability/status/witnesses, semantic geometry, raster rows, reviewed-gallery preference gate, generated invariant gates, and mutation tests |
+| 6.8 | Deterministic resource bounds | **done** — capped source streaming, semantic/depth limits, checked/fallible canvas allocation, and bounded inspection refusal |
 
 **Exit:** an agent can render any input, inspect exact structural violations,
 and fix failures in one retry without a human reading either the parser or the

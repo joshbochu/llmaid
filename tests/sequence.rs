@@ -1,6 +1,6 @@
 use llmaid::diagram::{self, Diagram};
 use llmaid::render;
-use llmaid::sequence::{ActivationKind, MessageKind, NotePosition, SequenceEvent};
+use llmaid::sequence::{ActivationKind, MessageHead, MessageKind, NotePosition, SequenceEvent};
 use llmaid::style::Style;
 
 const CORE: &str = "\
@@ -45,8 +45,10 @@ fn parses_declared_and_implicit_participants_in_stable_order() {
         .collect();
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].kind, MessageKind::Solid);
+    assert_eq!(messages[0].head, MessageHead::Filled);
     assert_eq!(messages[0].label, "call");
     assert_eq!(messages[1].kind, MessageKind::Dashed);
+    assert_eq!(messages[1].head, MessageHead::Filled);
     assert_eq!(messages[1].label, "result");
 }
 
@@ -56,13 +58,48 @@ fn malformed_sequence_statement_names_line_and_expectation() {
     assert_eq!(error.line, 2);
     assert!(error.msg.contains("expected `:`"), "{}", error.msg);
 
-    let error = diagram::parse("sequenceDiagram\nA-xB: nope\n").unwrap_err();
+    let error = diagram::parse("sequenceDiagram\nA-=B: nope\n").unwrap_err();
     assert_eq!(error.line, 2);
-    assert!(
-        error.msg.contains("expected a message arrow"),
-        "{}",
-        error.msg
-    );
+    assert!(error.msg.contains("message arrow"), "{}", error.msg);
+}
+
+#[test]
+fn message_operator_selection_preserves_hyphenated_participant_ids() {
+    let source = "\
+sequenceDiagram
+  foo-x->bar: solid
+  foo->bar-x: target hyphen
+  foo-x-->bar-x: dashed
+  foo-x-xbar-x: cross
+  foo-x->>+worker-x: call
+  worker-x-->>-foo-x: return
+";
+    let Diagram::Sequence(sequence) = diagram::parse(source).unwrap() else {
+        panic!("expected sequence diagram");
+    };
+    let ids: Vec<_> = sequence
+        .participants
+        .iter()
+        .map(|participant| participant.id.as_str())
+        .collect();
+    assert_eq!(ids, ["foo-x", "bar", "foo", "bar-x", "worker-x"]);
+    let messages: Vec<_> = sequence
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            SequenceEvent::Message(message) => Some(message),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(messages.len(), 6);
+    assert_eq!(messages[0].head, MessageHead::None);
+    assert_eq!(messages[1].head, MessageHead::None);
+    assert_eq!(messages[2].kind, MessageKind::Dashed);
+    assert_eq!(messages[2].head, MessageHead::None);
+    assert_eq!(messages[3].head, MessageHead::Cross);
+    assert_eq!(messages[4].head, MessageHead::Filled);
+    assert_eq!(messages[5].kind, MessageKind::Dashed);
+    assert_eq!(messages[5].head, MessageHead::Filled);
 }
 
 #[test]
@@ -81,10 +118,254 @@ fn core_sequence_scene_has_headers_lifelines_messages_and_clean_invariants() {
     assert!(output.contains('▶'), "message arrows missing:\n{output}");
     assert!(output.contains('┊'), "dotted lifelines missing:\n{output}");
     assert!(output.contains("▶┊"), "call endpoint unclear:\n{output}");
-    assert!(output.contains("┊←"), "return endpoint unclear:\n{output}");
+    assert!(output.contains("┊◀"), "return endpoint unclear:\n{output}");
     assert!(
-        !output.contains('╌'),
-        "return line is over-styled:\n{output}"
+        output.contains('┄'),
+        "return line must be dashed:\n{output}"
+    );
+}
+
+#[test]
+fn parses_common_mermaid_message_operators_autonumber_and_activation_shorthand() {
+    let source = "\
+sequenceDiagram
+  participant Client
+  participant API
+  participant Worker
+  autonumber
+  Client->>+API: call
+  API->>+Worker: work
+  Worker-->>-API: done
+  API-->>-Client: reply
+  Client->>Client: self call
+  autonumber off
+  Client->API: fire
+  API-->Client: trace
+  Client-xAPI: stop
+  API--xClient: dashed stop
+  Client-)API: open
+  API--)Client: dashed open
+  Client<<->>API: duplex
+  API<<-->>Client: dashed duplex
+  autonumber 7 2
+  Client->API: resume
+  API-->Client: finish
+";
+    let Diagram::Sequence(sequence) = diagram::parse(source).unwrap() else {
+        panic!("expected sequence diagram");
+    };
+    let messages: Vec<_> = sequence
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            SequenceEvent::Message(message) => Some(message),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(messages.len(), 15);
+    let signatures: Vec<_> = messages
+        .iter()
+        .map(|message| (message.kind, message.head, message.bidirectional))
+        .collect();
+    assert_eq!(
+        signatures,
+        [
+            (MessageKind::Solid, MessageHead::Filled, false),
+            (MessageKind::Solid, MessageHead::Filled, false),
+            (MessageKind::Dashed, MessageHead::Filled, false),
+            (MessageKind::Dashed, MessageHead::Filled, false),
+            (MessageKind::Solid, MessageHead::Filled, false),
+            (MessageKind::Solid, MessageHead::None, false),
+            (MessageKind::Dashed, MessageHead::None, false),
+            (MessageKind::Solid, MessageHead::Cross, false),
+            (MessageKind::Dashed, MessageHead::Cross, false),
+            (MessageKind::Solid, MessageHead::Open, false),
+            (MessageKind::Dashed, MessageHead::Open, false),
+            (MessageKind::Solid, MessageHead::Filled, true),
+            (MessageKind::Dashed, MessageHead::Filled, true),
+            (MessageKind::Solid, MessageHead::None, false),
+            (MessageKind::Dashed, MessageHead::None, false),
+        ]
+    );
+    assert_eq!(
+        messages
+            .iter()
+            .map(|message| message.number)
+            .collect::<Vec<_>>(),
+        [
+            Some(1),
+            Some(2),
+            Some(3),
+            Some(4),
+            Some(5),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(7),
+            Some(9)
+        ]
+    );
+    assert_eq!(
+        sequence
+            .events
+            .iter()
+            .filter(|event| matches!(event, SequenceEvent::Activation(_)))
+            .count(),
+        4,
+        "two shorthand opens and two shorthand closes"
+    );
+
+    let scene = llmaid::sequence::scene(&sequence, 100);
+    assert!(
+        scene
+            .edges
+            .iter()
+            .any(|edge| edge.kind == llmaid::scene::EdgeKind::Dotted)
+    );
+    assert!(
+        scene
+            .endpoint_decorations
+            .iter()
+            .any(|decoration| decoration.kind == llmaid::scene::EndpointDecorationKind::Cross)
+    );
+    assert_eq!(
+        scene
+            .endpoint_decorations
+            .iter()
+            .filter(|decoration| decoration.kind == llmaid::scene::EndpointDecorationKind::Arrow)
+            .count(),
+        2,
+        "both bidirectional messages carry an explicit source arrow"
+    );
+    let (output, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+    assert!(failures.is_empty(), "{}\n{output}", failures.join("\n"));
+    for label in ["1. call", "5. self call", "7. resume", "9. finish"] {
+        assert!(output.contains(label), "missing {label:?}:\n{output}");
+    }
+}
+
+#[test]
+fn malformed_sequence_compatibility_directives_are_actionable_and_atomic() {
+    for (source, line, expectation) in [
+        (
+            "sequenceDiagram\nA->B\n",
+            2,
+            "expected `:` followed by a message label",
+        ),
+        (
+            "sequenceDiagram\nautonumber 1 0\n",
+            2,
+            "expected a positive STEP",
+        ),
+        (
+            "sequenceDiagram\nparticipant A\nA->>-B: invalid close\n",
+            3,
+            "expected a matching `activate A`",
+        ),
+    ] {
+        let error = diagram::parse(source).unwrap_err();
+        assert_eq!(error.line, line, "{source:?}: {error}");
+        assert!(error.msg.contains(expectation), "{source:?}: {error}");
+    }
+}
+
+#[test]
+fn shorthand_and_explicit_nested_activations_share_one_balanced_stack() {
+    let source = "\
+sequenceDiagram
+  participant A
+  participant B
+  activate A
+  A->>+B: first
+  activate B
+  B-->>-A: nested return
+  deactivate B
+  deactivate A
+";
+    let Diagram::Sequence(sequence) = diagram::parse(source).unwrap() else {
+        panic!("expected sequence diagram");
+    };
+    let activation_kinds: Vec<_> = sequence
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            SequenceEvent::Activation(activation) => Some((
+                sequence.participants[activation.participant].id.as_str(),
+                activation.kind,
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        activation_kinds,
+        [
+            ("A", ActivationKind::Activate),
+            ("B", ActivationKind::Activate),
+            ("B", ActivationKind::Activate),
+            ("B", ActivationKind::Deactivate),
+            ("B", ActivationKind::Deactivate),
+            ("A", ActivationKind::Deactivate),
+        ]
+    );
+}
+
+#[test]
+fn every_supported_terminal_form_has_a_clean_self_message_route() {
+    let source = "\
+sequenceDiagram
+  participant A
+  A->A: plain
+  A-->A: dashed plain
+  A->>A: filled
+  A-->>A: dashed filled
+  A-xA: cross
+  A--xA: dashed cross
+  A-)A: open
+  A--)A: dashed open
+  A<<->>A: both
+  A<<-->>A: dashed both
+";
+    let parsed = diagram::parse(source).unwrap();
+    let scene = diagram::scene(&parsed, 100);
+    assert_eq!(scene.edges.len(), 10);
+    let (output, failures) = render::render_scene_with_checks(&scene, Style { ascii: false });
+    assert!(failures.is_empty(), "{}\n{output}", failures.join("\n"));
+    assert!(output.contains('×') && output.contains('◀'));
+}
+
+#[test]
+fn autonumber_reenables_deterministically_and_saturates() {
+    let source = "\
+sequenceDiagram
+  autonumber
+  A->B: first
+  autonumber off
+  A->B: unnumbered
+  autonumber
+  A->B: resumed
+  autonumber 18446744073709551615 1
+  A->B: maximum
+  A->B: saturated
+";
+    let Diagram::Sequence(sequence) = diagram::parse(source).unwrap() else {
+        panic!("expected sequence diagram");
+    };
+    let numbers: Vec<_> = sequence
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            SequenceEvent::Message(message) => Some(message.number),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        numbers,
+        [Some(1), None, Some(2), Some(u64::MAX), Some(u64::MAX)]
     );
 }
 

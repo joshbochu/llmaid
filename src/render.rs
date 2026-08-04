@@ -1,6 +1,7 @@
 //! Rasterize screen-space `Scene` primitives onto a character canvas.
 
 use crate::layout::Placed;
+use crate::limits::{self, ResourceLimit};
 use crate::parse::Graph;
 use crate::route;
 use crate::scene::{
@@ -43,13 +44,22 @@ struct Canvas {
 }
 
 impl Canvas {
-    fn new(w: usize, h: usize) -> Canvas {
-        Canvas {
+    fn new(w: usize, h: usize) -> Result<Canvas, ResourceLimit> {
+        let cells_len = limits::validate_canvas(w, h)?;
+        let mut cells = Vec::new();
+        // Reserve once, then initialize that same allocation. This makes an
+        // allocation refusal recoverable instead of allowing `vec![..]` to
+        // abort after a wrapped or unbounded size calculation.
+        cells
+            .try_reserve_exact(cells_len)
+            .map_err(|_| ResourceLimit::canvas_allocation(cells_len))?;
+        cells.resize(cells_len, Cell::Empty);
+        Ok(Canvas {
             w,
             h,
-            cells: vec![Cell::Empty; w.saturating_mul(h)],
+            cells,
             text_runs: Vec::new(),
-        }
+        })
     }
 
     fn idx(&self, x: usize, y: usize) -> usize {
@@ -238,20 +248,261 @@ pub fn render(g: &Graph, placed: &Placed, style: Style) -> String {
     render_scene(&route::route(g, placed), style)
 }
 
-/// Paint a complete screen-space scene. Diagram engines own all geometry;
-/// this function only rasterizes primitives onto the character canvas.
+/// Bounds evaluated in a widened coordinate space before any render-path
+/// normalization. `Scene::normalize` intentionally remains the compact,
+/// trusted-layout API; untrusted/programmatic scenes use this checked path so
+/// `i32::MIN` negation and `i32` rectangle addition cannot wrap first.
+#[derive(Clone, Copy, Debug, Default)]
+struct WideBounds {
+    min_x: i64,
+    min_y: i64,
+    max_x: i64,
+    max_y: i64,
+    present: bool,
+}
+
+impl WideBounds {
+    fn include_range(&mut self, min_x: i64, min_y: i64, max_x: i64, max_y: i64) {
+        if !self.present {
+            *self = Self {
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+                present: true,
+            };
+            return;
+        }
+        self.min_x = self.min_x.min(min_x);
+        self.min_y = self.min_y.min(min_y);
+        self.max_x = self.max_x.max(max_x);
+        self.max_y = self.max_y.max(max_y);
+    }
+
+    fn include_point(&mut self, point: Point) {
+        let x = i64::from(point.x);
+        let y = i64::from(point.y);
+        self.include_range(x, y, x + 1, y + 1);
+    }
+
+    fn include_y(&mut self, y: i32) {
+        let y = i64::from(y);
+        if !self.present {
+            self.include_range(0, y, 1, y + 1);
+            return;
+        }
+        self.min_y = self.min_y.min(y);
+        self.max_y = self.max_y.max(y + 1);
+    }
+
+    fn include_rect(&mut self, rect: Rect) {
+        // Every stored origin is translated later, even for an invalid/empty
+        // rectangle. Include it first so that translation itself remains safe.
+        self.include_point(Point::new(rect.x, rect.y));
+        if rect.w > 0 && rect.h > 0 {
+            self.include_range(
+                i64::from(rect.x),
+                i64::from(rect.y),
+                i64::from(rect.x) + i64::from(rect.w),
+                i64::from(rect.y) + i64::from(rect.h),
+            );
+        }
+    }
+
+    fn include_text(&mut self, text: &SceneText) -> Result<(), ResourceLimit> {
+        self.include_point(text.at);
+        let width =
+            i64::try_from(text.width()).map_err(|_| ResourceLimit::canvas_width(usize::MAX))?;
+        let height =
+            i64::try_from(text.height()).map_err(|_| ResourceLimit::canvas_height(usize::MAX))?;
+        if width > 0 && height > 0 {
+            self.include_range(
+                i64::from(text.at.x),
+                i64::from(text.at.y),
+                i64::from(text.at.x) + width,
+                i64::from(text.at.y) + height,
+            );
+        }
+        Ok(())
+    }
+
+    fn include_decoration(&mut self, decoration: &EndpointDecoration) {
+        // `toward` is not always painted, but it is translated and determines
+        // orientation; include it so no later i32 translation can overflow.
+        self.include_point(decoration.at);
+        self.include_point(decoration.toward);
+        if matches!(decoration.kind, EndpointDecorationKind::Cardinality { .. }) {
+            let at_x = i64::from(decoration.at.x);
+            let at_y = i64::from(decoration.at.y);
+            let toward_x = i64::from(decoration.toward.x);
+            let toward_y = i64::from(decoration.toward.y);
+            let step_x = (at_x - toward_x).signum();
+            let step_y = (at_y - toward_y).signum();
+            let away_x = at_x + step_x;
+            let away_y = at_y + step_y;
+            self.include_range(
+                away_x + step_x,
+                away_y + step_y,
+                away_x + step_x + 1,
+                away_y + step_y + 1,
+            );
+        }
+    }
+}
+
+fn checked_normalize_for_render(scene: &Scene) -> Result<(Scene, usize, usize), ResourceLimit> {
+    let mut bounds = WideBounds::default();
+    for box_ in &scene.boxes {
+        bounds.include_rect(box_.rect);
+    }
+    for box_ in &scene.foreground_boxes {
+        bounds.include_rect(box_.rect);
+    }
+    for group in &scene.groups {
+        bounds.include_rect(group.rect);
+        bounds.include_text(&group.title)?;
+        for separator in &group.separators {
+            // Separator y is independently translated, even if a malformed
+            // label was placed elsewhere.
+            bounds.include_y(separator.y);
+            bounds.include_text(&separator.label)?;
+        }
+    }
+    for path in &scene.paths {
+        for &point in path.points.iter().chain(&path.rounded) {
+            bounds.include_point(point);
+        }
+    }
+    for edge in &scene.edges {
+        for &point in edge.points.iter().chain(&edge.rounded) {
+            bounds.include_point(point);
+        }
+        if let Some(label) = &edge.label {
+            bounds.include_text(label)?;
+        }
+        if let Some(arrow) = &edge.arrow {
+            bounds.include_point(arrow.at);
+            bounds.include_point(arrow.toward);
+        }
+    }
+    for decoration in &scene.endpoint_decorations {
+        bounds.include_decoration(decoration);
+    }
+    for text in &scene.texts {
+        bounds.include_text(text)?;
+    }
+
+    if !bounds.present {
+        return Ok((scene.clone(), 0, 0));
+    }
+
+    let width = usize::try_from(bounds.max_x - bounds.min_x)
+        .map_err(|_| ResourceLimit::canvas_width(usize::MAX))?;
+    let height = usize::try_from(bounds.max_y - bounds.min_y)
+        .map_err(|_| ResourceLimit::canvas_height(usize::MAX))?;
+    limits::validate_canvas(width.max(1), height.max(1))?;
+
+    let dx = -bounds.min_x;
+    let dy = -bounds.min_y;
+    let mut normalized = scene.clone();
+    translate_scene_for_render(&mut normalized, dx, dy)?;
+    Ok((normalized, width, height))
+}
+
+fn translate_axis(value: i32, delta: i64, horizontal: bool) -> Result<i32, ResourceLimit> {
+    let translated = i64::from(value)
+        .checked_add(delta)
+        .ok_or_else(|| ResourceLimit::canvas_cells(usize::MAX))?;
+    i32::try_from(translated).map_err(|_| {
+        if horizontal {
+            ResourceLimit::canvas_width(usize::MAX)
+        } else {
+            ResourceLimit::canvas_height(usize::MAX)
+        }
+    })
+}
+
+fn translate_point_for_render(point: &mut Point, dx: i64, dy: i64) -> Result<(), ResourceLimit> {
+    point.x = translate_axis(point.x, dx, true)?;
+    point.y = translate_axis(point.y, dy, false)?;
+    Ok(())
+}
+
+fn translate_text_for_render(text: &mut SceneText, dx: i64, dy: i64) -> Result<(), ResourceLimit> {
+    translate_point_for_render(&mut text.at, dx, dy)
+}
+
+fn translate_rect_for_render(rect: &mut Rect, dx: i64, dy: i64) -> Result<(), ResourceLimit> {
+    rect.x = translate_axis(rect.x, dx, true)?;
+    rect.y = translate_axis(rect.y, dy, false)?;
+    Ok(())
+}
+
+fn translate_scene_for_render(scene: &mut Scene, dx: i64, dy: i64) -> Result<(), ResourceLimit> {
+    for box_ in &mut scene.boxes {
+        translate_rect_for_render(&mut box_.rect, dx, dy)?;
+    }
+    for box_ in &mut scene.foreground_boxes {
+        translate_rect_for_render(&mut box_.rect, dx, dy)?;
+    }
+    for group in &mut scene.groups {
+        translate_rect_for_render(&mut group.rect, dx, dy)?;
+        translate_text_for_render(&mut group.title, dx, dy)?;
+        for separator in &mut group.separators {
+            separator.y = translate_axis(separator.y, dy, false)?;
+            translate_text_for_render(&mut separator.label, dx, dy)?;
+        }
+    }
+    for path in &mut scene.paths {
+        for point in path.points.iter_mut().chain(&mut path.rounded) {
+            translate_point_for_render(point, dx, dy)?;
+        }
+    }
+    for edge in &mut scene.edges {
+        for point in edge.points.iter_mut().chain(&mut edge.rounded) {
+            translate_point_for_render(point, dx, dy)?;
+        }
+        if let Some(label) = &mut edge.label {
+            translate_text_for_render(label, dx, dy)?;
+        }
+        if let Some(arrow) = &mut edge.arrow {
+            translate_point_for_render(&mut arrow.at, dx, dy)?;
+            translate_point_for_render(&mut arrow.toward, dx, dy)?;
+        }
+    }
+    for decoration in &mut scene.endpoint_decorations {
+        translate_point_for_render(&mut decoration.at, dx, dy)?;
+        translate_point_for_render(&mut decoration.toward, dx, dy)?;
+    }
+    for text in &mut scene.texts {
+        translate_text_for_render(text, dx, dy)?;
+    }
+    Ok(())
+}
+
+/// Authoritative fallible scene painter. External output paths must use this
+/// or [`render_scene_checked`] so a resource refusal never becomes a partial
+/// diagram or an attempted oversized allocation.
+pub fn try_render_scene(scene: &Scene, style: Style) -> Result<String, ResourceLimit> {
+    let (scene, w, h) = checked_normalize_for_render(scene)?;
+    let canvas = paint_normalized_scene(&scene, style, w.max(1), h.max(1))?;
+    Ok(canvas.finish(style))
+}
+
+/// Compatibility-only convenience wrapper for existing in-process callers.
+/// It returns an empty string on a resource refusal; it must not be used for
+/// CLI or machine-report output, which use the fallible APIs above/below.
 pub fn render_scene(scene: &Scene, style: Style) -> String {
-    paint_scene(scene, style).finish(style)
+    try_render_scene(scene, style).unwrap_or_default()
 }
 
-fn paint_scene(scene: &Scene, style: Style) -> Canvas {
-    let mut scene = scene.clone();
-    let (w, h) = scene.normalize();
-    paint_normalized_scene(&scene, style, w, h)
-}
-
-fn paint_normalized_scene(scene: &Scene, style: Style, w: usize, h: usize) -> Canvas {
-    let mut canvas = Canvas::new(w.max(1), h.max(1));
+fn paint_normalized_scene(
+    scene: &Scene,
+    style: Style,
+    w: usize,
+    h: usize,
+) -> Result<Canvas, ResourceLimit> {
+    let mut canvas = Canvas::new(w, h)?;
 
     for b in &scene.boxes {
         draw_scene_box(&mut canvas, b, style);
@@ -276,7 +527,7 @@ fn paint_normalized_scene(scene: &Scene, style: Style, w: usize, h: usize) -> Ca
         draw_scene_group(&mut canvas, group);
     }
 
-    canvas
+    Ok(canvas)
 }
 
 fn draw_scene_path(canvas: &mut Canvas, path: &ScenePath) {
@@ -289,24 +540,45 @@ fn draw_scene_path(canvas: &mut Canvas, path: &ScenePath) {
     }
 }
 
-/// Paint and verify a scene without consulting parser or layout internals.
-pub fn render_scene_with_checks(scene: &Scene, style: Style) -> (String, Vec<String>) {
-    let mut scene = scene.clone();
-    let (w, h) = scene.normalize();
-    let canvas = paint_normalized_scene(&scene, style, w, h);
+/// Fallible checked painter used by the CLI, inspector, and quality evaluator.
+/// The resource refusal is distinct from regular scene-invariant failures so
+/// callers can retain exact observed/limit/repair diagnostics.
+pub fn try_render_scene_with_checks(
+    scene: &Scene,
+    style: Style,
+) -> Result<(String, Vec<String>), ResourceLimit> {
+    let (scene, w, h) = checked_normalize_for_render(scene)?;
+    let canvas = paint_normalized_scene(&scene, style, w.max(1), h.max(1))?;
     let failures = check_scene_invariants(&scene, &canvas);
-    (canvas.finish(style), failures)
+    Ok((canvas.finish(style), failures))
+}
+
+/// Compatibility helper for test and in-process callers that predate the
+/// resource-aware API. External output paths use
+/// [`try_render_scene_with_checks`] instead.
+pub fn render_scene_with_checks(scene: &Scene, style: Style) -> (String, Vec<String>) {
+    match try_render_scene_with_checks(scene, style) {
+        Ok(result) => result,
+        Err(limit) => (String::new(), vec![limit.to_string()]),
+    }
+}
+
+#[derive(Debug)]
+pub enum CheckedRenderError {
+    Resource(ResourceLimit),
+    Invariants(Vec<String>),
 }
 
 /// Runtime render gate used by the CLI: invalid geometry never becomes a
 /// successful diagram. Tests can exercise the same path without spawning the
 /// binary or relying on an intentionally broken parser/layout input.
-pub fn render_scene_checked(scene: &Scene, style: Style) -> Result<String, Vec<String>> {
-    let (output, failures) = render_scene_with_checks(scene, style);
+pub fn render_scene_checked(scene: &Scene, style: Style) -> Result<String, CheckedRenderError> {
+    let (output, failures) =
+        try_render_scene_with_checks(scene, style).map_err(CheckedRenderError::Resource)?;
     if failures.is_empty() {
         Ok(output)
     } else {
-        Err(failures)
+        Err(CheckedRenderError::Invariants(failures))
     }
 }
 
@@ -1023,6 +1295,26 @@ fn draw_endpoint_decoration(canvas: &mut Canvas, decoration: &EndpointDecoration
         }
         kind => {
             let ch = match kind {
+                EndpointDecorationKind::Arrow => arrow_toward(
+                    point(decoration.at),
+                    point(decoration.toward),
+                    crate::scene::ArrowHead::Filled,
+                    style,
+                ),
+                EndpointDecorationKind::Circle => {
+                    if style.ascii {
+                        'o'
+                    } else {
+                        '○'
+                    }
+                }
+                EndpointDecorationKind::Cross => {
+                    if style.ascii {
+                        'x'
+                    } else {
+                        '×'
+                    }
+                }
                 EndpointDecorationKind::OpenArrow => arrow_toward(
                     point(decoration.at),
                     point(decoration.toward),
@@ -1275,7 +1567,7 @@ mod border_tests {
 
     #[test]
     fn border_check_rejects_wrong_orientation_but_accepts_merged_crossings() {
-        let mut canvas = Canvas::new(7, 5);
+        let mut canvas = Canvas::new(7, 5).unwrap();
         draw_group(&mut canvas, 1, 1, 5, 3, 2, 2, "G");
 
         let top = canvas.idx(3, 1);
@@ -1328,5 +1620,131 @@ mod border_tests {
             &mut failures,
         );
         assert!(failures.is_empty(), "{failures:#?}");
+    }
+}
+
+#[cfg(test)]
+mod checked_normalization_tests {
+    use super::*;
+    use crate::scene::{Arrow, CardinalityMaximum, CardinalityMinimum, SceneGroupSeparator};
+
+    #[test]
+    fn fallible_render_normalizes_isolated_i32_coordinate_extrema() {
+        for x in [i32::MIN, i32::MAX] {
+            let scene = Scene {
+                boxes: vec![SceneBox {
+                    node: 0,
+                    rect: Rect::new(x, 0, 1, 1),
+                    lines: vec![],
+                    shape: Shape::Rect,
+                    table: None,
+                }],
+                ..Scene::default()
+            };
+            let rendered = try_render_scene(&scene, Style { ascii: false })
+                .unwrap_or_else(|limit| panic!("unexpected resource refusal at {x}: {limit}"));
+            assert!(!rendered.is_empty(), "extreme x={x} should still paint");
+        }
+    }
+
+    #[test]
+    fn fallible_render_translates_every_scene_primitive_from_an_extreme_origin() {
+        let x = i32::MIN;
+        let scene = Scene {
+            boxes: vec![SceneBox {
+                node: 0,
+                rect: Rect::new(x, 0, 5, 3),
+                lines: vec!["box".to_string()],
+                shape: Shape::Rect,
+                table: None,
+            }],
+            foreground_boxes: vec![SceneBox {
+                node: 1,
+                rect: Rect::new(x + 6, 0, 5, 3),
+                lines: vec!["front".to_string()],
+                shape: Shape::Rect,
+                table: None,
+            }],
+            groups: vec![SceneGroup {
+                subgraph: 0,
+                rect: Rect::new(x + 12, 0, 9, 4),
+                title: SceneText::new(Point::new(x + 13, 1), "group"),
+                separators: vec![SceneGroupSeparator {
+                    y: 2,
+                    label: SceneText::new(Point::new(x + 13, 2), "else"),
+                }],
+            }],
+            paths: vec![ScenePath {
+                path: 0,
+                points: vec![Point::new(x, 5), Point::new(x + 4, 5)],
+                rounded: vec![Point::new(x + 2, 5)],
+                kind: EdgeKind::Solid,
+            }],
+            edges: vec![RoutedEdge {
+                edge: 0,
+                points: vec![Point::new(x + 6, 6), Point::new(x + 10, 6)],
+                rounded: vec![Point::new(x + 8, 6)],
+                kind: EdgeKind::Solid,
+                label: Some(SceneText::new(Point::new(x + 6, 7), "edge")),
+                arrow: Some(Arrow {
+                    at: Point::new(x + 10, 6),
+                    toward: Point::new(x + 9, 6),
+                    head: crate::scene::ArrowHead::Filled,
+                }),
+            }],
+            endpoint_decorations: vec![
+                EndpointDecoration {
+                    edge: 0,
+                    at: Point::new(x + 13, 9),
+                    toward: Point::new(x + 12, 9),
+                    kind: EndpointDecorationKind::Circle,
+                },
+                EndpointDecoration {
+                    edge: 1,
+                    at: Point::new(x + 16, 9),
+                    toward: Point::new(x + 15, 9),
+                    kind: EndpointDecorationKind::Cardinality {
+                        minimum: CardinalityMinimum::One,
+                        maximum: CardinalityMaximum::Many,
+                    },
+                },
+            ],
+            texts: vec![SceneText::new(Point::new(x + 22, 10), "free")],
+        };
+        let rendered = try_render_scene(&scene, Style { ascii: false }).unwrap();
+        assert!(rendered.contains("box"));
+        assert!(rendered.contains("front"));
+        assert!(rendered.contains("group"));
+        assert!(rendered.contains("edge"));
+        assert!(rendered.contains("free"));
+    }
+
+    #[test]
+    fn fallible_render_refuses_a_combined_min_max_span_without_wrapping() {
+        let scene = Scene {
+            boxes: vec![
+                SceneBox {
+                    node: 0,
+                    rect: Rect::new(i32::MIN, 0, 1, 1),
+                    lines: vec![],
+                    shape: Shape::Rect,
+                    table: None,
+                },
+                SceneBox {
+                    node: 1,
+                    rect: Rect::new(i32::MAX, 0, 1, 1),
+                    lines: vec![],
+                    shape: Shape::Rect,
+                    table: None,
+                },
+            ],
+            ..Scene::default()
+        };
+        let limit = try_render_scene(&scene, Style { ascii: false }).unwrap_err();
+        assert_eq!(limit.resource, "canvas width");
+        assert_eq!(
+            limit.observed,
+            (i64::from(i32::MAX) + 1 - i64::from(i32::MIN)) as usize
+        );
     }
 }
